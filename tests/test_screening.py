@@ -42,6 +42,7 @@ def base_cfg(tmp, milestones=(64, 128)):
     return {
         "experiment": {"name": "smoke", "seed": 0},
         "out_dir": str(tmp / "runs"),
+        "research": {"allow_experimental": True},
         "data": {"dataset": "smoke", "teacher": "smoke_t", "positions": list(milestones)},
         "models": ["rune_mlp", "rune_attn"],
         "training": {"lr": 1e-3, "batch_size": 8, "log_every": 1000},
@@ -95,6 +96,22 @@ def test_report_plot_promote(tmp_path):
         cfg = json.load(f)
     assert cfg["data"]["positions"] == [250_000_000]
     assert cfg["models"] == ["rune_mlp"]
+
+
+def test_experimental_guard(tmp_path):
+    import pytest
+
+    cfg = base_cfg(tmp_path)
+    cfg.pop("research")
+    cfg["models"] = ["rune_rel_d"]
+    with pytest.raises(ValueError, match="without opt-in"):
+        ScreeningRunner(cfg)
+    cfg["research"] = {"allow_experimental": True}
+    assert ScreeningRunner(cfg).exp_name == "smoke"
+    cfg2 = base_cfg(tmp_path)
+    cfg2.pop("research")
+    cfg2["models"] = ["rune_mlp"]
+    assert ScreeningRunner(cfg2).exp_name == "smoke"
 
 
 def test_load_config_yaml_and_json(tmp_path):

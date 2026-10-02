@@ -13,6 +13,9 @@ rel_params:
   dynamic_bias: false
 
 pairs: data/siblings.jsonl
+research:
+  allow_experimental: true
+
 out_dir: runs/rune_v02_loss_L1
 
 note: >

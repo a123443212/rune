@@ -15,6 +15,29 @@ MODEL_IDS = {
     "rune_rel_d": "RUNE-REL-02",
 }
 
+CORE_MODELS = ("rune_mlp",)
+EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d")
+
+CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
+
+
+def experimental_reasons(config):
+    reasons = []
+    for m in config.get("models", []):
+        if m in EXPERIMENTAL_MODELS:
+            reasons.append(f"model {m} is experimental")
+    loss = config.get("loss", {})
+    if loss.get("ranking", False):
+        reasons.append("ranking loss is experimental (use the L1 driver on candidates)")
+    sampling = config.get("sampling", {})
+    if sampling.get("mode", "none") == "disagreement_mix":
+        reasons.append("disagreement sampling is experimental (stage-gated after S0)")
+    arch = config.get("architecture", {})
+    for key in ("tokens", "token_dim", "gate", "alpha"):
+        if arch.get(key, CORE_ARCH[key]) != CORE_ARCH[key]:
+            reasons.append(f"architecture.{key}={arch.get(key)} deviates from core")
+    return reasons
+
 MILESTONE_TAGS = {10_000_000: "10m", 25_000_000: "25m", 50_000_000: "50m", 100_000_000: "100m",
                   250_000_000: "250m", 500_000_000: "500m", 1_000_000_000: "1b"}
 
@@ -47,6 +70,11 @@ class ScreeningRunner:
         self.exp_name = exp.get("name", "rune_screening")
         self.seed = exp.get("seed", 42)
         self.out_dir = config.get("out_dir", os.path.join("runs", self.exp_name))
+        reasons = experimental_reasons(config)
+        allowed = config.get("research", {}).get("allow_experimental", False)
+        if reasons and not allowed:
+            raise ValueError("experimental config without opt-in: " + "; ".join(reasons) +
+                             " (set research.allow_experimental=true)")
 
     def prepare_data(self, pool_records):
         kept, stats = P.clean_pipeline(pool_records)
@@ -121,7 +149,8 @@ class ScreeningRunner:
                 "experiment_id": self.exp_name,
                 "model": model_key,
                 "architecture": arch,
-                "architecture_version": "0.1.0",
+                "architecture_version": "0.2.0" if arch == "RUNE-REL-02" else "0.1.0",
+                "experimental": experimental_reasons(self.cfg),
                 "milestone_positions": ms,
                 "trained_positions": trainer.positions_seen,
                 "feature_set": "grouped_hkav2_fullthreats_v01",

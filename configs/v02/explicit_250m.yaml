@@ -2,6 +2,9 @@ experiment:
   name: rune_v02_explicit_250m
   seed: 42
 
+research:
+  allow_experimental: true
+
 out_dir: runs/rune_v02_250m
 
 data:

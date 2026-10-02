@@ -2,6 +2,9 @@ experiment:
   name: rune_v02_deep_template
   seed: 42
 
+research:
+  allow_experimental: true
+
 out_dir: runs/rune_v02_deep
 
 data:

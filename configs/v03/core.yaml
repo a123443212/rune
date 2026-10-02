@@ -1,15 +1,15 @@
 experiment:
-  name: rune_v02_screen_arch
+  name: rune_v03_core
   seed: 42
 
-research:
-  allow_experimental: true
+out_dir: runs/rune_v03_core
 
-out_dir: runs/rune_v02_screen_arch
+research:
+  allow_experimental: false
 
 data:
-  dataset: clean_v02
-  teacher: teacher_v02
+  dataset: clean_v03
+  teacher: teacher_v03
   positions:
     - 25000000
     - 50000000
@@ -17,9 +17,6 @@ data:
 
 models:
   - rune_mlp
-  - rune_attn_gab
-  - rune_rel_s
-  - rune_rel_d
 
 architecture:
   tokens: 8
@@ -48,4 +45,8 @@ evaluation:
   benchmark: true
   engine_match: false
 
-note: A0=rune_mlp A1=rune_attn_gab A2=rune_rel_s A3=rune_rel_d, loss L0, sampling S0.
+note: >
+  v0.3 Core default. Runs without any experimental opt-in. Every deviation
+  (attention, rel mixer, token/dim variants, ranking, disagreement) must use
+  its own config with research.allow_experimental=true and is recorded as
+  experimental in metrics.json.
