@@ -15,7 +15,10 @@ add_compile_options(-O2 -Wall -Wextra)
 include_directories(${CMAKE_SOURCE_DIR})
 
 add_library(rune_core STATIC
-  core/board/board.cpp
+  core/board/board_state.cpp
+  core/board/board_attacks.cpp
+  core/board/move_gen.cpp
+  core/board/move_make.cpp
   core/position/position.cpp
   core/features/feature_set.cpp
   core/accumulators/grouped_accumulator.cpp
@@ -31,7 +34,13 @@ set_target_properties(rune_core PROPERTIES POSITION_INDEPENDENT_CODE ON)
 
 if(RUNE_BUILD_TESTS)
   enable_testing()
-  add_executable(rune_tests tests/cpp/test_main.cpp)
+  add_executable(rune_tests
+    tests/cpp/main.cpp
+    tests/cpp/test_board.cpp
+    tests/cpp/test_features.cpp
+    tests/cpp/test_arch.cpp
+    tests/cpp/test_model.cpp
+  )
   target_link_libraries(rune_tests PRIVATE rune_core)
   add_test(NAME rune_cpp_tests COMMAND rune_tests)
 endif()

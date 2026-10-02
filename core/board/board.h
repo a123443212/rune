@@ -97,8 +97,12 @@ class Board {
   std::vector<BoardSnapshot> history_;
 
   void addPawnMoves(int sq, std::vector<Move>& out) const;
+  void addKnightMoves(int sq, std::vector<Move>& out) const;
+  void addKingMoves(int sq, std::vector<Move>& out) const;
   void addSlidingMoves(int sq, std::vector<Move>& out, bool diag, bool straight) const;
   void applyMove(const Move& m, Piece& captured);
+  void moveRookForCastle(int kingTo);
+  void dropCastlingRight(const Piece& moving, const Move& m, const Piece& captured);
 };
 
 }
