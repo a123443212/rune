@@ -1,0 +1,60 @@
+#pragma once
+
+#include <string>
+#include <vector>
+
+#include "core/architectures/dense/var_accum.h"
+
+namespace rune {
+
+enum class PoolMode { None, PerToken, Shared };
+
+bool poolModeFromString(const std::string& name, PoolMode& out);
+const char* poolModeName(PoolMode mode);
+
+class TokenPool {
+ public:
+  TokenPool();
+
+  bool configure(const VarWidths& widths, PoolMode mode, bool clipOut, int sharedWidth,
+                 std::string& err);
+  void forward(const float* in, float* out) const;
+  size_t parameterCount() const;
+  PoolMode mode() const { return mode_; }
+  bool clipOut() const { return clip_; }
+
+  std::vector<float> perW[8];
+  std::vector<float> perB[8];
+  std::vector<float> sharedS;
+  std::vector<float> tokS[8];
+  std::vector<float> tokB[8];
+
+ private:
+  VarWidths widths_;
+  PoolMode mode_ = PoolMode::None;
+  bool clip_ = true;
+  int sharedWidth_ = 32;
+  mutable std::vector<float> scratch_;
+  static float clip01(float v);
+};
+
+class ChannelGate {
+ public:
+  ChannelGate();
+
+  bool configure(const VarWidths& widths, bool enabled, std::string& err);
+  void forward(const float* in, float* out) const;
+  size_t parameterCount() const;
+  bool enabled() const { return enabled_; }
+
+  std::vector<float> ga;
+  std::vector<float> gb;
+
+ private:
+  VarWidths widths_;
+  bool enabled_ = false;
+  std::vector<int> offsets_;
+  static float clip01(float v);
+};
+
+}

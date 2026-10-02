@@ -28,4 +28,14 @@ std::unique_ptr<RelationalModel> createRelational(const FlexBuildSpec& spec, std
   return m;
 }
 
+bool isSupportedVersion(const std::string& version) {
+  return version == "0.1.0" || version == "0.2.0" || version == "0.3.0";
+}
+
+std::unique_ptr<DenseModel> createDense(const DenseBuildSpec& spec, std::string& err) {
+  std::unique_ptr<DenseModel> m(new DenseModel());
+  if (!m->configure(spec, err)) return nullptr;
+  return m;
+}
+
 }

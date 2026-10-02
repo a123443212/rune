@@ -4,6 +4,7 @@
 #include <string>
 
 #include "core/architectures/base/architecture.h"
+#include "core/architectures/dense/dense.h"
 #include "core/architectures/relational/relational.h"
 
 namespace rune {
@@ -19,5 +20,9 @@ struct FlexBuildSpec {
 };
 
 std::unique_ptr<RelationalModel> createRelational(const FlexBuildSpec& spec, std::string& err);
+
+bool isSupportedVersion(const std::string& version);
+
+std::unique_ptr<DenseModel> createDense(const DenseBuildSpec& spec, std::string& err);
 
 }

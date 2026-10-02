@@ -7,6 +7,7 @@
 #include "core/board/board.h"
 #include "core/features/feature_set.h"
 #include "core/inference/evaluator.h"
+#include "bindings/dense_bindings.h"
 #include "bindings/relational_bindings.h"
 #include "core/model_io/model_factory.h"
 #include "core/model_io/model_io.h"
@@ -126,4 +127,5 @@ PYBIND11_MODULE(rune_bindings, m) {
       .def("parameter_count", &PyModel::parameterCount);
 
   registerRelational(m);
+  registerDense(m);
 }

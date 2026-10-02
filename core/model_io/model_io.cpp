@@ -105,6 +105,28 @@ bool readHeader(std::ifstream& f, std::string& header, std::string& err) {
   return true;
 }
 
+bool parseIntList(const std::string& header, const std::string& key, std::vector<int>& out) {
+  std::string pat = "\"" + key + "\":[";
+  size_t p = header.find(pat);
+  if (p == std::string::npos) return false;
+  p += pat.size();
+  size_t q = header.find(']', p);
+  if (q == std::string::npos) return false;
+  std::stringstream ss(header.substr(p, q - p));
+  std::string tok;
+  while (std::getline(ss, tok, ',')) {
+    if (tok.empty()) continue;
+    try {
+      out.push_back(std::stoi(tok));
+    } catch (...) {
+      return false;
+    }
+  }
+  return true;
+}
+
+bool isDenseArch(const std::string& arch) { return arch.rfind("RUNE-03-", 0) == 0; }
+
 void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.arch = extractString(header, "arch");
   spec.archVersion = extractString(header, "arch_version");
@@ -118,6 +140,13 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   std::string gate = extractString(header, "gate");
   spec.gate = gate.empty() ? "clip" : gate;
   spec.alpha = static_cast<float>(extractNumber(header, "alpha", 1.0));
+  spec.variant = extractString(header, "variant");
+  spec.pooling = extractString(header, "pooling");
+  if (spec.pooling.empty()) spec.pooling = "none";
+  spec.gateOn = extractNumber(header, "gate_on", 0.0) != 0.0;
+  spec.tokenDims.clear();
+  std::vector<int> td;
+  if (parseIntList(header, "token_dims", td)) spec.tokenDims = td;
 }
 
 }  // namespace
@@ -131,10 +160,15 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   std::string header;
   if (!readHeader(f, header, err)) return false;
   fillSpec(header, out.spec);
+  if (!isSupportedVersion(out.spec.archVersion)) {
+    err = "unsupported arch version " + out.spec.archVersion;
+    return false;
+  }
   std::string arch = out.spec.arch;
   out.isInt8 = (out.spec.quantization == "int8");
   out.isInt16 = (out.spec.quantization == "int16");
   out.isFlex = (arch == "RUNE-REL-02");
+  out.isDense = isDenseArch(arch);
   std::vector<TensorMeta> metas;
   if (!parseTensors(header, metas)) {
     err = "tensor list parse failed";
@@ -142,7 +176,37 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   }
   TokenLayout layout;
   FlexEmbeddings* flexEmb = nullptr;
-  if (out.isFlex) {
+  VarEmbeddings* varEmb = nullptr;
+  VarWidths varWidths;
+  VarWidths embWidths;
+  if (out.isDense) {
+    DenseBuildSpec ds;
+    ds.variant = arch.substr(8);
+    std::vector<int> dims;
+    if (!parseIntList(header, "token_dims", dims)) {
+      err = "missing token_dims";
+      return false;
+    }
+    ds.dims = dims;
+    ds.pooling = out.spec.pooling;
+    ds.poolClip = extractNumber(header, "pool_clip", 1.0) != 0.0;
+    ds.gateOn = out.spec.gateOn;
+    ds.sharedWidth = static_cast<int>(extractInt(header, "shared_width", 32));
+    out.arch = createDense(ds, err);
+    if (!out.arch) {
+      if (err.empty()) err = "dense build failed";
+      return false;
+    }
+    if (!VarWidths::make(dims, varWidths, err)) return false;
+    out.varWidths = varWidths;
+    VarWidths gw = varWidths;
+    if (ds.pooling == "shared") {
+      for (int g = 0; g < 8; ++g) gw.w[g] = ds.sharedWidth;
+    }
+    embWidths = gw;
+    out.varEmbeddings.configure(gw);
+    varEmb = &out.varEmbeddings;
+  } else if (out.isFlex) {
     FlexBuildSpec bs;
     bs.tokens = out.spec.tokens;
     bs.dim = out.spec.tokenDim;
@@ -189,7 +253,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           }
           for (size_t i = 0; i < count; ++i) {
             float v = static_cast<float>(buf[i]) * static_cast<float>(scale);
-            if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
+            if (out.isDense) {
+              int gw = embWidths.w[g];
+              varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, v);
+            } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
             else out.embeddings.set(g, static_cast<int>(i) / 32, static_cast<int>(i) % 32, v);
           }
         } else {
@@ -201,11 +268,15 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           }
           for (size_t i = 0; i < count; ++i) {
             float v = static_cast<float>(buf[i]) * static_cast<float>(scale);
-            if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
+            if (out.isDense) {
+              int gw = embWidths.w[g];
+              varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, v);
+            } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
             else out.embeddings.set(g, static_cast<int>(i) / 32, static_cast<int>(i) % 32, v);
           }
         }
-        if (out.isFlex) out.flexScales.embedding[g] = static_cast<float>(scale);
+        if (out.isDense) out.varScales.token[g] = static_cast<float>(scale);
+        else if (out.isFlex) out.flexScales.embedding[g] = static_cast<float>(scale);
         else out.scales.embedding[g] = static_cast<float>(scale);
       } else {
         std::vector<float> buf(count);
@@ -215,7 +286,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           return false;
         }
         for (size_t i = 0; i < count; ++i) {
-          if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, buf[i]);
+          if (out.isDense) {
+            int gw = embWidths.w[g];
+            varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, buf[i]);
+          } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, buf[i]);
           else out.embeddings.set(g, static_cast<int>(i) / 32, static_cast<int>(i) % 32, buf[i]);
         }
       }
@@ -230,7 +304,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       for (float v : buf) archFlat.push_back(v);
     }
   }
-  if (!out.isFlex) {
+  if (out.isDense) {
+    out.varQ.configure(embWidths, out.isInt16);
+    if (out.isInt8 || out.isInt16) out.varQ.quantizeFrom(out.varEmbeddings, out.varScales);
+  } else if (!out.isFlex) {
     if (out.isInt8) out.qembeddings.quantizeFrom(out.embeddings, out.scales);
     if (out.isInt16) out.q16embeddings.quantizeFrom(out.embeddings, out.scales);
   } else {
@@ -240,6 +317,45 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   if (!out.arch->setTensors(archNames, archFlat)) {
     err = "arch tensor mismatch";
     return false;
+  }
+  if (out.isDense) {
+    std::string cs = extractString(header, "checksum");
+    if (cs.empty()) {
+      err = "dense model missing checksum";
+      return false;
+    }
+    uint64_t want = 0;
+    try {
+      want = std::stoull(cs, nullptr, 16);
+    } catch (...) {
+      err = "bad checksum format";
+      return false;
+    }
+    std::ifstream g(path, std::ios::binary);
+    if (!g) {
+      err = "cannot reopen file";
+      return false;
+    }
+    g.seekg(0, std::ios::end);
+    std::streampos end = g.tellg();
+    std::streampos start = 8 + static_cast<std::streampos>(header.size());
+    if (end < start) {
+      err = "bad payload range";
+      return false;
+    }
+    size_t n = static_cast<size_t>(end - start);
+    std::string payload(n, '\0');
+    g.seekg(start);
+    g.read(payload.data(), n);
+    if (!g) {
+      err = "cannot read payload";
+      return false;
+    }
+    uint64_t got = fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()), n);
+    if (got != want) {
+      err = "checksum mismatch";
+      return false;
+    }
   }
   return true;
 }

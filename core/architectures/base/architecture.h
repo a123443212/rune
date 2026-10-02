@@ -18,6 +18,11 @@ struct ModelSpec {
   std::string quantization = "fp32";
   std::string gate = "clip";
   float alpha = 1.0f;
+  std::string variant;
+  std::vector<int> tokenDims;
+  std::string pooling = "none";
+  bool gateOn = false;
+  bool poolClip = true;
 
   std::string canonicalString() const;
   uint64_t configHash() const;
@@ -38,5 +43,6 @@ class IArchitecture {
 };
 
 uint64_t fnv1aHash(const std::string& s);
+uint64_t fnv1aHash(const uint8_t* data, size_t n);
 
 }

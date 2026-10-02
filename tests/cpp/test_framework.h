@@ -35,3 +35,8 @@ void testContextValues();
 void testTokenLayouts();
 void testFlexModelIO();
 void testInt16FixedPath();
+void testVarWidths();
+void testVarAccumulatorIncremental();
+void testPoolGateMath();
+void testDenseModelIO();
+void testDenseParamAccounting();

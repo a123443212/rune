@@ -7,6 +7,7 @@
 #include "core/accumulators/flex_accumulator.h"
 #include "core/accumulators/grouped_accumulator.h"
 #include "core/architectures/base/architecture.h"
+#include "core/architectures/dense/var_accum.h"
 #include "core/model_io/model_factory.h"
 
 namespace rune {
@@ -25,6 +26,11 @@ struct RuneFile {
   FlexEmbeddings flexEmbeddings;
   FlexQuantTables flexQ;
   FlexScales flexScales;
+  bool isDense = false;
+  VarWidths varWidths;
+  VarEmbeddings varEmbeddings;
+  VarQuantTables varQ;
+  VarScales varScales;
 };
 
 bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err);
@@ -33,5 +39,8 @@ bool saveRuneFile(const std::string& path, const ModelSpec& spec, const Embeddin
 bool saveFlexRuneFile(const std::string& path, const ModelSpec& spec,
                       const FlexEmbeddings& embeddings, const IArchitecture& arch,
                       const std::string& quantization, std::string& err);
+bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
+                       const VarEmbeddings& embeddings, const IArchitecture& arch,
+                       const std::string& quantization, std::string& err);
 
 }

@@ -30,6 +30,11 @@ int main() {
   testTokenLayouts();
   testFlexModelIO();
   testInt16FixedPath();
+  testVarWidths();
+  testVarAccumulatorIncremental();
+  testPoolGateMath();
+  testDenseModelIO();
+  testDenseParamAccounting();
   if (g_failures == 0) {
     std::printf("ALL CPP TESTS PASSED\n");
     return 0;
