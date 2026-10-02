@@ -21,10 +21,10 @@ try:
 except ImportError:
     HAS_BINDINGS = False
 
-from training.export.export import EXPORT_ORDER, load_exported_arrays, read_header
+from training.export.export import load_exported_arrays, read_header
 from training.export.export import export_model
 from training.export.quantize import fake_quantize, quantization_report
-from training.models.rune_models import build_model
+from training.models.rune_models import EXPORT_ORDER, build_model
 
 needs_bindings = pytest.mark.skipif(not HAS_BINDINGS, reason="bindings not built")
 

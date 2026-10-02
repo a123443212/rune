@@ -11,6 +11,8 @@ MODEL_IDS = {
     "rune_mlp": "RUNE-MLP",
     "rune_attn": "RUNE-ATTN",
     "rune_attn_gab": "RUNE-ATTN-GAB",
+    "rune_rel_s": "RUNE-REL-02",
+    "rune_rel_d": "RUNE-REL-02",
 }
 
 MILESTONE_TAGS = {10_000_000: "10m", 25_000_000: "25m", 50_000_000: "50m", 100_000_000: "100m",
@@ -75,6 +77,13 @@ class ScreeningRunner:
             "lambda_wdl": 0.5 if loss_cfg.get("wdl", True) else 0.0,
             "lambda_rank": 0.1 if loss_cfg.get("ranking", False) else 0.0,
             "rank_margin": 0.05,
+            "rel_params": {
+                "tokens": self.cfg.get("architecture", {}).get("tokens", 8),
+                "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
+                "gate": self.cfg.get("architecture", {}).get("gate", "clip"),
+                "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
+                "dynamic_bias": model_key == "rune_rel_d",
+            },
         }
         trainer = Trainer(tcfg)
         val = splits["val"]

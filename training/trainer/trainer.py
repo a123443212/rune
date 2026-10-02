@@ -5,7 +5,9 @@ import time
 import torch
 
 from training.datasets.rune_dataset import make_loader
-from training.losses.losses import RuneLoss, ranking_accuracy, wdl_accuracy
+from training.losses.composite import CompositeLoss
+from training.losses.losses import ranking_accuracy, wdl_accuracy
+from training.models.relational import build_rel_model
 from training.models.rune_models import build_model
 from training.trainer.system_stats import file_size_bytes, git_commit, hardware_info
 
@@ -32,8 +34,19 @@ class Trainer:
     def __init__(self, config):
         self.cfg = config
         torch.manual_seed(config.get("seed", 0))
-        self.model = build_model(config["arch"])
-        self.loss_fn = RuneLoss(
+        if config["arch"] == "RUNE-REL-02":
+            p = config.get("rel_params", {})
+            self.model = build_rel_model(tokens=p.get("tokens", 8), dim=p.get("dim", 32),
+                                         gate=p.get("gate", "clip"), alpha=p.get("alpha", 1.0),
+                                         dynamic_bias=p.get("dynamic_bias", False))
+            self.needs_context = True
+        else:
+            self.model = build_model(config["arch"])
+            self.needs_context = False
+        self.loss_fn = CompositeLoss(
+            value=True,
+            wdl=config.get("lambda_wdl", 0.5) > 0,
+            ranking=config.get("lambda_rank", 0.0) > 0,
             lambda_wdl=config.get("lambda_wdl", 0.5),
             lambda_rank=config.get("lambda_rank", 0.1),
             rank_margin=config.get("rank_margin", 0.05),
@@ -50,23 +63,41 @@ class Trainer:
         self.grad_window = []
         self.step_times = []
 
-    def train_step(self, batch):
-        t0 = time.time()
+    def unpack(self, batch):
+        if len(batch) == 5:
+            ids, masks, ctx, value, wdl = batch
+            return ids, masks, ctx, value, wdl
         ids, masks, value, wdl = batch
+        return ids, masks, None, value, wdl
+
+    def forward_model(self, ids, masks, ctx):
         ids = [t.to(self.device) for t in ids]
         masks = [t.to(self.device) for t in masks]
+        if self.needs_context:
+            return self.model(ids, masks, ctx.to(self.device))
+        return self.model(ids, masks)
+
+    def train_step(self, batch, rank_batch=None):
+        t0 = time.time()
+        ids, masks, ctx, value, wdl = self.unpack(batch)
         value = value.to(self.device)
         wdl = wdl.to(self.device)
         self.model.train()
-        v_pred, w_pred = self.model(ids, masks)
+        v_pred, w_pred = self.forward_model(ids, masks, ctx)
         rank = None
-        if self.cfg.get("lambda_rank", 0.0) > 0 and len(value) >= 4:
+        if rank_batch is not None:
+            rids, rmasks, rctx, a_idx, b_idx, signs, weights = rank_batch
+            rv_pred, _ = self.forward_model(rids, rmasks, rctx)
+            a = torch.tensor(a_idx, device=self.device)
+            b = torch.tensor(b_idx, device=self.device)
+            rank = (rv_pred[a], rv_pred[b], torch.tensor(signs, device=self.device),
+                    torch.tensor(weights, device=self.device))
+        elif self.cfg.get("lambda_rank", 0.0) > 0 and len(value) >= 4:
             idx = count_ranking_pairs(value.tolist(), self.cfg.get("rank_group", 4))
             if idx is not None:
                 a, b, s = idx
                 rank = (v_pred[a], v_pred[b], s.to(self.device))
-        losses = self.loss_fn(v_pred, w_pred, value, wdl,
-                              *(rank if rank is not None else (None, None, None)))
+        losses = self.loss_fn(v_pred, w_pred, value, wdl, rank)
         self.opt.zero_grad()
         losses["total"].backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -93,15 +124,15 @@ class Trainer:
 
     @torch.no_grad()
     def evaluate(self, records, batch_size=512):
-        loader, _ = make_loader(records, batch_size=batch_size, shuffle=False)
+        loader, _ = self.make_eval_loader(records, batch_size)
         self.model.eval()
         tot = {"total": 0.0, "value": 0.0, "wdl": 0.0, "rank": 0.0}
         racc, wacc, n = 0.0, 0.0, 0
         nb = 0
         for batch in loader:
-            ids, masks, value, wdl = batch
-            v_pred, w_pred = self.model(ids, masks)
-            losses = self.loss_fn(v_pred, w_pred, value, wdl)
+            ids, masks, ctx, value, wdl = self.unpack(batch)
+            v_pred, w_pred = self.forward_model(ids, masks, ctx)
+            losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
             for k in tot:
                 tot[k] += losses[k].item()
             wacc += wdl_accuracy(w_pred, wdl).item() * len(value)
@@ -119,9 +150,19 @@ class Trainer:
         out["params"] = self.model.parameter_count()
         return out
 
+    def make_train_loader(self, records, batch_size, shuffle, seed):
+        if self.needs_context:
+            from training.datasets.flex_dataset import make_flex_loader
+
+            return make_flex_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed)
+        return make_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed)
+
+    def make_eval_loader(self, records, batch_size):
+        return self.make_train_loader(records, batch_size, False, 0)
+
     def fit(self, train_records, val_records, max_positions, batch_size=256, log_every=50,
-            ckpt_dir=None, seed=0):
-        loader, _ = make_loader(train_records, batch_size=batch_size, shuffle=True, seed=seed)
+            ckpt_dir=None, seed=0, rank_batches=None):
+        loader, _ = self.make_train_loader(train_records, batch_size, True, seed)
         history = []
         it = iter(loader)
         step = 0
@@ -129,11 +170,11 @@ class Trainer:
             try:
                 batch = next(it)
             except StopIteration:
-                loader, _ = make_loader(train_records, batch_size=batch_size, shuffle=True,
-                                        seed=seed + step)
+                loader, _ = self.make_train_loader(train_records, batch_size, True, seed + step)
                 it = iter(loader)
                 batch = next(it)
-            losses = self.train_step(batch)
+            rb = rank_batches[step % len(rank_batches)] if rank_batches else None
+            losses = self.train_step(batch, rank_batch=rb)
             step += 1
             if step % log_every == 0:
                 val = self.evaluate(val_records)
