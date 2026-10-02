@@ -145,6 +145,9 @@ class RuneFullModel(nn.Module):
     def embedding_tensors(self):
         return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(NUM_GROUPS)}
 
+    def export_order(self):
+        return list(EXPORT_ORDER[self.arch_id])
+
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())
 
