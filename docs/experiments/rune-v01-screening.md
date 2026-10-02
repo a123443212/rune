@@ -20,14 +20,14 @@ separately.
 
 ```bash
 python tools/dataset/build_dataset.py --out data/pool.jsonl --games 5000
-python tools/screening/run_screening.py --config configs/screening/screen_lossA.yaml --pool data/pool.jsonl
+python tools/screening/run_screening.py --config configs/v01/screening/screen_lossA.yaml --pool data/pool.jsonl
 python tools/screening/report.py --runs runs/rune_v01_screening --out-dir reports/screening
 python tools/screening/plot.py --runs runs/rune_v01_screening --out-dir reports/screening
 python tools/benchmark/infer_bench.py --build-dir build --out reports/screening/infer.json
 python tools/screening/promote.py --runs runs/rune_v01_screening
 ```
 
-Screening entry configs: `configs/screening/screen_lossA.yaml` (default),
+Screening entry configs: `configs/v01/screening/screen_lossA.yaml` (default),
 `screen_lossB_ranking.yaml` (candidates only), `explicit_250m.yaml`,
 `template_500m_1b.yaml`. The pipeline stops at 100M unless a 250M+ config
 is explicitly supplied. Checkpoints are never overwritten; resume continues

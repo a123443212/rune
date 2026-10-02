@@ -15,3 +15,13 @@ Ideas parked here instead of leaking into the v0.1 scope:
 - Search integration (alpha-beta + transposition table) for real match testing.
 - Rust dataset tooling if PGN parsing or dedup becomes the bottleneck.
 - AVX2/NEON SIMD kernels after correctness is locked and profiling shows need.
+
+# Parked during v0.2 (do not implement during v0.2)
+
+- Head redesign (the 256->128 layer is the eval bottleneck, but the head
+  stays fixed until mixer comparisons conclude).
+- Move-derived incremental feature updates (per-node full extraction
+  dominates walk NPS).
+- Teacher labeling pipeline (blocks RQ3/RQ4 training).
+- Quiet-machine latency protocol with pinned frequency for publishable
+  inference numbers.
