@@ -1,0 +1,45 @@
+experiment:
+  name: rune_v02_deep_template
+  seed: 42
+
+out_dir: runs/rune_v02_deep
+
+data:
+  dataset: clean_v02
+  teacher: teacher_v02
+  positions:
+    - 500000000
+    - 1000000000
+
+models: []
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  gate: clip
+  alpha: 1.0
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 1024
+  log_every: 500
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+sampling:
+  mode: none
+
+export_quant: int8
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: true
+
+note: >
+  Template only, never runs by default. Use after 250M evidence justifies
+  deep training.

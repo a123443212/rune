@@ -53,6 +53,17 @@ class ScreeningRunner:
         splits = P.split_by_game(kept, seed=self.seed)
         if not splits["val"] or not splits["train"]:
             raise ValueError("empty train/val split: grow the pool or change seed")
+        sampling = self.cfg.get("sampling", {})
+        mode = sampling.get("mode", "none")
+        if mode == "disagreement_mix":
+            from training.samplers.disagreement import sample_mixture
+
+            n = sampling.get("max_positions", len(splits["train"]))
+            splits["train"] = sample_mixture(
+                splits["train"], min(n, len(splits["train"])),
+                mode=sampling.get("base", "stratified"),
+                disagreement_ratio=sampling.get("disagreement_ratio", 0.2),
+                seed=self.seed)
         info = {
             "dataset_id": self.cfg.get("data", {}).get("dataset", "unknown"),
             "pool_raw": len(pool_records),
@@ -104,7 +115,8 @@ class ScreeningRunner:
                         ckpt_dir=ckpt_dir, seed=self.seed)
             metrics = trainer.evaluate(val)
             stats = trainer.window_stats()
-            export_model(trainer.model, os.path.join(ckpt_dir, f"{model_key}_{tag}.rune"))
+            export_model(trainer.model, os.path.join(ckpt_dir, f"{model_key}_{tag}.rune"),
+                         quantization=self.cfg.get("export_quant", "fp32"))
             record = {
                 "experiment_id": self.exp_name,
                 "model": model_key,
@@ -120,6 +132,8 @@ class ScreeningRunner:
                 "learning_rate": tcfg["lr"],
                 "batch_size": tcfg["batch_size"],
                 "seed": self.seed,
+                "sampling": self.cfg.get("sampling", {"mode": "none"}),
+                "export_quant": self.cfg.get("export_quant", "fp32"),
                 "git_commit": git_commit(),
                 "hardware": hardware_info(),
                 "data_info": data_info,

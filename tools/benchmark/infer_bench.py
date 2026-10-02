@@ -8,11 +8,19 @@ import time
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 ARCHS = ["RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB"]
+REL_VARIANTS = [
+    ("RUNE-REL-02", ["--tokens", "8", "--dim", "32", "--bias", "static"]),
+    ("RUNE-REL-02", ["--tokens", "8", "--dim", "32", "--bias", "dynamic"]),
+    ("RUNE-REL-02", ["--tokens", "6", "--dim", "32", "--bias", "dynamic"]),
+    ("RUNE-REL-02", ["--tokens", "10", "--dim", "40", "--bias", "dynamic"]),
+    ("RUNE-REL-02", ["--tokens", "8", "--dim", "24", "--bias", "static"]),
+]
 
 
-def run_stage_bench(build_dir, arch):
+def run_stage_bench(build_dir, arch, extra=None):
     exe = os.path.join(build_dir, "rune_stage_bench")
-    out = subprocess.run([exe, "--arch", arch], capture_output=True, text=True).stdout
+    cmd = [exe, "--arch", arch] + (extra or [])
+    out = subprocess.run(cmd, capture_output=True, text=True).stdout
     row = {}
     for line in out.strip().split("\n"):
         if ":" in line:
@@ -60,6 +68,16 @@ def main():
             "full_eval_refresh_us": float(cpp["full_eval_refresh_us"]),
             "full_eval_incremental_us": float(cpp["full_eval_incremental_us"]),
             **py,
+        }
+    for arch, extra in REL_VARIANTS:
+        cpp = run_stage_bench(args.build_dir, arch, extra)
+        key = "REL-" + "-".join(extra[1::2]) + "-" + extra[-1]
+        table[key] = {
+            "rel_mixer_cost_us": float(cpp["rel_mixer_us"]),
+            "rel_head_cost_us": float(cpp["rel_head_us"]),
+            "rel_eval_refresh_us": float(cpp["rel_full_eval_refresh_us"]),
+            "rel_eval_incremental_us": float(cpp["rel_full_eval_incremental_us"]),
+            "rel_params": int(cpp["rel_params"]),
         }
     print(json.dumps(table, indent=2))
     if args.out:

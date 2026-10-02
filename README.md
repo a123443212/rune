@@ -14,7 +14,7 @@ attention-vs-MLP ablations.
 - `benchmarks/` — C++ microbenchmark + NPS walk
 - `bindings/` — pybind11 module `rune_bindings`
 - `tests/` — C++ (`tests/cpp`) and pytest suites
-- `configs/` — baseline and `rune_v01` experiment configs
+- `configs/` — versioned (`v01/`, `v02/`) and `rune_v01` experiment configs
 - `docs/` — architecture spec, experiment plan, future work
 
 ## Build

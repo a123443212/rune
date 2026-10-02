@@ -1,0 +1,44 @@
+experiment:
+  name: rune_v02_tokens_8
+  seed: 42
+
+out_dir: runs/rune_v02_tokens_8
+
+data:
+  dataset: clean_v02
+  teacher: teacher_v02
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_rel_s
+  - rune_rel_d
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  gate: clip
+  alpha: 1.0
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
