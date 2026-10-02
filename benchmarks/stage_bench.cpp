@@ -4,9 +4,12 @@
 #include <string>
 #include <vector>
 
+#include "core/accumulators/flex_accumulator.h"
 #include "core/accumulators/grouped_accumulator.h"
+#include "core/accumulators/token_layout.h"
 #include "core/architectures/attention/attention.h"
 #include "core/architectures/mlp/mlp.h"
+#include "core/architectures/relational/relational.h"
 #include "core/board/board.h"
 #include "core/features/feature_set.h"
 #include "core/inference/evaluator.h"
@@ -26,8 +29,14 @@ static void report(const char* key, double us) { std::printf("%s: %.3f\n", key, 
 
 int main(int argc, char** argv) {
   std::string arch = "RUNE-ATTN-GAB";
+  int flexTokens = 8;
+  int flexDim = 32;
+  bool flexDynamic = true;
   for (int i = 1; i + 1 < argc; ++i) {
     if (std::strcmp(argv[i], "--arch") == 0) arch = argv[i + 1];
+    if (std::strcmp(argv[i], "--tokens") == 0) flexTokens = std::atoi(argv[i + 1]);
+    if (std::strcmp(argv[i], "--dim") == 0) flexDim = std::atoi(argv[i + 1]);
+    if (std::strcmp(argv[i], "--bias") == 0) flexDynamic = std::string(argv[i + 1]) == "dynamic";
   }
 
   Board start;
@@ -99,6 +108,44 @@ int main(int argc, char** argv) {
   report("full_eval_refresh_us", benchUs([&](int) { ev->evaluateBoard(start); }, 2000));
   ev->refresh(start);
   report("full_eval_incremental_us", benchUs([&](int) { ev->evaluate(); }, 5000));
+
+  TokenLayout layout;
+  std::string layoutErr;
+  if (TokenLayout::make(flexTokens, flexDim, layout, layoutErr)) {
+    FlexEmbeddings femb;
+    femb.configure(flexDim);
+    femb.init(3);
+    RelationalModel rel;
+    RelationalConfig rcfg;
+    rcfg.tokens = flexTokens;
+    rcfg.dim = flexDim;
+    rcfg.dynamicBias = flexDynamic;
+    std::string rcerr;
+    if (rel.configure(rcfg, rcerr)) {
+      RelationalEvaluator relev;
+      std::string reerr;
+      if (relev.configure(&femb, &layout, &rel, reerr)) {
+        report("rel_full_eval_refresh_us",
+               benchUs([&](int) { relev.evaluateBoard(start); }, 2000));
+        relev.refresh(start);
+        report("rel_full_eval_incremental_us", benchUs([&](int) { relev.evaluate(); }, 5000));
+        std::vector<float> rt(flexTokens * flexDim);
+        relev.currentTokens(rt.data());
+        float ctx[8];
+        relev.currentContext(ctx);
+        std::vector<float> rout(flexTokens * flexDim);
+        report("rel_mixer_us",
+               benchUs([&](int) { rel.mixer.forward(rt.data(), ctx, rout.data()); }, 3000));
+        float rv;
+        float rwdl[3];
+        report("rel_head_us",
+               benchUs([&](int) { rel.forwardWithContext(rt.data(), ctx, rv, rwdl); }, 3000));
+      }
+    }
+    std::printf("rel_params: %zu\n", rel.parameterCount() + femb.numFloats());
+    std::printf("rel_tokens: %d\nrel_dim: %d\nrel_dynamic: %d\n", flexTokens, flexDim,
+                flexDynamic ? 1 : 0);
+  }
   std::printf("arch: %s\n", arch.c_str());
   std::printf("mlp_params: %zu\n", mlp.parameterCount());
   std::printf("attn_params: %zu\n", attnGab.parameterCount());
