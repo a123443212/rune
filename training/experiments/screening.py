@@ -13,10 +13,15 @@ MODEL_IDS = {
     "rune_attn_gab": "RUNE-ATTN-GAB",
     "rune_rel_s": "RUNE-REL-02",
     "rune_rel_d": "RUNE-REL-02",
+    "rune_03A": "RUNE-03-A",
+    "rune_03B": "RUNE-03-B",
+    "rune_03C": "RUNE-03-C",
+    "rune_03D": "RUNE-03-D",
 }
 
 CORE_MODELS = ("rune_mlp",)
-EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d")
+EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
+                       "rune_03A", "rune_03B", "rune_03C", "rune_03D")
 
 CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
 
@@ -122,6 +127,14 @@ class ScreeningRunner:
                 "gate": self.cfg.get("architecture", {}).get("gate", "clip"),
                 "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
                 "dynamic_bias": model_key == "rune_rel_d",
+            },
+            "dense_params": {
+                "variant": arch.split("-")[-1] if arch.startswith("RUNE-03-") else "A",
+                "token_dims": self.cfg.get("architecture", {}).get("token_dims", [32] * 8),
+                "pooling": self.cfg.get("architecture", {}).get("pooling", "none"),
+                "pool_clip": self.cfg.get("architecture", {}).get("pool_clip", True),
+                "gate_on": self.cfg.get("architecture", {}).get("gate_on", False),
+                "shared_width": self.cfg.get("architecture", {}).get("shared_width", 32),
             },
         }
         trainer = Trainer(tcfg)

@@ -45,6 +45,22 @@ double extractNumber(const std::string& h, const std::string& key, double fallba
   }
 }
 
+bool extractBool(const std::string& h, const std::string& key, bool fallback) {
+  std::string pat = "\"" + key + "\":";
+  size_t p = h.find(pat);
+  if (p == std::string::npos) return fallback;
+  size_t v = p + pat.size();
+  size_t q = h.find_first_of(",}", v);
+  std::string val = h.substr(v, q - v);
+  if (val == "true" || val == "1") return true;
+  if (val == "false" || val == "0") return false;
+  try {
+    return std::stod(val) != 0.0;
+  } catch (...) {
+    return fallback;
+  }
+}
+
 struct TensorMeta {
   std::string name;
   std::vector<int> shape;
@@ -143,7 +159,7 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.variant = extractString(header, "variant");
   spec.pooling = extractString(header, "pooling");
   if (spec.pooling.empty()) spec.pooling = "none";
-  spec.gateOn = extractNumber(header, "gate_on", 0.0) != 0.0;
+  spec.gateOn = extractBool(header, "gate_on", false);
   spec.tokenDims.clear();
   std::vector<int> td;
   if (parseIntList(header, "token_dims", td)) spec.tokenDims = td;
@@ -189,7 +205,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     }
     ds.dims = dims;
     ds.pooling = out.spec.pooling;
-    ds.poolClip = extractNumber(header, "pool_clip", 1.0) != 0.0;
+    ds.poolClip = extractBool(header, "pool_clip", true);
     ds.gateOn = out.spec.gateOn;
     ds.sharedWidth = static_cast<int>(extractInt(header, "shared_width", 32));
     out.arch = createDense(ds, err);

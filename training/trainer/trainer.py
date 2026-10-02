@@ -49,6 +49,17 @@ class Trainer:
                                          gate=p.get("gate", "clip"), alpha=p.get("alpha", 1.0),
                                          dynamic_bias=p.get("dynamic_bias", False))
             self.needs_context = True
+        elif config["arch"].startswith("RUNE-03-"):
+            from training.models.dense import build_dense_model
+
+            p = config.get("dense_params", {})
+            self.model = build_dense_model(variant=config["arch"].split("-")[-1],
+                                           token_dims=p.get("token_dims", [32] * 8),
+                                           pooling=p.get("pooling", "none"),
+                                           pool_clip=p.get("pool_clip", True),
+                                           gate_on=p.get("gate_on", False),
+                                           shared_width=p.get("shared_width", 32))
+            self.needs_context = False
         else:
             self.model = build_model(config["arch"])
             self.needs_context = False

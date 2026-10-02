@@ -5,6 +5,7 @@
 #include "core/architectures/dense/dense.h"
 #include "core/board/board.h"
 #include "core/features/feature_set.h"
+#include "core/model_io/model_io.h"
 
 using namespace rune;
 
@@ -81,6 +82,12 @@ class DenseBindingModel {
 };
 
 void registerDense(py::module_& m) {
+  m.def("verify_rune_file", [](const std::string& path) -> py::tuple {
+    RuneFile loaded;
+    std::string err;
+    if (!loadRuneFile(path, loaded, err)) return py::make_tuple(false, err);
+    return py::make_tuple(true, std::string("ok"));
+  });
   py::class_<DenseBindingModel>(m, "DenseModel")
       .def(py::init<const std::string&, const std::vector<int>&, const std::string&, bool, bool>())
       .def("set_embedding", &DenseBindingModel::setEmbedding)

@@ -130,7 +130,7 @@ bool ChannelGate::configure(const VarWidths& widths, bool enabled, std::string& 
   offsets_.assign(9, 0);
   for (int t = 0; t < 8; ++t) offsets_[t + 1] = offsets_[t] + widths_.w[t];
   ga.assign(offsets_[8], 0.0f);
-  gb.assign(offsets_[8], 0.0f);
+  gb.assign(offsets_[8], 1.0f);
   return true;
 }
 

@@ -6,6 +6,14 @@ MAGIC = b"RUNE"
 FORMAT_VERSION = 1
 
 
+def fnv1a(data):
+    h = 1469598103934665603
+    for b in data:
+        h ^= b
+        h = (h * 1099511628211) & 0xFFFFFFFFFFFFFFFF
+    return h
+
+
 def symmetric_scale(arr, bits=8):
     m = float(abs(arr).max()) if arr.size else 0.0
     if m <= 0:
@@ -67,9 +75,12 @@ def export_model(model, path, quantization="fp32"):
         "scales": scales,
         "tensors": tensors_meta,
     }
-    for key in ("gate", "alpha", "context_dim"):
+    for key in ("gate", "alpha", "context_dim", "variant", "token_dims", "pooling",
+                "pool_clip", "gate_on", "shared_width"):
         if key in spec:
             header[key] = spec[key]
+    if spec["arch"].startswith("RUNE-03-"):
+        header["checksum"] = format(fnv1a(payload), "016x")
     hbytes = json.dumps(header, separators=(",", ":")).encode()
     with open(path, "wb") as f:
         f.write(MAGIC)
