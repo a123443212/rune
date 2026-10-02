@@ -1,0 +1,40 @@
+#pragma once
+
+#include <cstdint>
+#include <string>
+#include <vector>
+
+namespace rune {
+
+struct ModelSpec {
+  std::string arch;
+  std::string archVersion = "0.1.0";
+  std::string featureSet = "grouped_hkav2_fullthreats_v01";
+  int tokens = 8;
+  int tokenDim = 32;
+  std::string attention = "none";
+  std::string geometricBias = "none";
+  std::string head = "value_wdl";
+  std::string quantization = "fp32";
+
+  std::string canonicalString() const;
+  uint64_t configHash() const;
+};
+
+class IArchitecture {
+ public:
+  virtual ~IArchitecture() = default;
+  virtual void forward(const float* tokens, float& value, float* wdl) const = 0;
+  virtual size_t parameterCount() const = 0;
+  virtual size_t modelSizeBytes() const = 0;
+  virtual const char* archId() const = 0;
+  virtual const char* archVersion() const = 0;
+  virtual void getTensors(std::vector<std::string>& names, std::vector<std::vector<int>>& shapes,
+                          std::vector<const float*>& data) const = 0;
+  virtual bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) = 0;
+  virtual ModelSpec spec() const = 0;
+};
+
+uint64_t fnv1aHash(const std::string& s);
+
+}
