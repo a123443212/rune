@@ -31,6 +31,7 @@ add_library(rune_core STATIC
   core/architectures/relational/relational.cpp
   core/inference/evaluator.cpp
   core/model_io/model_io.cpp
+  core/model_io/model_save.cpp
   core/model_io/model_factory.cpp
 )
 
