@@ -16,6 +16,8 @@ struct ModelSpec {
   std::string geometricBias = "none";
   std::string head = "value_wdl";
   std::string quantization = "fp32";
+  std::string gate = "clip";
+  float alpha = 1.0f;
 
   std::string canonicalString() const;
   uint64_t configHash() const;

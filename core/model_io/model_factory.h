@@ -1,0 +1,23 @@
+#pragma once
+
+#include <memory>
+#include <string>
+
+#include "core/architectures/base/architecture.h"
+#include "core/architectures/relational/relational.h"
+
+namespace rune {
+
+std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId);
+
+struct FlexBuildSpec {
+  int tokens = 8;
+  int dim = 32;
+  std::string gate = "clip";
+  float alpha = 1.0f;
+  bool dynamicBias = false;
+};
+
+std::unique_ptr<RelationalModel> createRelational(const FlexBuildSpec& spec, std::string& err);
+
+}

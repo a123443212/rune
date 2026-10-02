@@ -71,4 +71,29 @@ class GroupedAccumulatorInt {
   int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
 };
 
+class Quant16Tables {
+ public:
+  Quant16Tables();
+  void quantizeFrom(const EmbeddingTables& src, QuantScales& scales);
+  int get(int group, int flat) const;
+  const std::vector<int16_t>& groupData(int group) const { return tables_[group]; }
+
+ private:
+  std::vector<int16_t> tables_[GroupedFeatureSet::kNumGroups];
+};
+
+class GroupedAccumulator16 {
+ public:
+  GroupedAccumulator16();
+  void bind(const Quant16Tables* tables, const QuantScales* scales);
+  void refresh(const std::vector<ActiveFeature>& features);
+  void applyDiff(const std::vector<ActiveFeature>& added, const std::vector<ActiveFeature>& removed);
+  void tokens(float* out) const;
+
+ private:
+  const Quant16Tables* tables_ = nullptr;
+  const QuantScales* scales_ = nullptr;
+  int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
+};
+
 }

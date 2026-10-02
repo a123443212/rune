@@ -169,4 +169,77 @@ void GroupedAccumulatorInt::tokens(float* out) const {
   }
 }
 
+Quant16Tables::Quant16Tables() {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    tables_[g].assign(static_cast<size_t>(GroupedFeatureSet::vocabSize(g)) *
+                          static_cast<size_t>(GroupedFeatureSet::kTokenDim),
+                      0);
+  }
+}
+
+void Quant16Tables::quantizeFrom(const EmbeddingTables& src, QuantScales& scales) {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    const std::vector<float>& data = src.groupData(g);
+    float maxAbs = 0.0f;
+    for (float v : data) {
+      float a = v < 0 ? -v : v;
+      if (a > maxAbs) maxAbs = a;
+    }
+    float scale = maxAbs / 32767.0f;
+    if (scale <= 0.0f) scale = 1.0f;
+    scales.embedding[g] = scale;
+    for (size_t i = 0; i < data.size(); ++i) {
+      int q = static_cast<int>(std::lround(data[i] / scale));
+      if (q > 32767) q = 32767;
+      if (q < -32767) q = -32767;
+      tables_[g][i] = static_cast<int16_t>(q);
+    }
+  }
+}
+
+int Quant16Tables::get(int group, int flat) const { return tables_[group][flat]; }
+
+GroupedAccumulator16::GroupedAccumulator16() {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g)
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) acc_[g][d] = 0;
+}
+
+void GroupedAccumulator16::bind(const Quant16Tables* tables, const QuantScales* scales) {
+  tables_ = tables;
+  scales_ = scales;
+}
+
+void GroupedAccumulator16::refresh(const std::vector<ActiveFeature>& features) {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g)
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) acc_[g][d] = 0;
+  applyDiff(features, std::vector<ActiveFeature>{});
+}
+
+void GroupedAccumulator16::applyDiff(const std::vector<ActiveFeature>& added,
+                                     const std::vector<ActiveFeature>& removed) {
+  for (const ActiveFeature& f : added) {
+    size_t base = static_cast<size_t>(f.index) * GroupedFeatureSet::kTokenDim;
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
+      acc_[f.group][d] += tables_->get(f.group, static_cast<int>(base) + d);
+    }
+  }
+  for (const ActiveFeature& f : removed) {
+    size_t base = static_cast<size_t>(f.index) * GroupedFeatureSet::kTokenDim;
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
+      acc_[f.group][d] -= tables_->get(f.group, static_cast<int>(base) + d);
+    }
+  }
+}
+
+void GroupedAccumulator16::tokens(float* out) const {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
+      float v = static_cast<float>(acc_[g][d]) * scales_->embedding[g];
+      if (v < 0.0f) v = 0.0f;
+      if (v > 1.0f) v = 1.0f;
+      out[g * GroupedFeatureSet::kTokenDim + d] = v;
+    }
+  }
+}
+
 }

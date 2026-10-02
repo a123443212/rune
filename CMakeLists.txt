@@ -22,11 +22,16 @@ add_library(rune_core STATIC
   core/position/position.cpp
   core/features/feature_set.cpp
   core/accumulators/grouped_accumulator.cpp
+  core/accumulators/token_layout.cpp
+  core/accumulators/flex_accumulator.cpp
   core/architectures/base/architecture.cpp
   core/architectures/mlp/mlp.cpp
   core/architectures/attention/attention.cpp
+  core/architectures/relational/context.cpp
+  core/architectures/relational/relational.cpp
   core/inference/evaluator.cpp
   core/model_io/model_io.cpp
+  core/model_io/model_factory.cpp
 )
 
 target_include_directories(rune_core PUBLIC ${CMAKE_SOURCE_DIR})

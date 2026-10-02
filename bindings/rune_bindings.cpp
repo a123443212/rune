@@ -7,6 +7,7 @@
 #include "core/board/board.h"
 #include "core/features/feature_set.h"
 #include "core/inference/evaluator.h"
+#include "core/model_io/model_factory.h"
 #include "core/model_io/model_io.h"
 
 namespace py = pybind11;
