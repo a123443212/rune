@@ -12,6 +12,15 @@ from training.models.rune_models import build_model
 from training.trainer.system_stats import file_size_bytes, git_commit, hardware_info
 
 
+def derive_seed(config):
+    import hashlib
+    import json
+
+    key = json.dumps({"seed": config.get("seed", 0), "arch": config.get("arch"),
+                      "rel": config.get("rel_params", {})}, sort_keys=True)
+    return int(hashlib.sha256(key.encode()).hexdigest(), 16) % (2 ** 31)
+
+
 def count_ranking_pairs(values, group_size=4):
     n = (len(values) // group_size) * group_size
     if n < 2:
@@ -33,7 +42,7 @@ def count_ranking_pairs(values, group_size=4):
 class Trainer:
     def __init__(self, config):
         self.cfg = config
-        torch.manual_seed(config.get("seed", 0))
+        torch.manual_seed(derive_seed(config))
         if config["arch"] == "RUNE-REL-02":
             p = config.get("rel_params", {})
             self.model = build_rel_model(tokens=p.get("tokens", 8), dim=p.get("dim", 32),
