@@ -8,6 +8,7 @@
 #include "core/accumulators/grouped_accumulator.h"
 #include "core/accumulators/token_layout.h"
 #include "core/architectures/attention/attention.h"
+#include "core/architectures/dense/dense.h"
 #include "core/architectures/mlp/mlp.h"
 #include "core/architectures/relational/relational.h"
 #include "core/board/board.h"
@@ -32,11 +33,17 @@ int main(int argc, char** argv) {
   int flexTokens = 8;
   int flexDim = 32;
   bool flexDynamic = true;
+  std::string denseDims;
+  std::string densePool = "none";
+  bool denseGate = false;
   for (int i = 1; i + 1 < argc; ++i) {
     if (std::strcmp(argv[i], "--arch") == 0) arch = argv[i + 1];
     if (std::strcmp(argv[i], "--tokens") == 0) flexTokens = std::atoi(argv[i + 1]);
     if (std::strcmp(argv[i], "--dim") == 0) flexDim = std::atoi(argv[i + 1]);
     if (std::strcmp(argv[i], "--bias") == 0) flexDynamic = std::string(argv[i + 1]) == "dynamic";
+    if (std::strcmp(argv[i], "--dims") == 0) denseDims = argv[i + 1];
+    if (std::strcmp(argv[i], "--pool") == 0) densePool = argv[i + 1];
+    if (std::strcmp(argv[i], "--gate") == 0) denseGate = std::string(argv[i + 1]) == "on";
   }
 
   Board start;
@@ -149,5 +156,76 @@ int main(int argc, char** argv) {
   std::printf("arch: %s\n", arch.c_str());
   std::printf("mlp_params: %zu\n", mlp.parameterCount());
   std::printf("attn_params: %zu\n", attnGab.parameterCount());
+
+  if (!denseDims.empty()) {
+    std::vector<int> dims;
+    std::string cur;
+    for (char c : denseDims + ",") {
+      if (c == ',') {
+        if (!cur.empty()) dims.push_back(std::atoi(cur.c_str()));
+        cur.clear();
+      } else {
+        cur += c;
+      }
+    }
+    DenseBuildSpec dspec;
+    dspec.variant = "B";
+    dspec.dims = dims;
+    dspec.pooling = densePool;
+    dspec.poolClip = true;
+    dspec.gateOn = denseGate;
+    dspec.sharedWidth = 32;
+    DenseModel dmodel;
+    std::string derr;
+    if (dmodel.configure(dspec, derr)) {
+      VarWidths gw;
+      for (int g = 0; g < 8; ++g) gw.w[g] = (densePool == "shared") ? 32 : dims[g];
+      VarEmbeddings vemb;
+      vemb.configure(gw);
+      vemb.init(3);
+      DenseEvaluator dev;
+      std::string deerr;
+      if (dev.configure(&vemb, &dmodel, deerr)) {
+        {
+          float dv;
+          float dwdl[3];
+          report("dense_full_eval_refresh_us", benchUs([&](int) {
+                   dev.refresh(start);
+                   dev.evaluate(dv, dwdl);
+                 }, 2000));
+        }
+        {
+          float dv;
+          float dwdl[3];
+          report("dense_full_eval_incremental_us", benchUs([&](int) {
+                   dev.evaluate(dv, dwdl);
+                 }, 5000));
+        }
+        int inTotal = 0;
+        for (int g = 0; g < 8; ++g) inTotal += gw.w[g];
+        int outTotal = 0;
+        for (int d : dims) outTotal += d;
+        std::vector<float> raw(inTotal), formed(outTotal), gated(outTotal);
+        dev.currentTokens(raw.data());
+        report("dense_token_projection_us", benchUs([&](int) {
+                 dmodel.pool.forward(raw.data(), formed.data());
+               }, 5000));
+        dmodel.pool.forward(raw.data(), formed.data());
+        report("dense_gating_us", benchUs([&](int) {
+                 dmodel.gate.forward(formed.data(), gated.data());
+               }, 20000));
+        float dv;
+        float dwdl[3];
+        report("dense_model_forward_us",
+               benchUs([&](int) { dmodel.forward(raw.data(), dv, dwdl); }, 3000));
+        std::printf("dense_params: %zu\n", dmodel.parameterCount() + vemb.numFloats());
+        std::printf("dense_dims_total: %d\n", outTotal);
+      } else {
+        std::printf("dense_eval_error: %s\n", deerr.c_str());
+      }
+    } else {
+      std::printf("dense_config_error: %s\n", derr.c_str());
+    }
+  }
   return 0;
 }
