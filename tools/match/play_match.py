@@ -9,9 +9,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
 def elo_from_score(score, games):
     if games == 0:
-        return 0.0
+        return 0.0, 0.0
     s = min(max(score / games, 1e-6), 1 - 1e-6)
-    return -400.0 * math.log10(1.0 / s - 1.0)
+    elo = -400.0 * math.log10(1.0 / s - 1.0)
+    se = math.sqrt(s * (1 - s) / games)
+    err = 1.96 * se * 400.0 / (s * (1 - s) * math.log(10))
+    return elo, err
 
 
 def greedy_move(board, model, rng, epsilon=0.0):
@@ -63,13 +66,22 @@ def load_model_for_match(arch_id, runepath, build_dir):
     from training.models.rune_models import EXPORT_ORDER, build_model
 
     header, arrays = load_exported_arrays(runepath)
-    model = rb.RuneModel(header["arch"])
+    if header["arch"] == "RUNE-REL-02":
+        model = rb.FlexModel(header["tokens"], header["token_dim"], header.get("gate", "clip"),
+                             header.get("alpha", 1.0), header["geometric_bias"] == "dynamic")
+    else:
+        model = rb.RuneModel(header["arch"])
     for g in range(8):
         arr = arrays[f"emb{g}"]
         if arr.dtype.name == "int8":
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]
         model.set_embedding(g, [float(x) for x in arr.reshape(-1)])
-    names = list(EXPORT_ORDER[header["arch"]])
+    names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] != "RUNE-REL-02" else None
+    if names is None:
+        names = ["wq", "bq", "wk", "bk", "wvv", "bvv", "gabS"]
+        if header["geometric_bias"] == "dynamic":
+            names += ["dynU", "dynW"]
+        names += ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
     flat = []
     for n in names:
         flat.extend([float(x) for x in arrays[n].reshape(-1)])
@@ -84,7 +96,13 @@ def main():
     ap.add_argument("--games", type=int, default=20)
     ap.add_argument("--seed", type=int, default=0)
     ap.add_argument("--build-dir", default="build")
+    ap.add_argument("--tc", default="greedy-1ply")
+    ap.add_argument("--threads", type=int, default=1)
+    ap.add_argument("--engine-version", default="rune-greedy-0.2")
+    ap.add_argument("--report", default="")
     args = ap.parse_args()
+
+    from training.trainer.system_stats import git_commit, hardware_info
 
     rng = random.Random(args.seed)
     ma = load_model_for_match(None, args.model_a, args.build_dir)
@@ -102,7 +120,31 @@ def main():
         else:
             res = play_game(mb, ma, openings[i % len(openings)], rng)
             score += 1.0 - res
-    print(f"score A: {score}/{args.games} elo: {elo_from_score(score, args.games):.1f}")
+    elo, err = elo_from_score(score, args.games)
+    print(f"score A: {score}/{args.games} elo: {elo:.1f} +/- {err:.1f} (95% CI)")
+    if abs(elo) < err:
+        print("difference within noise: no conclusion")
+    meta = {
+        "engine_version": args.engine_version,
+        "network_a": args.model_a,
+        "network_b": args.model_b,
+        "hardware": hardware_info(),
+        "git_commit": git_commit(),
+        "time_control": args.tc,
+        "threads": args.threads,
+        "hash_mb": 0,
+        "openings": openings,
+        "games": args.games,
+        "seed": args.seed,
+        "score_a": score,
+        "elo_a": elo,
+        "elo_err95": err,
+    }
+    if args.report:
+        import json
+
+        with open(args.report, "w") as f:
+            json.dump(meta, f, indent=2)
 
 
 if __name__ == "__main__":

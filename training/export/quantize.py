@@ -1,12 +1,13 @@
 import numpy as np
 
 
-def fake_quantize(arr, scale=None):
+def fake_quantize(arr, scale=None, bits=8):
+    bound = 32767 if bits == 16 else 127
     arr = np.asarray(arr, dtype=np.float64)
     if scale is None:
         m = float(np.abs(arr).max()) if arr.size else 0.0
-        scale = m / 127.0 if m > 0 else 1.0
-    q = np.clip(np.round(arr / scale), -127, 127)
+        scale = m / bound if m > 0 else 1.0
+    q = np.clip(np.round(arr / scale), -bound, bound)
     return (q * scale).astype(np.float32), scale
 
 
