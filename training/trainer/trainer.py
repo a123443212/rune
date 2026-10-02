@@ -7,6 +7,7 @@ import torch
 from training.datasets.rune_dataset import make_loader
 from training.losses.losses import RuneLoss, ranking_accuracy, wdl_accuracy
 from training.models.rune_models import build_model
+from training.trainer.system_stats import file_size_bytes, git_commit, hardware_info
 
 
 def count_ranking_pairs(values, group_size=4):
@@ -45,8 +46,12 @@ class Trainer:
         self.positions_seen = 0
         self.device = torch.device("cpu")
         self.model.to(self.device)
+        self.train_start = time.time()
+        self.grad_window = []
+        self.step_times = []
 
     def train_step(self, batch):
+        t0 = time.time()
         ids, masks, value, wdl = batch
         ids = [t.to(self.device) for t in ids]
         masks = [t.to(self.device) for t in masks]
@@ -64,10 +69,27 @@ class Trainer:
                               *(rank if rank is not None else (None, None, None)))
         self.opt.zero_grad()
         losses["total"].backward()
-        torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
+        grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
         self.opt.step()
         self.positions_seen += len(value)
+        self.grad_window.append(float(grad_norm))
+        self.step_times.append(time.time() - t0)
+        del self.grad_window[:-1000]
+        del self.step_times[:-1000]
         return {k: v.item() for k, v in losses.items()}
+
+    def window_stats(self):
+        import math
+
+        grads = [g for g in self.grad_window if math.isfinite(g)]
+        elapsed = time.time() - self.train_start
+        return {
+            "grad_norm_mean": sum(grads) / max(1, len(grads)),
+            "grad_norm_max": max(grads) if grads else 0.0,
+            "grad_nan": len(self.grad_window) - len(grads),
+            "positions_per_sec": self.positions_seen / max(1e-6, elapsed),
+            "elapsed_sec": elapsed,
+        }
 
     @torch.no_grad()
     def evaluate(self, records, batch_size=512):
@@ -121,16 +143,33 @@ class Trainer:
             self.save_checkpoint(ckpt_dir)
         return history
 
+    def load_checkpoint(self, ckpt_dir):
+        model_path = os.path.join(ckpt_dir, "model.pt")
+        meta_path = os.path.join(ckpt_dir, "meta.json")
+        if not (os.path.exists(model_path) and os.path.exists(meta_path)):
+            return False
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        with open(meta_path) as f:
+            meta = json.load(f)
+        self.positions_seen = meta.get("positions_seen", 0)
+        return True
+
     def save_checkpoint(self, ckpt_dir):
         os.makedirs(ckpt_dir, exist_ok=True)
-        torch.save(self.model.state_dict(), os.path.join(ckpt_dir, "model.pt"))
+        t0 = time.time()
+        model_path = os.path.join(ckpt_dir, "model.pt")
+        torch.save(self.model.state_dict(), model_path)
         meta = {
             "arch": self.cfg["arch"],
             "seed": self.cfg.get("seed", 0),
             "positions_seen": self.positions_seen,
             "params": self.model.parameter_count(),
+            "model_size_mb": self.model.model_size_bytes() / 1e6,
+            "checkpoint_size_bytes": file_size_bytes(model_path),
+            "checkpoint_sec": time.time() - t0,
             "config": self.cfg,
-            "git_commit": os.environ.get("RUNE_GIT_COMMIT", "unknown"),
+            "git_commit": git_commit(),
+            "hardware": hardware_info(),
             "timestamp": time.time(),
         }
         with open(os.path.join(ckpt_dir, "meta.json"), "w") as f:

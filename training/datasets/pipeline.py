@@ -128,6 +128,14 @@ def split_by_game(records, train_frac=0.9, val_frac=0.05, seed=0):
             val.extend(groups[gid])
         else:
             test.extend(groups[gid])
+    for need, donor in (("val", "train"), ("test", "train")):
+        target = val if need == "val" else test
+        if not target and len({r.get("game_id") for r in train}) > 1:
+            games_in_train = sorted({r.get("game_id", normalized_key(r["fen"])) for r in train})
+            move_gid = games_in_train[-1]
+            moved = [r for r in train if r.get("game_id", normalized_key(r["fen"])) == move_gid]
+            train = [r for r in train if r.get("game_id", normalized_key(r["fen"])) != move_gid]
+            target.extend(moved)
     return {"train": train, "val": val, "test": test}
 
 

@@ -1,0 +1,33 @@
+experiment:
+  name: rune_v01_explicit_250m
+  seed: 42
+
+out_dir: runs/rune_v01_250m
+
+data:
+  dataset: clean_v01
+  teacher: teacher_v01
+  positions:
+    - 250000000
+
+models: []
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 1024
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: true
+
+note: >
+  250M runs only for human-promoted candidates. Fill models explicitly
+  (or generate via tools/screening/promote.py --write-250m).

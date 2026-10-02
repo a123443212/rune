@@ -1,0 +1,35 @@
+experiment:
+  name: rune_v01_screening
+  seed: 42
+
+out_dir: runs/rune_v01_screening
+
+data:
+  dataset: clean_v01
+  teacher: teacher_v01
+  positions:
+    - 10000000
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_mlp
+  - rune_attn
+  - rune_attn_gab
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false

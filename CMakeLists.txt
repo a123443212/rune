@@ -48,6 +48,8 @@ endif()
 if(RUNE_BUILD_BENCH)
   add_executable(rune_bench benchmarks/cpp_bench.cpp)
   target_link_libraries(rune_bench PRIVATE rune_core)
+  add_executable(rune_stage_bench benchmarks/stage_bench.cpp)
+  target_link_libraries(rune_stage_bench PRIVATE rune_core)
 endif()
 
 if(RUNE_BUILD_BINDINGS)

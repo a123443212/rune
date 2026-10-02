@@ -1,0 +1,35 @@
+experiment:
+  name: rune_v01_deep_template
+  seed: 42
+
+out_dir: runs/rune_v01_deep
+
+data:
+  dataset: clean_v01
+  teacher: teacher_v01
+  positions:
+    - 500000000
+    - 1000000000
+
+models: []
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 1024
+  log_every: 500
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: true
+
+note: >
+  Template only. 500M-1B+ never runs by default. Use after 250M evidence
+  justifies deep training. Prefer training/experiments/learning_curve.py
+  for the full 100M-1B curve once candidates are selected.
