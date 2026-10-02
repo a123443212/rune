@@ -1,0 +1,19 @@
+{
+  "experiment": "learning_curve_full",
+  "arch": "RUNE-ATTN-GAB",
+  "seed": 0,
+  "lr": 3e-4,
+  "weight_decay": 0.01,
+  "batch_size": 1024,
+  "log_every": 200,
+  "lambda_wdl": 0.5,
+  "lambda_rank": 0.0,
+  "rank_margin": 0.05,
+  "rank_group": 4,
+  "sampling": "filtered",
+  "milestones": [100000000, 250000000, 500000000, 1000000000],
+  "export_quant": "int8",
+  "teacher_version": "tbd",
+  "feature_version": "grouped_hkav2_fullthreats_v01",
+  "notes": "milestone_budgets unset means full milestone position counts are trained; set max_positions_cap only for smoke tests"
+}

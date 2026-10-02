@@ -1,0 +1,17 @@
+{
+  "experiment": "rune_attn_gab",
+  "arch": "RUNE-ATTN-GAB",
+  "seed": 0,
+  "lr": 3e-4,
+  "weight_decay": 0.01,
+  "batch_size": 256,
+  "lambda_wdl": 0.5,
+  "lambda_rank": 0.0,
+  "rank_margin": 0.05,
+  "rank_group": 4,
+  "sampling": "filtered",
+  "milestones": [100000000, 250000000, 500000000, 1000000000],
+  "export_quant": "fp32",
+  "teacher_version": "tbd",
+  "feature_version": "grouped_hkav2_fullthreats_v01"
+}
