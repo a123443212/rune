@@ -34,5 +34,18 @@ cost-vs-quality). No composite score.
   Student params (dense, incl. embeddings): S1 72028 (~69%),
   S2 43412 (~41%), S3 30832 (~29%), S4 19404 (~18%) vs 105252
   teacher-scale. C++ `rune_tests` all pass incl. student-width
-  roundtrips; pure-torch pytest 48 passed, 11 skipped
-  (bindings-only skips — no Python headers on this host).
+  roundtrips; pure-torch pytest 48 passed, 11 skipped at the time
+  (bindings-only skips). Update: bindings built without root
+  (apt-downloaded headers extracted to /tmp, manual g++ link;
+  .so lives in gitignored `build/`), full suite now **70 passed,
+  0 skipped** — incl. torch↔C++ parity, quant, samplers, screening.
+- 2026-10-03, first REAL teacher run (Stockfish 17.1, depth 10,
+  4465 python-chess playout positions, synth-free): labeling
+  146–153 pos/sec single-thread (25M ≈ 47h single-thread —
+  plan threads before committing); clean 4288; WDL-heavy
+  decisive labels; teacher_u (WDL-spread) near 0 on most
+  positions (weighting ≈ uniform here — reported, not hidden).
+  S2 distill 20k: MAE 0.81, wdl 0.60; 100k: MAE 1.05, wdl 0.36
+  vs train MAE 0.26 / wdl 0.85 → textbook overfit at 3.5k
+  positions, not a pipeline bug. Verdict: chain correct,
+  scale missing. No quality conclusion below 25M-scale data.

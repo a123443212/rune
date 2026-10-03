@@ -8,7 +8,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import torch
 
 from training.datasets import pipeline as P
-from training.features.python_features import VOCAB_SIZES, extract_features
+from training.features.python_features import VOCAB_SIZES, extract_features, parse_fen
 
 OFFSETS = []
 acc = 0
@@ -43,10 +43,14 @@ def main():
     w1, b1, w2 = build_teacher(args.seed)
     out = []
     for r in P.load_jsonl(args.pool):
-        v = teacher_value(extract_features(r["fen"]), w1, b1, w2)
+        feats = extract_features(r["fen"])
+        v_white = teacher_value(feats, w1, b1, w2)
+        _, stm, _, _ = parse_fen(r["fen"])
+        v = v_white if stm == 0 else -v_white
         wdl = 1 if abs(v) < 0.15 else (0 if v > 0 else 2)
         out.append({**r, "value": v, "wdl": wdl, "teacher_value": v, "teacher_wdl": wdl,
-                    "teacher_id": "synth_mlp_v1", "student_value": 0.0, "student_wdl": 1})
+                    "teacher_id": "synth_mlp_v1", "student_value": 0.0, "student_wdl": 1,
+                    "value_perspective": "side_to_move"})
     P.save_jsonl(args.out, out)
     print(json.dumps({"labeled": len(out), "teacher_id": "synth_mlp_v1"}, indent=2))
 

@@ -67,7 +67,6 @@ def greedy_move(board, model, rng, stats, epsilon=0.0):
         return rng.choice(moves)
     import rune_bindings as rb
 
-    stm = board.side_to_move()
     best, best_v = None, None
     for m in moves:
         mv = rb.Move()
@@ -76,7 +75,7 @@ def greedy_move(board, model, rng, stats, epsilon=0.0):
             continue
         v = eval_position(model, board.to_fen(), stats)
         board.unmake_move()
-        own = v if stm == 0 else -v
+        own = -v
         if best_v is None or own > best_v:
             best, best_v = m, own
     return best if best is not None else rng.choice(moves)
@@ -98,7 +97,8 @@ def play_game(white_model, black_model, white_stats, black_stats, opening_fen, r
         mv.from_sq, mv.to_sq, mv.promo = m[0], m[1], m[2]
         b.make_move(mv)
     v = eval_position(white_model, b.to_fen(), white_stats)
-    return 1.0 if v > 0.2 else (0.0 if v < -0.2 else 0.5)
+    v_white = v if b.side_to_move() == 0 else -v
+    return 1.0 if v_white > 0.2 else (0.0 if v_white < -0.2 else 0.5)
 
 
 def load_model_for_match(arch_id, runepath, build_dir):

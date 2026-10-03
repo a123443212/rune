@@ -55,4 +55,14 @@ never a single score.
 - Distill metric merge wrote `dist_*`-prefixed keys while `tot`
   expected unprefixed ones (`distill` read 0.0). Fixed the merge
   mapping; smoke re-run shows consistent distill MSE ≈ MAE².
+- VALUE CONVENTION (cross-version decision, forced by data):
+  real-teacher training showed black-to-move predictions
+  systematically negated (e.g. tgt +0.70 → pred −0.80) because
+  labels were white-relative while the model learns
+  side-to-move-relative. Decided: **all values/WDL are
+  side-to-move-relative (negamax)**. Fixed `label_engine.py`,
+  `label_teacher.py` (both stamp `value_perspective`), and
+  `play_match.py` (mover gets `-v` after the move; adjudication
+  converts back to White-relative). The repo never decided this
+  before; every future labeler and consumer must follow it.
 - (log here AND mirror to `docs/experiments/failed/` per v0.5 §36)
