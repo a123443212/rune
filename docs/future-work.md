@@ -81,3 +81,17 @@ Ideas parked here instead of leaking into the v0.1 scope:
   dense-first until D-legs show signal).
 - Difficulty-aware sampling configs (sampler exists; leg runs after
   A-ladder, per plan order).
+
+# Parked during v0.7 (do not implement during v0.7)
+
+- pyo3 zero-copy bridge (pure-Python reader ships; epoch delivery
+  ties Python collate, both loop-bound — native bridge only when
+  profiling names it the bottleneck).
+- External-shuffle randomness-quality study and full NUMA tuning
+  (architecture keeps worker locality + shard affinity possible).
+- Fuzzy/near-duplicate handling beyond statistics (§15 statistics
+  ship; action only on measured problem).
+- Packed storage layout S2 (deflate reads already saturate).
+- Cold-cache/large-shard mmap verdict (path ships, verdict pending).
+- New evaluator architectures, loss families, search algorithms
+  (§60 — v0.7 touches none of these).

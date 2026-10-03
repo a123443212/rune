@@ -1,0 +1,31 @@
+pub const FNV_OFFSET: u64 = 1469598103934665603;
+pub const FNV_PRIME: u64 = 1099511628211;
+
+pub fn fnv1a(bytes: &[u8]) -> u64 {
+    let mut h = FNV_OFFSET;
+    for &b in bytes {
+        h ^= b as u64;
+        h = h.wrapping_mul(FNV_PRIME);
+    }
+    h
+}
+
+pub fn fnv1a_str(s: &str) -> u64 {
+    fnv1a(s.as_bytes())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn fnv_known_vector() {
+        assert_eq!(fnv1a(b""), 1469598103934665603);
+        assert_ne!(fnv1a(b"a"), fnv1a(b"b"));
+    }
+
+    #[test]
+    fn fnv_deterministic() {
+        assert_eq!(fnv1a_str("rnbqkbnr"), fnv1a_str("rnbqkbnr"));
+    }
+}
