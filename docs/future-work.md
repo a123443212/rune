@@ -67,3 +67,17 @@ Ideas parked here instead of leaking into the v0.1 scope:
   rank correlation, and stratification.
 - Quantization schemes beyond INT8 base + checked-uncertainty until
   P-legs report.
+
+# Parked during v0.6 (do not implement during v0.6)
+
+- Full policy network, RL, MCTS, giant Transformer, MoE, recurrent
+  search network, full neural move ordering.
+- Teacher ranking-pair data pipeline without bindings (move gen is
+  C++-only; D4 waits for `build_siblings.py` on a host with
+  bindings, or a Python move generator out of scope here).
+- QAT-training (fake-quant in the optimizer loop); Q2 currently
+  means INT8 export + full eval, honestly labeled.
+- Adaptive-family students (builders support widths; configs stay
+  dense-first until D-legs show signal).
+- Difficulty-aware sampling configs (sampler exists; leg runs after
+  A-ladder, per plan order).

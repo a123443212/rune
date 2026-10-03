@@ -43,6 +43,9 @@ struct AdaptiveBuildSpec {
   std::string refinePrecision = "fp32";
   bool hasUncertainty = false;
   bool hasStabilityHead = false;
+  int cheapHidden = 32;
+  int refH1 = 128;
+  int refH2 = 32;
 };
 
 class AdaptiveModel : public IArchitecture {
@@ -85,6 +88,9 @@ class AdaptiveModel : public IArchitecture {
   AdaptiveBuildSpec bspec_;
   int dim_ = 32;
   int total_ = 256;
+  int cheapHidden_ = 32;
+  int refH1_ = 128;
+  int refH2_ = 32;
   bool pruneMask_[64];
   mutable std::vector<float> scratch_;
   static float clip01(float v);

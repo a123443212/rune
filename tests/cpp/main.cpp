@@ -35,12 +35,14 @@ int main() {
   testPoolGateMath();
   testDenseModelIO();
   testDenseParamAccounting();
+  testDenseStudentWidths();
   testAdaptiveConfigure();
   testAdaptiveRoutingModes();
   testAdaptiveHysteresis();
   testAdaptiveIncremental();
   testAdaptiveModelIO();
   testAdaptiveParamAccounting();
+  testAdaptiveStudentWidths();
   testUncertaintyBounds();
   testSearchRoutingModes();
   testUncertaintyModelIO();

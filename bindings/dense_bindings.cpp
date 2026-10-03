@@ -12,7 +12,8 @@ using namespace rune;
 class DenseBindingModel {
  public:
   DenseBindingModel(const std::string& variant, const std::vector<int>& dims,
-                    const std::string& pooling, bool poolClip, bool gateOn) {
+                    const std::string& pooling, bool poolClip, bool gateOn,
+                    int headH1 = 128, int headH2 = 32) {
     DenseBuildSpec spec;
     spec.variant = variant;
     spec.dims = dims;
@@ -20,6 +21,8 @@ class DenseBindingModel {
     spec.poolClip = poolClip;
     spec.gateOn = gateOn;
     spec.sharedWidth = 32;
+    spec.headH1 = headH1;
+    spec.headH2 = headH2;
     std::string err;
     if (!model_.configure(spec, err)) throw std::runtime_error(err);
     VarWidths gw;
@@ -90,6 +93,7 @@ void registerDense(py::module_& m) {
   });
   py::class_<DenseBindingModel>(m, "DenseModel")
       .def(py::init<const std::string&, const std::vector<int>&, const std::string&, bool, bool>())
+      .def(py::init<const std::string&, const std::vector<int>&, const std::string&, bool, bool, int, int>())
       .def("set_embedding", &DenseBindingModel::setEmbedding)
       .def("set_arch_tensors", &DenseBindingModel::setArchTensors)
       .def("tokens_for_fen", &DenseBindingModel::tokensForFen)

@@ -43,39 +43,49 @@ bool DenseModel::configure(const DenseBuildSpec& spec, std::string& err) {
       }
     }
   }
+  if (spec.headH1 < 4 || spec.headH1 > 512 || spec.headH2 < 4 || spec.headH2 > 512) {
+    err = "bad head widths";
+    return false;
+  }
   bspec_ = spec;
   widths_ = widths;
+  headH1_ = spec.headH1;
+  headH2_ = spec.headH2;
   archId_ = "RUNE-03-" + spec.variant;
   if (!pool.configure(widths, mode, spec.poolClip, spec.sharedWidth, err)) return false;
   if (!gate.configure(widths, spec.gateOn, err)) return false;
   int in = widths.total();
+  int h1 = headH1_;
+  int h2 = headH2_;
   uint64_t s = 91030 + widths.total();
-  initVec(w1, 128 * in, s, 0.05f);
-  initVec(b1, 128, s, 0.01f);
-  initVec(w2, 32 * 128, s, 0.05f);
-  initVec(b2, 32, s, 0.01f);
-  initVec(wvo, 1 * 32, s, 0.05f);
+  initVec(w1, h1 * in, s, 0.05f);
+  initVec(b1, h1, s, 0.01f);
+  initVec(w2, h2 * h1, s, 0.05f);
+  initVec(b2, h2, s, 0.01f);
+  initVec(wvo, 1 * h2, s, 0.05f);
   initVec(bvo, 1, s, 0.01f);
-  initVec(wwdl, 3 * 32, s, 0.05f);
+  initVec(wwdl, 3 * h2, s, 0.05f);
   initVec(bwdl, 3, s, 0.01f);
-  scratch_.assign(2 * in + 128 + 32, 0.0f);
+  scratch_.assign(2 * in + h1 + h2, 0.0f);
   return true;
 }
 
 void DenseModel::forward(const float* tokens, float& value, float* wdl) const {
   int in = widths_.total();
+  int h1 = headH1_;
+  int h2 = headH2_;
   float* pooled = scratch_.data();
   float* gated = scratch_.data() + in;
-  float* h1 = scratch_.data() + 2 * in;
-  float* h2 = scratch_.data() + 2 * in + 128;
+  float* h1buf = scratch_.data() + 2 * in;
+  float* h2buf = scratch_.data() + 2 * in + h1;
   pool.forward(tokens, pooled);
   gate.forward(pooled, gated);
-  simd::matVecClipped(w1.data(), gated, b1.data(), h1, 128, in);
-  simd::matVecClipped(w2.data(), h1, b2.data(), h2, 32, 128);
+  simd::matVecClipped(w1.data(), gated, b1.data(), h1buf, h1, in);
+  simd::matVecClipped(w2.data(), h1buf, b2.data(), h2buf, h2, h1);
   float vv = bvo[0];
-  for (int i = 0; i < 32; ++i) vv += wvo[i] * h2[i];
+  for (int i = 0; i < h2; ++i) vv += wvo[i] * h2buf[i];
   value = std::tanh(vv);
-  simd::matVec(wwdl.data(), h2, bwdl.data(), wdl, 3, 32);
+  simd::matVec(wwdl.data(), h2buf, bwdl.data(), wdl, 3, h2);
 }
 
 size_t DenseModel::parameterCount() const {
@@ -124,8 +134,10 @@ void DenseModel::getTensors(std::vector<std::string>& names,
     data.push_back(gate.gb.data());
   }
   int in = widths_.total();
+  int h1 = headH1_;
+  int h2 = headH2_;
   names.insert(names.end(), {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"});
-  shapes.insert(shapes.end(), {{128, in}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+  shapes.insert(shapes.end(), {{h1, in}, {h1}, {h2, h1}, {h2}, {1, h2}, {1}, {3, h2}, {3}});
   data.insert(data.end(), {w1.data(), b1.data(), w2.data(), b2.data(), wvo.data(), bvo.data(),
                            wwdl.data(), bwdl.data()});
 }
@@ -186,6 +198,8 @@ ModelSpec DenseModel::spec() const {
   s.gateOn = gate.enabled();
   s.poolClip = pool.clipOut();
   s.variant = bspec_.variant;
+  s.headH1 = headH1_;
+  s.headH2 = headH2_;
   return s;
 }
 

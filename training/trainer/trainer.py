@@ -60,7 +60,9 @@ class Trainer:
                                            pooling=p.get("pooling", "none"),
                                            pool_clip=p.get("pool_clip", True),
                                            gate_on=p.get("gate_on", False),
-                                           shared_width=p.get("shared_width", 32))
+                                           shared_width=p.get("shared_width", 32),
+                                           head_h1=p.get("head_h1", 128),
+                                           head_h2=p.get("head_h2", 32))
             self.needs_context = False
             self.is_adaptive = False
             self.is_search = False
@@ -75,7 +77,10 @@ class Trainer:
                                               t_high=p.get("t_high", None),
                                               t_low=p.get("t_low", None),
                                               pruned_pairs=p.get("pruned_pairs", ()),
-                                              refine_precision=p.get("refine_precision", "fp32"))
+                                              refine_precision=p.get("refine_precision", "fp32"),
+                                              cheap_hidden=p.get("cheap_hidden", 32),
+                                              ref_h1=p.get("ref_h1", 128),
+                                              ref_h2=p.get("ref_h2", 32))
             self.needs_context = False
             self.is_adaptive = True
             self.is_search = False
@@ -92,7 +97,10 @@ class Trainer:
                                             pruned_pairs=p.get("pruned_pairs", ()),
                                             refine_precision=p.get("refine_precision", "fp32"),
                                             uncertainty_on=True,
-                                            stability_on=config.get("lambda_stab", 0.0) > 0)
+                                            stability_on=config.get("lambda_stab", 0.0) > 0,
+                                            cheap_hidden=p.get("cheap_hidden", 32),
+                                            ref_h1=p.get("ref_h1", 128),
+                                            ref_h2=p.get("ref_h2", 32))
             self.needs_context = False
             self.is_adaptive = True
             self.is_search = True
@@ -140,6 +148,22 @@ class Trainer:
                 lambda_rank=config.get("lambda_rank", 0.1),
                 rank_margin=config.get("rank_margin", 0.05),
             )
+        dist = config.get("distill", {})
+        self.is_distill = bool(dist.get("enabled", False))
+        if self.is_distill:
+            from training.losses.distillation import DistillCompositeLoss
+
+            self.distill_fn = DistillCompositeLoss(
+                task=dist.get("task", "value_wdl"),
+                alpha=dist.get("alpha", 0.5),
+                rank_margin=config.get("rank_margin", 0.05),
+                lambda_wdl=config.get("lambda_wdl", 0.5),
+                lambda_rank=config.get("lambda_rank", 0.1),
+                weight_mode=dist.get("weight_mode", "uniform"),
+                weight_lo=dist.get("weight_lo", 0.25),
+                weight_hi=dist.get("weight_hi", 1.0),
+                lambda_unc_distill=dist.get("lambda_unc_distill", 0.0),
+            )
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
             lr=config.get("lr", 3e-4),
@@ -153,11 +177,21 @@ class Trainer:
         self.step_times = []
 
     def unpack(self, batch):
+        if len(batch) == 6:
+            ids, masks, ctx, value, wdl, teach = batch
+            return ids, masks, ctx, value, wdl, teach
         if len(batch) == 5:
             ids, masks, ctx, value, wdl = batch
-            return ids, masks, ctx, value, wdl
-        ids, masks, value, wdl = batch
-        return ids, masks, None, value, wdl
+            return ids, masks, ctx, value, wdl, None
+        ids, masks, value, wdl = batch[:4]
+        return ids, masks, None, value, wdl, None
+
+    def student_outputs(self, out):
+        if len(out) == 7:
+            return out[2], out[3], out[5]
+        if len(out) == 5:
+            return out[2], out[3], None
+        return out[0], out[1], None
 
     def forward_model(self, ids, masks, ctx):
         ids = [t.to(self.device) for t in ids]
@@ -168,7 +202,7 @@ class Trainer:
 
     def train_step(self, batch, rank_batch=None):
         t0 = time.time()
-        ids, masks, ctx, value, wdl = self.unpack(batch)
+        ids, masks, ctx, value, wdl, teach = self.unpack(batch)
         value = value.to(self.device)
         wdl = wdl.to(self.device)
         self.model.train()
@@ -202,6 +236,19 @@ class Trainer:
         else:
             v_pred, w_pred = out
             losses = self.loss_fn(v_pred, w_pred, value, wdl, rank)
+        if self.is_distill and teach is not None:
+            import torch.nn.functional as F
+
+            sv, sw, su = self.student_outputs(out)
+            tv = teach["v"].to(self.device)
+            tw = teach["w"].to(self.device)
+            tu = teach["u"].to(self.device)
+            dlosses = self.distill_fn(sv, sw, tv, F.one_hot(tw, 3).float(), value,
+                                      wdl, teacher_u=tu, student_u=su, rank=rank)
+            losses = dict(losses)
+            for k, v in dlosses.items():
+                losses[k if k != "total" else "dist_total"] = v
+            losses["total"] = losses["total"] + dlosses["total"]
         self.opt.zero_grad()
         losses["total"].backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -232,13 +279,17 @@ class Trainer:
         self.model.eval()
         tot = {"total": 0.0, "value": 0.0, "wdl": 0.0, "rank": 0.0,
                "cheap_value": 0.0, "cheap_wdl": 0.0, "ref_value": 0.0,
-               "ref_wdl": 0.0, "diff": 0.0, "unc": 0.0, "stab": 0.0}
+               "ref_wdl": 0.0, "diff": 0.0, "unc": 0.0, "stab": 0.0,
+               "task_value": 0.0, "task_wdl": 0.0, "distill": 0.0,
+               "distill_wdl": 0.0, "distill_wmean": 0.0, "unc_distill": 0.0,
+               "dist_total": 0.0}
         racc, wacc, n = 0.0, 0.0, 0
         nb = 0
         cwacc, cn, dsum = 0.0, 0, 0.0
         usum, esum, uusum, eesum, uesum, qn = 0.0, 0.0, 0.0, 0.0, 0.0, 0
+        tsum, tsqn, ttn = 0.0, 0, 0
         for batch in loader:
-            ids, masks, ctx, value, wdl = self.unpack(batch)
+            ids, masks, ctx, value, wdl, teach = self.unpack(batch)
             out = self.forward_model(ids, masks, ctx)
             if self.is_search:
                 cheap_v, cheap_w, v_pred, w_pred, diff, u, _ = out
@@ -266,6 +317,25 @@ class Trainer:
             else:
                 v_pred, w_pred = out
                 losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
+            if self.is_distill and teach is not None:
+                import torch.nn.functional as _F
+
+                sv, sw, su = self.student_outputs(out)
+                tv = teach["v"].to(self.device)
+                tw = teach["w"].to(self.device)
+                tu = teach["u"].to(self.device)
+                dlosses = self.distill_fn(sv, sw, tv, _F.one_hot(tw, 3).float(),
+                                          value.to(self.device), wdl.to(self.device),
+                                          teacher_u=tu, student_u=su)
+                for k, v in dlosses.items():
+                    losses[k if k != "total" else "dist_total"] = v
+            if teach is not None:
+                with torch.no_grad():
+                    tv = teach["v"].to(self.device)
+                    sv, _, _ = self.student_outputs(out)
+                    tsum += (sv.detach() - tv).abs().sum().item()
+                    tsqn += ((tv - value.to(self.device)).abs()).sum().item()
+                    ttn += len(value)
             for k in tot:
                 if k in losses:
                     tot[k] += losses[k].item()
@@ -291,6 +361,9 @@ class Trainer:
             out["unc_err_corr"] = (qn * uesum - usum * esum) / max(1e-12, denom ** 0.5) \
                 if denom > 0 else 0.0
             out["unc_mean"] = usum / max(1, qn)
+        if ttn > 0:
+            out["student_vs_teacher_mae"] = tsum / ttn
+            out["teacher_vs_target_mae"] = tsqn / ttn
         return out
 
     def make_train_loader(self, records, batch_size, shuffle, seed):

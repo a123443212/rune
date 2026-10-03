@@ -358,3 +358,38 @@ void testUncertaintyParamAccounting() {
   CHECK(model.setTensors(names, flat));
   CHECK(!model.setTensors(names, std::vector<float>(n - 1, 0.1f)));
 }
+
+void testAdaptiveStudentWidths() {
+  AdaptiveBuildSpec spec;
+  spec.dim = 16;
+  spec.cheapHidden = 16;
+  spec.refH1 = 64;
+  spec.refH2 = 16;
+  AdaptiveModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  ModelSpec ms = model.spec();
+  CHECK(ms.cheapHidden == 16 && ms.refH1 == 64 && ms.refH2 == 16);
+  AdaptiveBuildSpec bad = spec;
+  bad.refH2 = 2;
+  CHECK(!model.configure(bad, err));
+  VarEmbeddings emb;
+  VarWidths w;
+  for (int g = 0; g < 8; ++g) w.w[g] = 16;
+  emb.configure(w);
+  emb.init(9);
+  std::string path = "/tmp/rune_adaptive_s2_fp32.rune";
+  CHECK(saveAdaptiveRuneFile(path, ms, emb, model, "fp32", err));
+  RuneFile loaded;
+  CHECK(loadRuneFile(path, loaded, err));
+  CHECK(loaded.spec.cheapHidden == 16);
+  AdaptiveEvaluator ref;
+  CHECK(ref.configure(&emb, &model, err));
+  AdaptiveEvaluator got;
+  AdaptiveModel* lm = static_cast<AdaptiveModel*>(loaded.arch.get());
+  CHECK(got.configure(&loaded.varEmbeddings, lm, err));
+  Board b("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
+  AdaptiveEvalResult v1 = ref.evaluateBoard(b, AdaptiveMode::Always, 0.0f, true, false);
+  AdaptiveEvalResult v2 = got.evaluateBoard(b, AdaptiveMode::Always, 0.0f, true, false);
+  CHECK_CLOSE(v1.value, v2.value, 1e-6f);
+}

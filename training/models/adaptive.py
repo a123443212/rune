@@ -70,12 +70,14 @@ class RefinementBlock(nn.Module):
 
 
 class RefinedHead(nn.Module):
-    def __init__(self, total_dim):
+    def __init__(self, total_dim, h1=128, h2=32):
         super().__init__()
-        self.fc1 = nn.Linear(total_dim, 128)
-        self.fc2 = nn.Linear(128, 32)
-        self.fcv = nn.Linear(32, 1)
-        self.fcwdl = nn.Linear(32, 3)
+        self.h1 = h1
+        self.h2 = h2
+        self.fc1 = nn.Linear(total_dim, h1)
+        self.fc2 = nn.Linear(h1, h2)
+        self.fcv = nn.Linear(h2, 1)
+        self.fcwdl = nn.Linear(h2, 3)
 
     def forward(self, flat):
         h1 = torch.clamp(self.fc1(flat), 0.0, 1.0)
@@ -87,7 +89,8 @@ class RefinedHead(nn.Module):
 class AdaptiveModel(nn.Module):
     def __init__(self, dim=32, cheap_pooling="none", alpha=1.0,
                  threshold=0.5, t_high=None, t_low=None, pruned_pairs=(),
-                 refine_precision="fp32"):
+                 refine_precision="fp32", cheap_hidden=32, ref_h1=128,
+                 ref_h2=32):
         super().__init__()
         if cheap_pooling not in ("none", "shared"):
             raise ValueError(f"unknown cheap pooling {cheap_pooling}")
@@ -99,15 +102,18 @@ class AdaptiveModel(nn.Module):
         self.t_high = threshold if t_high is None else t_high
         self.t_low = t_low
         self.refine_precision = refine_precision
+        self.cheap_hidden = cheap_hidden
+        self.ref_h1 = ref_h1
+        self.ref_h2 = ref_h2
         widths = [dim] * TOKENS
         self.embedder = VarEmbedder(widths)
         self.pool = TokenPool(widths, cheap_pooling, True, 32)
         self.gate = ChannelGate(widths, False)
         total = TOKENS * dim
-        self.cheap_head = CheapHead(total)
+        self.cheap_head = CheapHead(total, cheap_hidden)
         self.difficulty = DifficultyHead(total)
         self.refine = RefinementBlock(TOKENS, dim, alpha, tuple(pruned_pairs))
-        self.refined_head = RefinedHead(total)
+        self.refined_head = RefinedHead(total, ref_h1, ref_h2)
 
     def cheap_forward(self, group_ids, group_mask):
         acc = self.embedder(group_ids, group_mask)
@@ -223,11 +229,16 @@ class AdaptiveModel(nn.Module):
             "t_low": self.t_low,
             "refine_precision": self.refine_precision,
             "pruned_pairs": [list(p) for p in self.refine.prune_mask.eq(0).nonzero().tolist()],
+            "cheap_hidden": self.cheap_hidden,
+            "ref_h1": self.ref_h1,
+            "ref_h2": self.ref_h2,
         }
 
 
 def build_adaptive_model(dim=32, cheap_pooling="none", alpha=1.0, threshold=0.5,
                          t_high=None, t_low=None, pruned_pairs=(),
-                         refine_precision="fp32"):
+                         refine_precision="fp32", cheap_hidden=32, ref_h1=128,
+                         ref_h2=32):
     return AdaptiveModel(dim, cheap_pooling, alpha, threshold, t_high, t_low,
-                         tuple(pruned_pairs), refine_precision)
+                         tuple(pruned_pairs), refine_precision, cheap_hidden,
+                         ref_h1, ref_h2)

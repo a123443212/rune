@@ -23,13 +23,18 @@ MODEL_IDS = {
     "rune_05_unc": "RUNE-05",
     "rune_05_routing": "RUNE-05",
     "rune_05_stab": "RUNE-05",
+    "rune_s1": "RUNE-03-A",
+    "rune_s2": "RUNE-03-A",
+    "rune_s3": "RUNE-03-A",
+    "rune_s4": "RUNE-03-A",
 }
 
 CORE_MODELS = ("rune_mlp",)
 EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
                        "rune_03A", "rune_03B", "rune_03C", "rune_03D",
                        "rune_04_cheap", "rune_04_always", "rune_04_adaptive",
-                       "rune_05_unc", "rune_05_routing", "rune_05_stab")
+                       "rune_05_unc", "rune_05_routing", "rune_05_stab",
+                       "rune_s1", "rune_s2", "rune_s3", "rune_s4")
 
 ADAPTIVE_MODES = {
     "rune_04_cheap": "cheap",
@@ -61,6 +66,10 @@ def experimental_reasons(config):
         reasons.append("uncertainty loss is experimental (L1 leg only, calibration-gated)")
     if loss.get("stability", False):
         reasons.append("stability loss is experimental (L2 leg only, needs child data)")
+    dist = config.get("distillation", {})
+    if dist.get("enabled", False):
+        reasons.append(f"distillation is experimental (task={dist.get('task', 'value_wdl')}, "
+                       f"weighting={dist.get('weight_mode', 'uniform')})")
     sampling = config.get("sampling", {})
     if sampling.get("mode", "none") == "disagreement_mix":
         reasons.append("disagreement sampling is experimental (stage-gated after S0)")
@@ -83,6 +92,17 @@ def dataset_hash(records):
     for r in sorted(r["fen"] for r in records):
         h.update(r.encode())
     return h.hexdigest()[:16]
+
+
+def teacher_hash(records):
+    h = hashlib.sha256()
+    n = 0
+    for r in sorted(records, key=lambda r: r["fen"]):
+        if "teacher_v" not in r:
+            return None, 0
+        h.update(f"{r['fen']}:{r['teacher_v']:.6f}:{r.get('teacher_id', '')}".encode())
+        n += 1
+    return h.hexdigest()[:16], n
 
 
 def load_config(path):
@@ -134,6 +154,9 @@ class ScreeningRunner:
             "test_size": len(splits["test"]),
             "dataset_hash": dataset_hash(kept),
         }
+        thash, tn = teacher_hash(kept)
+        info["teacher_hash"] = thash
+        info["teacher_labeled"] = tn
         return splits, info
 
     def run_model(self, model_key, splits, data_info, milestones):
@@ -164,6 +187,17 @@ class ScreeningRunner:
                 "pool_clip": self.cfg.get("architecture", {}).get("pool_clip", True),
                 "gate_on": self.cfg.get("architecture", {}).get("gate_on", False),
                 "shared_width": self.cfg.get("architecture", {}).get("shared_width", 32),
+                "head_h1": self.cfg.get("architecture", {}).get("head_h1", 128),
+                "head_h2": self.cfg.get("architecture", {}).get("head_h2", 32),
+            },
+            "distill": {
+                "enabled": self.cfg.get("distillation", {}).get("enabled", False),
+                "task": self.cfg.get("distillation", {}).get("task", "value_wdl"),
+                "alpha": self.cfg.get("distillation", {}).get("alpha", 0.5),
+                "weight_mode": self.cfg.get("distillation", {}).get("weight_mode", "uniform"),
+                "weight_lo": self.cfg.get("distillation", {}).get("weight_lo", 0.25),
+                "weight_hi": self.cfg.get("distillation", {}).get("weight_hi", 1.0),
+                "lambda_unc_distill": self.cfg.get("distillation", {}).get("lambda_unc_distill", 0.0),
             },
             "adaptive_params": {
                 "mode": ADAPTIVE_MODES.get(model_key, "adaptive"),
@@ -176,6 +210,9 @@ class ScreeningRunner:
                 "t_low": self.cfg.get("routing", {}).get("t_low", None),
                 "pruned_pairs": self.cfg.get("architecture", {}).get("pruned_pairs", []),
                 "refine_precision": self.cfg.get("precision", {}).get("refine", "fp32"),
+                "cheap_hidden": self.cfg.get("architecture", {}).get("cheap_hidden", 32),
+                "ref_h1": self.cfg.get("architecture", {}).get("ref_h1", 128),
+                "ref_h2": self.cfg.get("architecture", {}).get("ref_h2", 32),
                 "lambda_diff": self.cfg.get("loss", {}).get("lambda_diff", 0.1),
                 "diff_margin": self.cfg.get("loss", {}).get("diff_margin", 0.1),
             },
@@ -215,6 +252,7 @@ class ScreeningRunner:
                 "trained_positions": trainer.positions_seen,
                 "feature_set": "grouped_hkav2_fullthreats_v01",
                 "teacher_id": self.cfg.get("data", {}).get("teacher", "unknown"),
+                "distillation": self.cfg.get("distillation", {"enabled": False}),
                 "loss_config": {"wdl": loss_cfg.get("wdl", True),
                                 "ranking": loss_cfg.get("ranking", False),
                                 "uncertainty": loss_cfg.get("uncertainty", False),

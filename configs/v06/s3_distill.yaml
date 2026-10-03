@@ -1,0 +1,77 @@
+experiment:
+  name: rune_v06_s3_distill
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v06_s3_distill
+
+data:
+  dataset: clean_v06
+  teacher: teacher_v06
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_s3
+
+architecture:
+  tokens: 8
+  token_dim: 12
+  token_dims: [12, 12, 12, 12, 12, 12, 12, 12]
+  pooling: none
+  pool_clip: true
+  gate_on: false
+  shared_width: 32
+  head_h1: 48
+  head_h2: 12
+  cheap_pooling: none
+  gate: clip
+  alpha: 1.0
+
+routing:
+  threshold: 0.5
+  search_routing: difficulty
+  t_high: null
+  t_low: null
+
+precision:
+  base: fp32
+  refine: fp32
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+  uncertainty: false
+  stability: false
+  lambda_diff: 0.1
+  diff_margin: 0.1
+
+distillation:
+  enabled: true
+  task: value_wdl
+  alpha: 0.5
+  weight_mode: uniform
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  A1/D1 at S3 (~33% compute target). Same drill as S2; feeds the compression curve.

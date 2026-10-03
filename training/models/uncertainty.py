@@ -50,9 +50,11 @@ class StabilityHead(nn.Module):
 class SearchAwareModel(AdaptiveModel):
     def __init__(self, dim=32, cheap_pooling="none", alpha=1.0,
                  threshold=0.5, t_high=None, t_low=None, pruned_pairs=(),
-                 refine_precision="fp32", uncertainty_on=True, stability_on=False):
+                 refine_precision="fp32", uncertainty_on=True, stability_on=False,
+                 cheap_hidden=32, ref_h1=128, ref_h2=32):
         super().__init__(dim, cheap_pooling, alpha, threshold, t_high, t_low,
-                         tuple(pruned_pairs), refine_precision)
+                         tuple(pruned_pairs), refine_precision, cheap_hidden,
+                         ref_h1, ref_h2)
         self.uncertainty_on = uncertainty_on
         self.stability_on = stability_on
         total = 8 * dim
@@ -110,7 +112,8 @@ class SearchAwareModel(AdaptiveModel):
 def build_search_model(dim=32, cheap_pooling="none", alpha=1.0, threshold=0.5,
                        t_high=None, t_low=None, pruned_pairs=(),
                        refine_precision="fp32", uncertainty_on=True,
-                       stability_on=False):
+                       stability_on=False, cheap_hidden=32, ref_h1=128,
+                       ref_h2=32):
     return SearchAwareModel(dim, cheap_pooling, alpha, threshold, t_high, t_low,
                             tuple(pruned_pairs), refine_precision, uncertainty_on,
-                            stability_on)
+                            stability_on, cheap_hidden, ref_h1, ref_h2)

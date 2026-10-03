@@ -105,6 +105,14 @@ bool AdaptiveModel::configure(const AdaptiveBuildSpec& spec, std::string& err) {
   bspec_ = spec;
   dim_ = spec.dim;
   total_ = 8 * dim_;
+  if (spec.cheapHidden < 4 || spec.cheapHidden > 128 || spec.refH1 < 4 ||
+      spec.refH1 > 512 || spec.refH2 < 4 || spec.refH2 > 512) {
+    err = "bad adaptive head widths";
+    return false;
+  }
+  cheapHidden_ = spec.cheapHidden;
+  refH1_ = spec.refH1;
+  refH2_ = spec.refH2;
   if (spec.hasUncertainty) {
     archId_ = "RUNE-05";
     archVersion_ = "0.5.0";
@@ -116,12 +124,15 @@ bool AdaptiveModel::configure(const AdaptiveBuildSpec& spec, std::string& err) {
   for (int g = 0; g < 8; ++g) widths.w[g] = dim_;
   if (!pool.configure(widths, mode, true, 32, err)) return false;
   int in = total_;
+  int ch = cheapHidden_;
+  int r1 = refH1_;
+  int r2 = refH2_;
   uint64_t s = 40400 + dim_;
-  initVec(cw1, 32 * in, s, 0.05f);
-  initVec(cb1, 32, s, 0.01f);
-  initVec(cwv, 1 * 32, s, 0.05f);
+  initVec(cw1, ch * in, s, 0.05f);
+  initVec(cb1, ch, s, 0.01f);
+  initVec(cwv, 1 * ch, s, 0.05f);
   initVec(cbv, 1, s, 0.01f);
-  initVec(cww, 3 * 32, s, 0.05f);
+  initVec(cww, 3 * ch, s, 0.05f);
   initVec(cbw, 3, s, 0.01f);
   initVec(dw, 1 * in, s, 0.01f);
   initVec(db, 1, s, 0.0f);
@@ -136,29 +147,30 @@ bool AdaptiveModel::configure(const AdaptiveBuildSpec& spec, std::string& err) {
   initVec(wv, dim_ * dim_, s, 0.08f);
   initVec(bv, dim_, s, 0.01f);
   gabS.assign(64, 0.0f);
-  initVec(w1, 128 * in, s, 0.05f);
-  initVec(b1, 128, s, 0.01f);
-  initVec(w2, 32 * 128, s, 0.05f);
-  initVec(b2, 32, s, 0.01f);
-  initVec(wvo, 1 * 32, s, 0.05f);
+  initVec(w1, r1 * in, s, 0.05f);
+  initVec(b1, r1, s, 0.01f);
+  initVec(w2, r2 * r1, s, 0.05f);
+  initVec(b2, r2, s, 0.01f);
+  initVec(wvo, 1 * r2, s, 0.05f);
   initVec(bvo, 1, s, 0.01f);
-  initVec(wwdl, 3 * 32, s, 0.05f);
+  initVec(wwdl, 3 * r2, s, 0.05f);
   initVec(bwdl, 3, s, 0.01f);
   for (int i = 0; i < 64; ++i) pruneMask_[i] = true;
   for (const auto& p : spec.prunedPairs) pruneMask_[p.first * 8 + p.second] = false;
-  scratch_.assign(32 + 3 * in + 64 + 64 + in + 128 + 32, 0.0f);
+  scratch_.assign(ch + 3 * in + 64 + 64 + in + r1 + r2, 0.0f);
   return true;
 }
 
 void AdaptiveModel::cheapForward(const float* acc, float* cheapFlat, float& value, float* wdl,
                                  float& difficulty) const {
+  int ch = cheapHidden_;
   pool.forward(acc, cheapFlat);
   float* h = scratch_.data();
-  simd::matVecClipped(cw1.data(), cheapFlat, cb1.data(), h, 32, total_);
+  simd::matVecClipped(cw1.data(), cheapFlat, cb1.data(), h, ch, total_);
   float vv = cbv[0];
-  for (int i = 0; i < 32; ++i) vv += cwv[i] * h[i];
+  for (int i = 0; i < ch; ++i) vv += cwv[i] * h[i];
   value = std::tanh(vv);
-  simd::matVec(cww.data(), h, cbw.data(), wdl, 3, 32);
+  simd::matVec(cww.data(), h, cbw.data(), wdl, 3, ch);
   float d = db[0];
   for (int i = 0; i < total_; ++i) d += dw[i] * cheapFlat[i];
   difficulty = d;
@@ -166,14 +178,17 @@ void AdaptiveModel::cheapForward(const float* acc, float* cheapFlat, float& valu
 
 void AdaptiveModel::refineForward(const float* cheapFlat, float& value, float* wdl) const {
   int d = dim_;
-  float* q = scratch_.data() + 32;
+  int ch = cheapHidden_;
+  int r1 = refH1_;
+  int r2 = refH2_;
+  float* q = scratch_.data() + ch;
   float* k = q + total_;
   float* v = k + total_;
   float* s = v + total_;
   float* y = s + 64;
   float* mixed = y + 64;
   float* h1 = mixed + total_;
-  float* h2 = h1 + 128;
+  float* h2 = h1 + r1;
   for (int i = 0; i < 8; ++i) {
     simd::matVec(wq.data(), cheapFlat + i * d, bq.data(), q + i * d, d, d);
     simd::matVec(wk.data(), cheapFlat + i * d, bk.data(), k + i * d, d, d);
@@ -186,12 +201,12 @@ void AdaptiveModel::refineForward(const float* cheapFlat, float& value, float* w
   }
   simd::matMul(s, v, y, 8, d, 8);
   for (int i = 0; i < total_; ++i) mixed[i] = cheapFlat[i] + bspec_.alpha * y[i];
-  simd::matVecClipped(w1.data(), mixed, b1.data(), h1, 128, total_);
-  simd::matVecClipped(w2.data(), h1, b2.data(), h2, 32, 128);
+  simd::matVecClipped(w1.data(), mixed, b1.data(), h1, r1, total_);
+  simd::matVecClipped(w2.data(), h1, b2.data(), h2, r2, r1);
   float vv = bvo[0];
-  for (int i = 0; i < 32; ++i) vv += wvo[i] * h2[i];
+  for (int i = 0; i < r2; ++i) vv += wvo[i] * h2[i];
   value = std::tanh(vv);
-  simd::matVec(wwdl.data(), h2, bwdl.data(), wdl, 3, 32);
+  simd::matVec(wwdl.data(), h2, bwdl.data(), wdl, 3, r2);
 }
 
 bool AdaptiveModel::route(float difficulty, bool prev, float threshold) const {
@@ -275,14 +290,17 @@ void AdaptiveModel::getTensors(std::vector<std::string>& names,
   }
   int in = total_;
   int d = dim_;
+  int ch = cheapHidden_;
+  int r1 = refH1_;
+  int r2 = refH2_;
   const std::vector<std::string> tail = {"cw1", "cb1", "cwv", "cbv", "cww", "cbw",
                                          "dw",    "db",  "wq",  "bq",  "wk",  "bk",
                                          "wvv",   "bvv", "gabS", "w1", "b1",  "w2",
                                          "b2",    "wvo", "bvo", "wwdl", "bwdl"};
   const std::vector<std::vector<int>> tailShapes = {
-      {32, in}, {32}, {1, 32}, {1}, {3, 32}, {3}, {1, in}, {1}, {d, d}, {d},
-      {d, d},   {d},  {d, d},  {d}, {8, 8},   {128, in},  {128}, {32, 128},
-      {32},     {1, 32}, {1},  {3, 32},       {3}};
+      {ch, in}, {ch}, {1, ch}, {1}, {3, ch}, {3}, {1, in}, {1}, {d, d}, {d},
+      {d, d},   {d},  {d, d},  {d}, {8, 8},   {r1, in},   {r1},  {r2, r1},
+      {r2},     {1, r2}, {1},  {3, r2},       {3}};
   for (const auto& n : tail) names.push_back(n);
   for (const auto& sh : tailShapes) shapes.push_back(sh);
   if (bspec_.hasUncertainty) {
@@ -359,6 +377,9 @@ ModelSpec AdaptiveModel::spec() const {
   s.prunedPairs = bspec_.prunedPairs;
   s.hasUncertainty = bspec_.hasUncertainty;
   s.hasStabilityHead = bspec_.hasStabilityHead;
+  s.cheapHidden = cheapHidden_;
+  s.refH1 = refH1_;
+  s.refH2 = refH2_;
   return s;
 }
 

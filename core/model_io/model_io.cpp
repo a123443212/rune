@@ -208,6 +208,8 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.pooling = extractString(header, "pooling");
   if (spec.pooling.empty()) spec.pooling = "none";
   spec.gateOn = extractBool(header, "gate_on", false);
+  spec.headH1 = static_cast<int>(extractInt(header, "head_h1", 128));
+  spec.headH2 = static_cast<int>(extractInt(header, "head_h2", 32));
   spec.tokenDims.clear();
   std::vector<int> td;
   if (parseIntList(header, "token_dims", td)) spec.tokenDims = td;
@@ -222,6 +224,9 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.prunedPairs.clear();
   std::vector<std::pair<int, int>> pp;
   if (parseIntPairs(header, "pruned_pairs", pp)) spec.prunedPairs = pp;
+  spec.cheapHidden = static_cast<int>(extractInt(header, "cheap_hidden", 32));
+  spec.refH1 = static_cast<int>(extractInt(header, "ref_h1", 128));
+  spec.refH2 = static_cast<int>(extractInt(header, "ref_h2", 32));
   spec.hasUncertainty = extractBool(header, "uncertainty", false);
   spec.hasStabilityHead = extractBool(header, "stability_head", false);
 }
@@ -273,6 +278,8 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     ds.poolClip = extractBool(header, "pool_clip", true);
     ds.gateOn = out.spec.gateOn;
     ds.sharedWidth = static_cast<int>(extractInt(header, "shared_width", 32));
+    ds.headH1 = static_cast<int>(extractInt(header, "head_h1", 128));
+    ds.headH2 = static_cast<int>(extractInt(header, "head_h2", 32));
     out.arch = createDense(ds, err);
     if (!out.arch) {
       if (err.empty()) err = "dense build failed";
@@ -305,6 +312,9 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     as.refinePrecision = out.spec.refinePrecision;
     as.hasUncertainty = out.isUncertainty;
     as.hasStabilityHead = out.spec.hasStabilityHead;
+    as.cheapHidden = out.spec.cheapHidden;
+    as.refH1 = out.spec.refH1;
+    as.refH2 = out.spec.refH2;
     out.arch = createAdaptive(as, err);
     if (!out.arch) {
       if (err.empty()) err = "adaptive build failed";

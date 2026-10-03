@@ -50,3 +50,5 @@ void testUncertaintyBounds();
 void testSearchRoutingModes();
 void testUncertaintyModelIO();
 void testUncertaintyParamAccounting();
+void testDenseStudentWidths();
+void testAdaptiveStudentWidths();

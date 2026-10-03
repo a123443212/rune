@@ -19,6 +19,8 @@ struct DenseBuildSpec {
   bool poolClip = true;
   bool gateOn = false;
   int sharedWidth = 32;
+  int headH1 = 128;
+  int headH2 = 32;
 };
 
 class DenseModel : public IArchitecture {
@@ -45,6 +47,8 @@ class DenseModel : public IArchitecture {
   std::string archId_ = "RUNE-03-A";
   DenseBuildSpec bspec_;
   VarWidths widths_;
+  int headH1_ = 128;
+  int headH2_ = 32;
   mutable std::vector<float> scratch_;
 };
 

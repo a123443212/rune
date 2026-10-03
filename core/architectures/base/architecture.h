@@ -33,6 +33,11 @@ struct ModelSpec {
   std::vector<std::pair<int, int>> prunedPairs;
   bool hasUncertainty = false;
   bool hasStabilityHead = false;
+  int headH1 = 128;
+  int headH2 = 32;
+  int cheapHidden = 32;
+  int refH1 = 128;
+  int refH2 = 32;
 
   std::string canonicalString() const;
   uint64_t configHash() const;

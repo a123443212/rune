@@ -78,7 +78,9 @@ def export_model(model, path, quantization="fp32"):
     for key in ("gate", "alpha", "context_dim", "variant", "token_dims", "pooling",
                 "pool_clip", "gate_on", "shared_width", "cheap_pooling",
                 "threshold", "t_high", "t_low", "refine_precision",
-                "pruned_pairs", "uncertainty", "stability_head"):
+                "pruned_pairs", "uncertainty", "stability_head", "head_h1",
+                "head_h2", "cheap_hidden", "ref_h1", "ref_h2", "teacher_id",
+                "teacher_hash", "student_of"):
         if key in spec:
             header[key] = spec[key]
     if spec["arch"].startswith(("RUNE-03-", "RUNE-04", "RUNE-05")):

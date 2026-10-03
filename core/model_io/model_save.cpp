@@ -267,6 +267,8 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   h << ",\"pool_clip\":" << (spec.poolClip ? 1 : 0);
   h << ",\"gate_on\":" << (spec.gateOn ? 1 : 0);
   h << ",\"shared_width\":" << sw;
+  h << ",\"head_h1\":" << spec.headH1;
+  h << ",\"head_h2\":" << spec.headH2;
   h << ",\"scales\":{";
   for (int g = 0; g < 8; ++g) {
     if (g > 0) h << ",";
@@ -383,6 +385,9 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
   h << ",\"refine_precision\":\"" << spec.refinePrecision << "\"";
   h << ",\"uncertainty\":" << (spec.hasUncertainty ? "true" : "false");
   h << ",\"stability_head\":" << (spec.hasStabilityHead ? "true" : "false");
+  h << ",\"cheap_hidden\":" << spec.cheapHidden;
+  h << ",\"ref_h1\":" << spec.refH1;
+  h << ",\"ref_h2\":" << spec.refH2;
   h << ",\"pruned_pairs\":[";
   for (size_t i = 0; i < spec.prunedPairs.size(); ++i) {
     if (i > 0) h << ",";

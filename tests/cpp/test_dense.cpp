@@ -289,3 +289,39 @@ void testDenseParamAccounting() {
   CHECK(plain.pool.parameterCount() == 0);
   CHECK(plain.gate.parameterCount() == 0);
 }
+
+void testDenseStudentWidths() {
+  DenseBuildSpec spec;
+  spec.variant = "A";
+  spec.dims = {16, 16, 16, 16, 16, 16, 16, 16};
+  spec.headH1 = 64;
+  spec.headH2 = 16;
+  DenseModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  ModelSpec ms = model.spec();
+  CHECK(ms.headH1 == 64 && ms.headH2 == 16);
+  DenseBuildSpec bad = spec;
+  bad.headH1 = 2;
+  CHECK(!model.configure(bad, err));
+  VarEmbeddings emb;
+  VarWidths w;
+  CHECK(VarWidths::make(spec.dims, w, err));
+  emb.configure(w);
+  emb.init(5);
+  std::string path = "/tmp/rune_dense_s2_fp32.rune";
+  CHECK(saveDenseRuneFile(path, ms, emb, model, "fp32", err));
+  RuneFile loaded;
+  CHECK(loadRuneFile(path, loaded, err));
+  CHECK(loaded.spec.headH1 == 64 && loaded.spec.headH2 == 16);
+  DenseEvaluator ref;
+  CHECK(ref.configure(&emb, &model, err));
+  DenseEvaluator got;
+  DenseModel* lm = static_cast<DenseModel*>(loaded.arch.get());
+  CHECK(got.configure(&loaded.varEmbeddings, lm, err));
+  Board b("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+  float v1, v2, w1[3], w2[3];
+  ref.evaluateBoard(b, v1, w1);
+  got.evaluateBoard(b, v2, w2);
+  CHECK_CLOSE(v1, v2, 1e-6f);
+}

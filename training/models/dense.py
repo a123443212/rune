@@ -103,12 +103,14 @@ class ChannelGate(nn.Module):
 
 
 class DenseHead(nn.Module):
-    def __init__(self, total_dim):
+    def __init__(self, total_dim, h1=128, h2=32):
         super().__init__()
-        self.fc1 = nn.Linear(total_dim, 128)
-        self.fc2 = nn.Linear(128, 32)
-        self.fcv = nn.Linear(32, 1)
-        self.fcwdl = nn.Linear(32, 3)
+        self.h1 = h1
+        self.h2 = h2
+        self.fc1 = nn.Linear(total_dim, h1)
+        self.fc2 = nn.Linear(h1, h2)
+        self.fcv = nn.Linear(h2, 1)
+        self.fcwdl = nn.Linear(h2, 3)
 
     def forward(self, flat):
         h1 = torch.clamp(self.fc1(flat), 0.0, 1.0)
@@ -119,7 +121,7 @@ class DenseHead(nn.Module):
 
 class DenseModel(nn.Module):
     def __init__(self, variant="A", token_dims=None, pooling="none", pool_clip=True,
-                 gate_on=False, shared_width=SHARED_WIDTH):
+                 gate_on=False, shared_width=SHARED_WIDTH, head_h1=128, head_h2=32):
         super().__init__()
         if variant not in VARIANTS:
             raise ValueError(f"unknown variant {variant}")
@@ -129,6 +131,8 @@ class DenseModel(nn.Module):
         self.pool_clip = pool_clip
         self.gate_on = gate_on
         self.shared_width = shared_width
+        self.head_h1 = head_h1
+        self.head_h2 = head_h2
         if pooling == "shared":
             group_widths = [shared_width] * 8
         else:
@@ -137,7 +141,7 @@ class DenseModel(nn.Module):
         self.embedder = VarEmbedder(group_widths)
         self.pool = TokenPool(self.token_dims, pooling, pool_clip, shared_width)
         self.gate = ChannelGate(self.token_dims, gate_on)
-        self.head = DenseHead(sum(self.token_dims))
+        self.head = DenseHead(sum(self.token_dims), head_h1, head_h2)
 
     def forward(self, group_ids, group_mask):
         acc = self.embedder(group_ids, group_mask)
@@ -212,6 +216,8 @@ class DenseModel(nn.Module):
             "pool_clip": self.pool_clip,
             "gate_on": self.gate_on,
             "shared_width": self.shared_width,
+            "head_h1": self.head_h1,
+            "head_h2": self.head_h2,
         }
 
 
@@ -243,7 +249,8 @@ def allocation_for(name):
 
 
 def build_dense_model(variant="A", token_dims=None, pooling=None, pool_clip=True,
-                      gate_on=None, shared_width=SHARED_WIDTH):
+                      gate_on=None, shared_width=SHARED_WIDTH, head_h1=None,
+                      head_h2=None):
     base = dict(dense_presets()[variant])
     if token_dims is not None:
         base["token_dims"] = token_dims
@@ -251,4 +258,8 @@ def build_dense_model(variant="A", token_dims=None, pooling=None, pool_clip=True
         base["pooling"] = pooling
     if gate_on is not None:
         base["gate_on"] = gate_on
+    if head_h1 is not None:
+        base["head_h1"] = head_h1
+    if head_h2 is not None:
+        base["head_h2"] = head_h2
     return DenseModel(shared_width=shared_width, **base)

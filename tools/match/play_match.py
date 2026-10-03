@@ -112,6 +112,13 @@ def load_model_for_match(arch_id, runepath, build_dir):
     if header["arch"] == "RUNE-REL-02":
         model = rb.FlexModel(header["tokens"], header["token_dim"], header.get("gate", "clip"),
                              header.get("alpha", 1.0), header["geometric_bias"] == "dynamic")
+    elif header["arch"].startswith("RUNE-03-"):
+        model = rb.DenseModel(header["arch"].split("-")[-1], header["token_dims"],
+                              header.get("pooling", "none"),
+                              bool(header.get("pool_clip", True)),
+                              bool(header.get("gate_on", False)),
+                              int(header.get("head_h1", 128)),
+                              int(header.get("head_h2", 32)))
     elif header["arch"] == "RUNE-04":
         model = rb.AdaptiveModel(header["token_dim"], header.get("cheap_pooling", "none"),
                                  float(header.get("threshold", 0.5)))
@@ -125,7 +132,19 @@ def load_model_for_match(arch_id, runepath, build_dir):
         if arr.dtype.name == "int8":
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]
         model.set_embedding(g, [float(x) for x in arr.reshape(-1)])
-    names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] not in ("RUNE-REL-02", "RUNE-04", "RUNE-05") else None
+    names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] not in ("RUNE-REL-02", "RUNE-04", "RUNE-05") and not header["arch"].startswith("RUNE-03-") else None
+    if header["arch"].startswith("RUNE-03-"):
+        names = []
+        if header.get("pooling", "none") == "per_token":
+            for t in range(8):
+                names += [f"pool_w{t}", f"pool_b{t}"]
+        elif header.get("pooling", "none") == "shared":
+            names += ["pool_S"]
+            for t in range(8):
+                names += [f"pool_s{t}", f"pool_b{t}"]
+        if header.get("gate_on", False):
+            names += ["gate_a", "gate_b"]
+        names += ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
     if header["arch"] in ("RUNE-04", "RUNE-05"):
         names = []
         if header.get("cheap_pooling", "none") == "shared":
