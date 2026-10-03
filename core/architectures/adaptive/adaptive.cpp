@@ -39,6 +39,33 @@ const char* adaptiveModeName(AdaptiveMode mode) {
   return "adaptive";
 }
 
+bool searchRouteFromString(const std::string& name, SearchRoute& out) {
+  if (name == "difficulty") {
+    out = SearchRoute::Difficulty;
+    return true;
+  }
+  if (name == "uncertainty") {
+    out = SearchRoute::Uncertainty;
+    return true;
+  }
+  if (name == "both") {
+    out = SearchRoute::Both;
+    return true;
+  }
+  if (name == "full") {
+    out = SearchRoute::Full;
+    return true;
+  }
+  return false;
+}
+
+const char* searchRouteName(SearchRoute route) {
+  if (route == SearchRoute::Difficulty) return "difficulty";
+  if (route == SearchRoute::Uncertainty) return "uncertainty";
+  if (route == SearchRoute::Both) return "both";
+  return "full";
+}
+
 float AdaptiveModel::clip01(float v) {
   if (v < 0.0f) return 0.0f;
   if (v > 1.0f) return 1.0f;
@@ -78,6 +105,13 @@ bool AdaptiveModel::configure(const AdaptiveBuildSpec& spec, std::string& err) {
   bspec_ = spec;
   dim_ = spec.dim;
   total_ = 8 * dim_;
+  if (spec.hasUncertainty) {
+    archId_ = "RUNE-05";
+    archVersion_ = "0.5.0";
+  } else {
+    archId_ = "RUNE-04";
+    archVersion_ = "0.4.0";
+  }
   VarWidths widths;
   for (int g = 0; g < 8; ++g) widths.w[g] = dim_;
   if (!pool.configure(widths, mode, true, 32, err)) return false;
@@ -91,6 +125,10 @@ bool AdaptiveModel::configure(const AdaptiveBuildSpec& spec, std::string& err) {
   initVec(cbw, 3, s, 0.01f);
   initVec(dw, 1 * in, s, 0.01f);
   initVec(db, 1, s, 0.0f);
+  initVec(uw, 1 * in, s, 0.01f);
+  initVec(ub, 1, s, 0.0f);
+  initVec(sw, 1 * in, s, 0.01f);
+  initVec(sb, 1, s, 0.0f);
   initVec(wq, dim_ * dim_, s, 0.08f);
   initVec(bq, dim_, s, 0.01f);
   initVec(wk, dim_ * dim_, s, 0.08f);
@@ -165,6 +203,30 @@ bool AdaptiveModel::route(float difficulty, bool prev) const {
   return route(difficulty, prev, bspec_.threshold);
 }
 
+float AdaptiveModel::uncertaintyForward(const float* cheapFlat) const {
+  float z = ub[0];
+  for (int i = 0; i < total_; ++i) z += uw[i] * cheapFlat[i];
+  return 1.0f / (1.0f + std::exp(-z));
+}
+
+float AdaptiveModel::stabilityForward(const float* cheapFlat) const {
+  float v = sb[0];
+  for (int i = 0; i < total_; ++i) v += sw[i] * cheapFlat[i];
+  return v < 0.0f ? 0.0f : v;
+}
+
+bool AdaptiveModel::routeSearch(SearchRoute route, float difficulty, float uncertainty,
+                                float stability, bool prev, const RoutingThresholds& t) const {
+  bool needDiff;
+  if (t.hasTLow) needDiff = prev ? difficulty >= t.tLow : difficulty >= t.diffT;
+  else needDiff = difficulty >= t.diffT;
+  bool needUnc = uncertainty >= t.uncT;
+  if (route == SearchRoute::Difficulty) return needDiff;
+  if (route == SearchRoute::Uncertainty) return needUnc;
+  if (route == SearchRoute::Both) return needDiff || needUnc;
+  return needDiff || needUnc || (stability >= t.stabT);
+}
+
 void AdaptiveModel::forward(const float* tokens, float& value, float* wdl) const {
   std::vector<float> cheap(total_);
   float diff = 0.0f;
@@ -175,16 +237,20 @@ void AdaptiveModel::forward(const float* tokens, float& value, float* wdl) const
 }
 
 size_t AdaptiveModel::parameterCount() const {
-  return pool.parameterCount() + cw1.size() + cb1.size() + cwv.size() + cbv.size() +
-         cww.size() + cbw.size() + dw.size() + db.size() + wq.size() + bq.size() +
-         wk.size() + bk.size() + wv.size() + bv.size() + gabS.size() + w1.size() +
-         b1.size() + w2.size() + b2.size() + wvo.size() + bvo.size() + wwdl.size() +
-         bwdl.size();
+  size_t n = pool.parameterCount() + cw1.size() + cb1.size() + cwv.size() + cbv.size() +
+             cww.size() + cbw.size() + dw.size() + db.size() + wq.size() + bq.size() +
+             wk.size() + bk.size() + wv.size() + bv.size() + gabS.size() + w1.size() +
+             b1.size() + w2.size() + b2.size() + wvo.size() + bvo.size() + wwdl.size() +
+             bwdl.size();
+  if (bspec_.hasUncertainty) n += uw.size() + ub.size() + sw.size() + sb.size();
+  return n;
 }
 
 size_t AdaptiveModel::cheapParameterCount() const {
-  return pool.parameterCount() + cw1.size() + cb1.size() + cwv.size() + cbv.size() +
-         cww.size() + cbw.size() + dw.size() + db.size();
+  size_t n = pool.parameterCount() + cw1.size() + cb1.size() + cwv.size() + cbv.size() +
+             cww.size() + cbw.size() + dw.size() + db.size();
+  if (bspec_.hasUncertainty) n += uw.size() + ub.size();
+  return n;
 }
 
 void AdaptiveModel::getTensors(std::vector<std::string>& names,
@@ -219,11 +285,20 @@ void AdaptiveModel::getTensors(std::vector<std::string>& names,
       {32},     {1, 32}, {1},  {3, 32},       {3}};
   for (const auto& n : tail) names.push_back(n);
   for (const auto& sh : tailShapes) shapes.push_back(sh);
+  if (bspec_.hasUncertainty) {
+    const std::vector<std::string> aux = {"uw", "ub", "sw", "sb"};
+    const std::vector<std::vector<int>> auxShapes = {{1, in}, {1}, {1, in}, {1}};
+    for (const auto& n : aux) names.push_back(n);
+    for (const auto& sh : auxShapes) shapes.push_back(sh);
+  }
   data.insert(data.end(), {cw1.data(), cb1.data(), cwv.data(), cbv.data(), cww.data(),
                            cbw.data(), dw.data(), db.data(), wq.data(), bq.data(),
                            wk.data(), bk.data(), wv.data(), bv.data(), gabS.data(),
                            w1.data(), b1.data(), w2.data(), b2.data(), wvo.data(),
                            bvo.data(), wwdl.data(), bwdl.data()});
+  if (bspec_.hasUncertainty) {
+    data.insert(data.end(), {uw.data(), ub.data(), sw.data(), sb.data()});
+  }
 }
 
 bool AdaptiveModel::setTensors(const std::vector<std::string>& names,
@@ -247,6 +322,10 @@ bool AdaptiveModel::setTensors(const std::vector<std::string>& names,
   slots.insert(slots.end(), {&cw1, &cb1, &cwv, &cbv, &cww, &cbw, &dw, &db, &wq, &bq,
                              &wk, &bk, &wv, &bv, &gabS, &w1, &b1, &w2, &b2, &wvo,
                              &bvo, &wwdl, &bwdl});
+  if (bspec_.hasUncertainty) {
+    for (const char* n : {"uw", "ub", "sw", "sb"}) want.push_back(n);
+    slots.insert(slots.end(), {&uw, &ub, &sw, &sb});
+  }
   if (names.size() != want.size()) return false;
   for (size_t i = 0; i < want.size(); ++i) {
     if (names[i] != want[i]) return false;
@@ -278,6 +357,8 @@ ModelSpec AdaptiveModel::spec() const {
   s.tLow = bspec_.tLow;
   s.refinePrecision = bspec_.refinePrecision;
   s.prunedPairs = bspec_.prunedPairs;
+  s.hasUncertainty = bspec_.hasUncertainty;
+  s.hasStabilityHead = bspec_.hasStabilityHead;
   return s;
 }
 
@@ -340,6 +421,21 @@ void AdaptiveEvaluator::currentCheap(float* out) const {
   float w[3] = {0.0f, 0.0f, 0.0f};
   float d = 0.0f;
   model_->cheapForward(tokenBuf_.data(), out, v, w, d);
+}
+
+AdaptiveEvalResult AdaptiveEvaluator::evaluateSearch(const Board& board, SearchRoute route,
+                                                     const RoutingThresholds& t, bool prev) {
+  AdaptiveEvalResult r;
+  refresh(board);
+  acc_.tokens(tokenBuf_.data());
+  float diff = 0.0f;
+  model_->cheapForward(tokenBuf_.data(), cheapBuf_.data(), r.value, r.wdl, diff);
+  r.difficulty = diff;
+  r.uncertainty = model_->uncertaintyForward(cheapBuf_.data());
+  r.stability = model_->stabilityForward(cheapBuf_.data());
+  r.refined = model_->routeSearch(route, diff, r.uncertainty, r.stability, prev, t);
+  if (r.refined) model_->refineForward(cheapBuf_.data(), r.value, r.wdl);
+  return r;
 }
 
 }

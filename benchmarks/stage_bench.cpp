@@ -276,6 +276,23 @@ int main(int argc, char** argv) {
                }, 5000));
         report("adapt_route_us",
                benchUs([&](int) { volatile bool r = amodel.route(adiff, false); }, 50000));
+        float aunc = 0.0f;
+        float astab = 0.0f;
+        report("adapt_unc_forward_us", benchUs([&](int) {
+                 aunc = amodel.uncertaintyForward(acheap.data());
+                 astab = amodel.stabilityForward(acheap.data());
+               }, 20000));
+        RoutingThresholds rt;
+        rt.diffT = 0.5f;
+        rt.uncT = 0.5f;
+        rt.stabT = 0.5f;
+        report("adapt_route_multi_us", benchUs([&](int) {
+                 volatile bool r =
+                     amodel.routeSearch(SearchRoute::Full, adiff, aunc, astab, false, rt);
+               }, 50000));
+        report("adapt_search_eval_us", benchUs([&](int) {
+                 aev.evaluateSearch(start, SearchRoute::Both, rt, false);
+               }, 3000));
         AdaptiveEvalResult c0 = aev.evaluateBoard(start, AdaptiveMode::Cheap, 0.0f, true, false);
         AdaptiveEvalResult a0 = aev.evaluateBoard(start, AdaptiveMode::Always, 0.0f, true, false);
         AdaptiveEvalResult lo =

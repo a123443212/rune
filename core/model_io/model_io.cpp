@@ -145,6 +145,8 @@ bool isDenseArch(const std::string& arch) { return arch.rfind("RUNE-03-", 0) == 
 
 bool isAdaptiveArch(const std::string& arch) { return arch == "RUNE-04"; }
 
+bool isUncertaintyArch(const std::string& arch) { return arch == "RUNE-05"; }
+
 bool parseIntPairs(const std::string& header, const std::string& key,
                    std::vector<std::pair<int, int>>& out) {
   std::string pat = "\"" + key + "\":";
@@ -220,6 +222,8 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.prunedPairs.clear();
   std::vector<std::pair<int, int>> pp;
   if (parseIntPairs(header, "pruned_pairs", pp)) spec.prunedPairs = pp;
+  spec.hasUncertainty = extractBool(header, "uncertainty", false);
+  spec.hasStabilityHead = extractBool(header, "stability_head", false);
 }
 
 }  // namespace
@@ -243,6 +247,9 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   out.isFlex = (arch == "RUNE-REL-02");
   out.isDense = isDenseArch(arch);
   out.isAdaptive = isAdaptiveArch(arch);
+  out.isUncertainty = isUncertaintyArch(arch);
+  const bool useVar =
+      out.isDense || out.isAdaptive || out.isUncertainty;
   std::vector<TensorMeta> metas;
   if (!parseTensors(header, metas)) {
     err = "tensor list parse failed";
@@ -280,7 +287,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     embWidths = gw;
     out.varEmbeddings.configure(gw);
     varEmb = &out.varEmbeddings;
-  } else if (out.isAdaptive) {
+  } else if (out.isAdaptive || out.isUncertainty) {
     int dim = out.spec.tokenDim;
     if (dim < 8 || dim > 64) {
       err = "bad adaptive dim";
@@ -296,6 +303,8 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     as.tLow = out.spec.tLow;
     as.prunedPairs = out.spec.prunedPairs;
     as.refinePrecision = out.spec.refinePrecision;
+    as.hasUncertainty = out.isUncertainty;
+    as.hasStabilityHead = out.spec.hasStabilityHead;
     out.arch = createAdaptive(as, err);
     if (!out.arch) {
       if (err.empty()) err = "adaptive build failed";
@@ -357,7 +366,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           }
           for (size_t i = 0; i < count; ++i) {
             float v = static_cast<float>(buf[i]) * static_cast<float>(scale);
-            if (out.isDense || out.isAdaptive) {
+            if (useVar) {
               int gw = embWidths.w[g];
               varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, v);
             } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
@@ -372,14 +381,14 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           }
           for (size_t i = 0; i < count; ++i) {
             float v = static_cast<float>(buf[i]) * static_cast<float>(scale);
-            if (out.isDense || out.isAdaptive) {
+            if (useVar) {
               int gw = embWidths.w[g];
               varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, v);
             } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, v);
             else out.embeddings.set(g, static_cast<int>(i) / 32, static_cast<int>(i) % 32, v);
           }
         }
-        if (out.isDense || out.isAdaptive) out.varScales.token[g] = static_cast<float>(scale);
+        if (useVar) out.varScales.token[g] = static_cast<float>(scale);
         else if (out.isFlex) out.flexScales.embedding[g] = static_cast<float>(scale);
         else out.scales.embedding[g] = static_cast<float>(scale);
       } else {
@@ -390,7 +399,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
           return false;
         }
         for (size_t i = 0; i < count; ++i) {
-          if (out.isDense || out.isAdaptive) {
+          if (useVar) {
             int gw = embWidths.w[g];
             varEmb->set(g, static_cast<int>(i) / gw, static_cast<int>(i) % gw, buf[i]);
           } else if (out.isFlex) flexEmb->set(g, static_cast<int>(i) / dim, static_cast<int>(i) % dim, buf[i]);
@@ -408,7 +417,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       for (float v : buf) archFlat.push_back(v);
     }
   }
-  if (out.isDense || out.isAdaptive) {
+  if (useVar) {
     out.varQ.configure(embWidths, out.isInt16);
     if (out.isInt8 || out.isInt16) out.varQ.quantizeFrom(out.varEmbeddings, out.varScales);
   } else if (!out.isFlex) {
@@ -422,7 +431,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     err = "arch tensor mismatch";
     return false;
   }
-  if (out.isDense || out.isAdaptive) {
+  if (useVar) {
     std::string cs = extractString(header, "checksum");
     if (cs.empty()) {
       err = "dense model missing checksum";

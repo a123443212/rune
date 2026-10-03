@@ -26,18 +26,21 @@ GROUP_NAMES = [
 def build_batch(fens):
     from training.features.python_features import VOCAB_SIZES
 
-    ids, masks = [], []
+    per = []
     for fen in fens:
         feats = extract_features(fen)
-        gi, gm = [], []
-        for g in range(8):
-            idx = [i for gg, i in feats if gg == g]
-            gi.append(torch.tensor([idx if idx else [0]]))
-            gm.append(torch.tensor([[1.0] * len(idx) if idx else [0.0]]))
-        ids.append(gi)
-        masks.append(gm)
-    batch_ids = [torch.cat([ids[b][g] for b in range(len(fens))], dim=0) for g in range(8)]
-    batch_masks = [torch.cat([masks[b][g] for b in range(len(fens))], dim=0) for g in range(8)]
+        per.append([[i for gg, i in feats if gg == g] for g in range(8)])
+    maxlen = [max(1, max(len(per[b][g]) for b in range(len(fens)))) for g in range(8)]
+    batch_ids, batch_masks = [], []
+    for g in range(8):
+        gid = torch.zeros(len(fens), maxlen[g], dtype=torch.long)
+        gm = torch.zeros(len(fens), maxlen[g], dtype=torch.float32)
+        for b in range(len(fens)):
+            for j, v in enumerate(per[b][g]):
+                gid[b, j] = v % VOCAB_SIZES[g]
+                gm[b, j] = 1.0
+        batch_ids.append(gid)
+        batch_masks.append(gm)
     return batch_ids, batch_masks
 
 

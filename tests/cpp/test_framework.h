@@ -46,3 +46,7 @@ void testAdaptiveHysteresis();
 void testAdaptiveIncremental();
 void testAdaptiveModelIO();
 void testAdaptiveParamAccounting();
+void testUncertaintyBounds();
+void testSearchRoutingModes();
+void testUncertaintyModelIO();
+void testUncertaintyParamAccounting();

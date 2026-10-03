@@ -227,3 +227,134 @@ void testAdaptiveParamAccounting() {
   wrong[0] = "bogus";
   CHECK(!model.setTensors(wrong, flat));
 }
+
+void testUncertaintyBounds() {
+  AdaptiveBuildSpec spec;
+  spec.hasUncertainty = true;
+  spec.hasStabilityHead = true;
+  AdaptiveModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  CHECK(std::string(model.archId()) == "RUNE-05");
+  CHECK(std::string(model.archVersion()) == "0.5.0");
+  const char* fens[] = {
+      "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+      "8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1",
+  };
+  VarEmbeddings emb;
+  makeAdaptiveEmbeddings(emb, 32);
+  AdaptiveEvaluator ev;
+  CHECK(ev.configure(&emb, &model, err));
+  for (const char* fen : fens) {
+    Board b(fen);
+    AdaptiveEvalResult r = ev.evaluateSearch(b, SearchRoute::Full, RoutingThresholds(), false);
+    CHECK(r.uncertainty >= 0.0f && r.uncertainty <= 1.0f);
+    CHECK(r.stability >= 0.0f);
+    AdaptiveEvalResult r2 = ev.evaluateSearch(b, SearchRoute::Full, RoutingThresholds(), false);
+    CHECK(r2.refined == r.refined);
+    CHECK_CLOSE(r2.uncertainty, r.uncertainty, 0.0);
+  }
+  AdaptiveBuildSpec plain;
+  AdaptiveModel m2;
+  CHECK(m2.configure(plain, err));
+  CHECK(std::string(m2.archId()) == "RUNE-04");
+  CHECK(m2.cheapParameterCount() < model.cheapParameterCount());
+}
+
+void testSearchRoutingModes() {
+  SearchRoute r;
+  CHECK(searchRouteFromString("difficulty", r) && r == SearchRoute::Difficulty);
+  CHECK(searchRouteFromString("uncertainty", r) && r == SearchRoute::Uncertainty);
+  CHECK(searchRouteFromString("both", r) && r == SearchRoute::Both);
+  CHECK(searchRouteFromString("full", r) && r == SearchRoute::Full);
+  CHECK(!searchRouteFromString("bogus", r));
+  CHECK(std::string(searchRouteName(SearchRoute::Both)) == "both");
+  AdaptiveBuildSpec spec;
+  spec.hasUncertainty = true;
+  AdaptiveModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  RoutingThresholds t;
+  t.diffT = 0.5f;
+  t.uncT = 0.5f;
+  t.stabT = 0.5f;
+  CHECK(model.routeSearch(SearchRoute::Difficulty, 0.2f, 0.9f, 0.9f, false, t) == false);
+  CHECK(model.routeSearch(SearchRoute::Uncertainty, 0.2f, 0.9f, 0.0f, false, t) == true);
+  CHECK(model.routeSearch(SearchRoute::Both, 0.2f, 0.9f, 0.0f, false, t) == true);
+  CHECK(model.routeSearch(SearchRoute::Full, 0.2f, 0.1f, 0.9f, false, t) == true);
+  CHECK(model.routeSearch(SearchRoute::Full, 0.2f, 0.1f, 0.1f, false, t) == false);
+  RoutingThresholds h = t;
+  h.hasTLow = true;
+  h.tLow = 0.3f;
+  CHECK(model.routeSearch(SearchRoute::Difficulty, 0.4f, 0.0f, 0.0f, true, h) == true);
+  CHECK(model.routeSearch(SearchRoute::Difficulty, 0.4f, 0.0f, 0.0f, false, h) == false);
+}
+
+void testUncertaintyModelIO() {
+  VarEmbeddings emb;
+  makeAdaptiveEmbeddings(emb, 32);
+  AdaptiveBuildSpec spec;
+  spec.hasUncertainty = true;
+  spec.hasStabilityHead = true;
+  AdaptiveModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  ModelSpec mspec = model.spec();
+  std::string path = "/tmp/rune_search_fp32.rune";
+  CHECK(saveAdaptiveRuneFile(path, mspec, emb, model, "fp32", err));
+  RuneFile loaded;
+  CHECK(loadRuneFile(path, loaded, err));
+  CHECK(loaded.isUncertainty);
+  CHECK(loaded.spec.arch == "RUNE-05");
+  CHECK(loaded.spec.archVersion == "0.5.0");
+  CHECK(loaded.spec.hasUncertainty == true);
+  Board b("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1");
+  AdaptiveEvaluator ref;
+  CHECK(ref.configure(&emb, &model, err));
+  AdaptiveEvaluator got;
+  AdaptiveModel* lm = static_cast<AdaptiveModel*>(loaded.arch.get());
+  CHECK(got.configure(&loaded.varEmbeddings, lm, err));
+  AdaptiveEvalResult v1 = ref.evaluateSearch(b, SearchRoute::Both, RoutingThresholds(), false);
+  AdaptiveEvalResult v2 = got.evaluateSearch(b, SearchRoute::Both, RoutingThresholds(), false);
+  CHECK_CLOSE(v1.value, v2.value, 1e-6f);
+  CHECK_CLOSE(v1.uncertainty, v2.uncertainty, 1e-6f);
+  CHECK(v1.refined == v2.refined);
+  {
+    std::ifstream f(path, std::ios::binary);
+    std::string bytes((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+    bytes[bytes.size() - 1] ^= 0xFF;
+    std::ofstream o(path + std::string(".bad"), std::ios::binary);
+    o.write(bytes.data(), bytes.size());
+  }
+  RuneFile bad;
+  CHECK(!loadRuneFile(path + std::string(".bad"), bad, err));
+  CHECK(err == "checksum mismatch");
+}
+
+void testUncertaintyParamAccounting() {
+  AdaptiveBuildSpec spec;
+  spec.hasUncertainty = true;
+  AdaptiveModel model;
+  std::string err;
+  CHECK(model.configure(spec, err));
+  std::vector<std::string> names;
+  std::vector<std::vector<int>> shapes;
+  std::vector<const float*> data;
+  model.getTensors(names, shapes, data);
+  CHECK(names[names.size() - 4] == "uw");
+  CHECK(names[names.size() - 1] == "sb");
+  size_t n = 0;
+  for (auto& sh : shapes) {
+    size_t c = 1;
+    for (int s : sh) c *= s;
+    n += c;
+  }
+  CHECK(model.parameterCount() == n);
+  AdaptiveBuildSpec plain;
+  AdaptiveModel m2;
+  CHECK(m2.configure(plain, err));
+  CHECK(model.parameterCount() == m2.parameterCount() + 2 * (256 + 1));
+  std::vector<float> flat(n, 0.1f);
+  CHECK(model.setTensors(names, flat));
+  CHECK(!model.setTensors(names, std::vector<float>(n - 1, 0.1f)));
+}

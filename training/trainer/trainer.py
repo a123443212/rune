@@ -50,6 +50,7 @@ class Trainer:
                                           dynamic_bias=p.get("dynamic_bias", False))
             self.needs_context = True
             self.is_adaptive = False
+            self.is_search = False
         elif config["arch"].startswith("RUNE-03-"):
             from training.models.dense import build_dense_model
 
@@ -62,6 +63,7 @@ class Trainer:
                                            shared_width=p.get("shared_width", 32))
             self.needs_context = False
             self.is_adaptive = False
+            self.is_search = False
         elif config["arch"].startswith("RUNE-04"):
             from training.models.adaptive import build_adaptive_model
 
@@ -76,11 +78,47 @@ class Trainer:
                                               refine_precision=p.get("refine_precision", "fp32"))
             self.needs_context = False
             self.is_adaptive = True
+            self.is_search = False
+        elif config["arch"].startswith("RUNE-05"):
+            from training.models.uncertainty import build_search_model
+
+            p = config.get("adaptive_params", {})
+            self.model = build_search_model(dim=p.get("dim", 32),
+                                            cheap_pooling=p.get("cheap_pooling", "none"),
+                                            alpha=p.get("alpha", 1.0),
+                                            threshold=p.get("threshold", 0.5),
+                                            t_high=p.get("t_high", None),
+                                            t_low=p.get("t_low", None),
+                                            pruned_pairs=p.get("pruned_pairs", ()),
+                                            refine_precision=p.get("refine_precision", "fp32"),
+                                            uncertainty_on=True,
+                                            stability_on=config.get("lambda_stab", 0.0) > 0)
+            self.needs_context = False
+            self.is_adaptive = True
+            self.is_search = True
         else:
             self.model = build_model(config["arch"])
             self.needs_context = False
             self.is_adaptive = False
-        if config["arch"].startswith("RUNE-04"):
+            self.is_search = False
+        if config["arch"].startswith("RUNE-05"):
+            from training.losses.uncertainty import SearchLoss
+
+            self.loss_fn = SearchLoss(
+                value=True,
+                wdl=config.get("lambda_wdl", 0.5) > 0,
+                ranking=config.get("lambda_rank", 0.0) > 0,
+                lambda_wdl=config.get("lambda_wdl", 0.5),
+                lambda_rank=config.get("lambda_rank", 0.1),
+                rank_margin=config.get("rank_margin", 0.05),
+                lambda_diff=config.get("lambda_diff", 0.1),
+                diff_margin=config.get("diff_margin", 0.1),
+                uncertainty=config.get("lambda_unc", 0.0) > 0,
+                lambda_unc=config.get("lambda_unc", 0.2),
+                stability=config.get("lambda_stab", 0.0) > 0,
+                lambda_stab=config.get("lambda_stab", 0.1),
+            )
+        elif config["arch"].startswith("RUNE-04"):
             from training.losses.adaptive import AdaptiveLoss
 
             self.loss_fn = AdaptiveLoss(
@@ -153,7 +191,11 @@ class Trainer:
                 a, b, s = idx
                 base = out[2] if self.is_adaptive else out[0]
                 rank = (base[a], base[b], s.to(self.device))
-        if self.is_adaptive:
+        if self.is_search:
+            cheap_v, cheap_w, ref_v, ref_w, diff, u, s_pred = out
+            losses = self.loss_fn(cheap_v, cheap_w, ref_v, ref_w, diff, u, s_pred,
+                                  value, wdl, rank)
+        elif self.is_adaptive:
             cheap_v, cheap_w, ref_v, ref_w, diff = out
             losses = self.loss_fn(cheap_v, cheap_w, ref_v, ref_w, diff,
                                   value, wdl, rank)
@@ -188,14 +230,33 @@ class Trainer:
     def evaluate(self, records, batch_size=512):
         loader, _ = self.make_eval_loader(records, batch_size)
         self.model.eval()
-        tot = {"total": 0.0, "value": 0.0, "wdl": 0.0, "rank": 0.0}
+        tot = {"total": 0.0, "value": 0.0, "wdl": 0.0, "rank": 0.0,
+               "cheap_value": 0.0, "cheap_wdl": 0.0, "ref_value": 0.0,
+               "ref_wdl": 0.0, "diff": 0.0, "unc": 0.0, "stab": 0.0}
         racc, wacc, n = 0.0, 0.0, 0
         nb = 0
         cwacc, cn, dsum = 0.0, 0, 0.0
+        usum, esum, uusum, eesum, uesum, qn = 0.0, 0.0, 0.0, 0.0, 0.0, 0
         for batch in loader:
             ids, masks, ctx, value, wdl = self.unpack(batch)
             out = self.forward_model(ids, masks, ctx)
-            if self.is_adaptive:
+            if self.is_search:
+                cheap_v, cheap_w, v_pred, w_pred, diff, u, _ = out
+                losses = self.loss_fn(cheap_v, cheap_w, v_pred, w_pred, diff, u, None,
+                                      value.to(self.device), wdl.to(self.device))
+                cwacc += wdl_accuracy(cheap_w, wdl).item() * len(value)
+                cn += len(value)
+                dsum += diff.float().mean().item() * len(value)
+                with torch.no_grad():
+                    ee = (value.to(self.device) - v_pred).abs() / 2.0
+                    uu = u.detach().float()
+                    usum += uu.sum().item()
+                    esum += ee.sum().item()
+                    uusum += (uu * uu).sum().item()
+                    eesum += (ee * ee).sum().item()
+                    uesum += (uu * ee).sum().item()
+                    qn += len(value)
+            elif self.is_adaptive:
                 cheap_v, cheap_w, v_pred, w_pred, diff = out
                 losses = self.loss_fn(cheap_v, cheap_w, v_pred, w_pred, diff,
                                       value.to(self.device), wdl.to(self.device))
@@ -206,7 +267,8 @@ class Trainer:
                 v_pred, w_pred = out
                 losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
             for k in tot:
-                tot[k] += losses[k].item()
+                if k in losses:
+                    tot[k] += losses[k].item()
             wacc += wdl_accuracy(w_pred, wdl).item() * len(value)
             if len(value) >= 4:
                 idx = count_ranking_pairs(value.tolist())
@@ -224,6 +286,11 @@ class Trainer:
             out["cheap_wdl_acc"] = cwacc / max(1, cn)
             out["difficulty_mean"] = dsum / max(1, cn)
             out["cheap_params"] = self.model.cheap_parameter_count()
+        if self.is_search:
+            denom = (qn * uusum - usum * usum) * (qn * eesum - esum * esum)
+            out["unc_err_corr"] = (qn * uesum - usum * esum) / max(1e-12, denom ** 0.5) \
+                if denom > 0 else 0.0
+            out["unc_mean"] = usum / max(1, qn)
         return out
 
     def make_train_loader(self, records, batch_size, shuffle, seed):

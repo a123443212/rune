@@ -31,6 +31,8 @@ struct ModelSpec {
   float tLow = 0.5f;
   std::string refinePrecision = "fp32";
   std::vector<std::pair<int, int>> prunedPairs;
+  bool hasUncertainty = false;
+  bool hasStabilityHead = false;
 
   std::string canonicalString() const;
   uint64_t configHash() const;

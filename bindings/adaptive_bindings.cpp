@@ -11,12 +11,14 @@ using namespace rune;
 
 class AdaptiveBindingModel {
  public:
-  AdaptiveBindingModel(int dim, const std::string& cheapPooling, float threshold) {
+  AdaptiveBindingModel(int dim, const std::string& cheapPooling, float threshold,
+                         bool hasUncertainty = false) {
     AdaptiveBuildSpec spec;
     spec.dim = dim;
     spec.cheapPooling = cheapPooling;
     spec.threshold = threshold;
     spec.tHigh = threshold;
+    spec.hasUncertainty = hasUncertainty;
     std::string err;
     if (!model_.configure(spec, err)) throw std::runtime_error(err);
     VarWidths gw;
@@ -44,9 +46,35 @@ class AdaptiveBindingModel {
     Board b(fen);
     float t = (threshold < -1e29f) ? model_.buildSpec().threshold : threshold;
     AdaptiveEvalResult r = eval_.evaluateBoard(b, m, t, true, false);
+    if (model_.buildSpec().hasUncertainty) {
+      eval_.refresh(b);
+      int total = model_.spec().tokenDim * 8;
+      std::vector<float> cheap(total);
+      eval_.currentCheap(cheap.data());
+      r.uncertainty = model_.uncertaintyForward(cheap.data());
+      r.stability = model_.stabilityForward(cheap.data());
+      return py::make_tuple(r.value,
+                            std::vector<float>{r.wdl[0], r.wdl[1], r.wdl[2]}, r.difficulty,
+                            r.refined, r.uncertainty, r.stability);
+    }
     return py::make_tuple(r.value,
                           std::vector<float>{r.wdl[0], r.wdl[1], r.wdl[2]}, r.difficulty,
                           r.refined);
+  }
+
+  py::tuple evalSearch(const std::string& fen, const std::string& routing, float diffT,
+                        float uncT, float stabT) {
+    SearchRoute r;
+    if (!searchRouteFromString(routing, r)) throw std::runtime_error("unknown routing");
+    Board b(fen);
+    RoutingThresholds t;
+    t.diffT = diffT;
+    t.uncT = uncT;
+    t.stabT = stabT;
+    AdaptiveEvalResult res = eval_.evaluateSearch(b, r, t, false);
+    return py::make_tuple(res.value,
+                          std::vector<float>{res.wdl[0], res.wdl[1], res.wdl[2]},
+                          res.difficulty, res.refined, res.uncertainty, res.stability);
   }
 
   py::tuple forwardTokens(const std::vector<float>& tok, const std::string& mode,
@@ -104,9 +132,11 @@ class AdaptiveBindingModel {
 void registerAdaptive(py::module_& m) {
   py::class_<AdaptiveBindingModel>(m, "AdaptiveModel")
       .def(py::init<int, const std::string&, float>())
+      .def(py::init<int, const std::string&, float, bool>())
       .def("set_embedding", &AdaptiveBindingModel::setEmbedding)
       .def("set_arch_tensors", &AdaptiveBindingModel::setArchTensors)
       .def("eval_fen", &AdaptiveBindingModel::evalFen)
+      .def("eval_search", &AdaptiveBindingModel::evalSearch)
       .def("forward_tokens", &AdaptiveBindingModel::forwardTokens)
       .def("difficulty_for_fen", &AdaptiveBindingModel::difficultyForFen)
       .def("parameter_count", &AdaptiveBindingModel::parameterCount)

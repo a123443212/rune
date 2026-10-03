@@ -1,0 +1,64 @@
+experiment:
+  name: rune_v05_a3_stab
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v05_a3_stab
+
+data:
+  dataset: clean_v05
+  teacher: teacher_v05
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_05_stab
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  cheap_pooling: none
+  gate: clip
+  alpha: 1.0
+
+routing:
+  threshold: 0.5
+  search_routing: full
+  t_high: null
+  t_low: null
+
+precision:
+  base: fp32
+  refine: fp32
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+  uncertainty: true
+  stability: true
+  lambda_diff: 0.1
+  diff_margin: 0.1
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  A3. Stability head L2 + full routing. Runs only if spread analysis shows signal; child data required.

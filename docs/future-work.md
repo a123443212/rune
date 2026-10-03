@@ -53,3 +53,17 @@ Ideas parked here instead of leaking into the v0.1 scope:
 - FP16 refinement on CPUs where it shows no measured benefit.
 - Search-aware evaluation beyond stability analysis (v0.5 topic,
   not v0.4 implementation).
+
+# Parked during v0.5 (do not implement during v0.5)
+
+- Full move policy network, neural move ordering, RL, alpha-beta
+  replacement, MCTS, learned search trees.
+- Recurrent multi-step search networks, large Transformer, MoE.
+- Extra uncertainty forms beyond the bounded scalar (variance heads,
+  ensembles, MC-dropout at inference) without a cost-first hypothesis.
+- Learned stability scalar in the engine loop before child-spread
+  analysis proves signal (stability head trains, engine use gated).
+- Test-set threshold tuning; any calibration claim without buckets,
+  rank correlation, and stratification.
+- Quantization schemes beyond INT8 base + checked-uncertainty until
+  P-legs report.

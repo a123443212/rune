@@ -381,6 +381,8 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
   if (spec.hasTLow) h << ",\"t_low\":" << spec.tLow;
   else h << ",\"t_low\":null";
   h << ",\"refine_precision\":\"" << spec.refinePrecision << "\"";
+  h << ",\"uncertainty\":" << (spec.hasUncertainty ? "true" : "false");
+  h << ",\"stability_head\":" << (spec.hasStabilityHead ? "true" : "false");
   h << ",\"pruned_pairs\":[";
   for (size_t i = 0; i < spec.prunedPairs.size(); ++i) {
     if (i > 0) h << ",";

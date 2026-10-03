@@ -20,17 +20,30 @@ MODEL_IDS = {
     "rune_04_cheap": "RUNE-04",
     "rune_04_always": "RUNE-04",
     "rune_04_adaptive": "RUNE-04",
+    "rune_05_unc": "RUNE-05",
+    "rune_05_routing": "RUNE-05",
+    "rune_05_stab": "RUNE-05",
 }
 
 CORE_MODELS = ("rune_mlp",)
 EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
                        "rune_03A", "rune_03B", "rune_03C", "rune_03D",
-                       "rune_04_cheap", "rune_04_always", "rune_04_adaptive")
+                       "rune_04_cheap", "rune_04_always", "rune_04_adaptive",
+                       "rune_05_unc", "rune_05_routing", "rune_05_stab")
 
 ADAPTIVE_MODES = {
     "rune_04_cheap": "cheap",
     "rune_04_always": "always",
     "rune_04_adaptive": "adaptive",
+    "rune_05_unc": "adaptive",
+    "rune_05_routing": "adaptive",
+    "rune_05_stab": "adaptive",
+}
+
+SEARCH_ROUTING = {
+    "rune_05_unc": "difficulty",
+    "rune_05_routing": "both",
+    "rune_05_stab": "full",
 }
 
 CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
@@ -44,6 +57,10 @@ def experimental_reasons(config):
     loss = config.get("loss", {})
     if loss.get("ranking", False):
         reasons.append("ranking loss is experimental (use the L1 driver on candidates)")
+    if loss.get("uncertainty", False):
+        reasons.append("uncertainty loss is experimental (L1 leg only, calibration-gated)")
+    if loss.get("stability", False):
+        reasons.append("stability loss is experimental (L2 leg only, needs child data)")
     sampling = config.get("sampling", {})
     if sampling.get("mode", "none") == "disagreement_mix":
         reasons.append("disagreement sampling is experimental (stage-gated after S0)")
@@ -131,6 +148,8 @@ class ScreeningRunner:
             "lambda_wdl": 0.5 if loss_cfg.get("wdl", True) else 0.0,
             "lambda_rank": 0.1 if loss_cfg.get("ranking", False) else 0.0,
             "rank_margin": 0.05,
+            "lambda_unc": 0.2 if loss_cfg.get("uncertainty", False) else 0.0,
+            "lambda_stab": 0.1 if loss_cfg.get("stability", False) else 0.0,
             "rel_params": {
                 "tokens": self.cfg.get("architecture", {}).get("tokens", 8),
                 "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
@@ -148,6 +167,7 @@ class ScreeningRunner:
             },
             "adaptive_params": {
                 "mode": ADAPTIVE_MODES.get(model_key, "adaptive"),
+                "search_routing": SEARCH_ROUTING.get(model_key, "difficulty"),
                 "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
                 "cheap_pooling": self.cfg.get("architecture", {}).get("cheap_pooling", "none"),
                 "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
@@ -185,17 +205,20 @@ class ScreeningRunner:
                 "experiment_id": self.exp_name,
                 "model": model_key,
                 "architecture": arch,
-                "architecture_version": "0.4.0" if arch.startswith("RUNE-04") else ("0.3.0" if arch.startswith("RUNE-03-") else ("0.2.0" if arch == "RUNE-REL-02" else "0.1.0")),
+                "architecture_version": "0.5.0" if arch.startswith("RUNE-05") else ("0.4.0" if arch.startswith("RUNE-04") else ("0.3.0" if arch.startswith("RUNE-03-") else ("0.2.0" if arch == "RUNE-REL-02" else "0.1.0"))),
                 "routing": {"mode": tcfg["adaptive_params"]["mode"],
-                            **self.cfg.get("routing", {})} if arch.startswith("RUNE-04") else {"mode": "none"},
-                "precision": self.cfg.get("precision", {"base": "fp32"}) if arch.startswith("RUNE-04") else {},
+                            "search_routing": tcfg["adaptive_params"].get("search_routing", "difficulty"),
+                            **self.cfg.get("routing", {})} if arch.startswith(("RUNE-04", "RUNE-05")) else {"mode": "none"},
+                "precision": self.cfg.get("precision", {"base": "fp32"}) if arch.startswith(("RUNE-04", "RUNE-05")) else {},
                 "experimental": experimental_reasons(self.cfg),
                 "milestone_positions": ms,
                 "trained_positions": trainer.positions_seen,
                 "feature_set": "grouped_hkav2_fullthreats_v01",
                 "teacher_id": self.cfg.get("data", {}).get("teacher", "unknown"),
                 "loss_config": {"wdl": loss_cfg.get("wdl", True),
-                                "ranking": loss_cfg.get("ranking", False)},
+                                "ranking": loss_cfg.get("ranking", False),
+                                "uncertainty": loss_cfg.get("uncertainty", False),
+                                "stability": loss_cfg.get("stability", False)},
                 "optimizer": "adamw",
                 "learning_rate": tcfg["lr"],
                 "batch_size": tcfg["batch_size"],

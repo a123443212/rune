@@ -13,12 +13,17 @@ class EvalStats:
         self.evals = 0
         self.refined = 0
         self.seconds = 0.0
+        self.unc_sum = 0.0
+        self.unc_n = 0
 
     def refinement_rate(self):
         return self.refined / max(1, self.evals)
 
     def avg_latency_us(self):
         return self.seconds * 1e6 / max(1, self.evals)
+
+    def mean_uncertainty(self):
+        return self.unc_sum / max(1, self.unc_n)
 
 
 def eval_position(model, fen, stats, mode="adaptive", threshold=-1e30):
@@ -30,6 +35,12 @@ def eval_position(model, fen, stats, mode="adaptive", threshold=-1e30):
     dt = time.perf_counter() - t0
     stats.evals += 1
     stats.seconds += dt
+    if len(out) == 6:
+        v, _, _, refined, u, _ = out
+        stats.refined += 1 if refined else 0
+        stats.unc_sum += u
+        stats.unc_n += 1
+        return v
     if len(out) == 4:
         v, _, _, refined = out
         stats.refined += 1 if refined else 0
@@ -104,6 +115,9 @@ def load_model_for_match(arch_id, runepath, build_dir):
     elif header["arch"] == "RUNE-04":
         model = rb.AdaptiveModel(header["token_dim"], header.get("cheap_pooling", "none"),
                                  float(header.get("threshold", 0.5)))
+    elif header["arch"] == "RUNE-05":
+        model = rb.AdaptiveModel(header["token_dim"], header.get("cheap_pooling", "none"),
+                                 float(header.get("threshold", 0.5)), True)
     else:
         model = rb.RuneModel(header["arch"])
     for g in range(8):
@@ -111,8 +125,8 @@ def load_model_for_match(arch_id, runepath, build_dir):
         if arr.dtype.name == "int8":
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]
         model.set_embedding(g, [float(x) for x in arr.reshape(-1)])
-    names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] != "RUNE-REL-02" else None
-    if header["arch"] == "RUNE-04":
+    names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] not in ("RUNE-REL-02", "RUNE-04", "RUNE-05") else None
+    if header["arch"] in ("RUNE-04", "RUNE-05"):
         names = []
         if header.get("cheap_pooling", "none") == "shared":
             names += ["pool_S"]
@@ -121,6 +135,8 @@ def load_model_for_match(arch_id, runepath, build_dir):
         names += ["cw1", "cb1", "cwv", "cbv", "cww", "cbw", "dw", "db",
                   "wq", "bq", "wk", "bk", "wvv", "bvv", "gabS",
                   "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
+        if header["arch"] == "RUNE-05":
+            names += ["uw", "ub", "sw", "sb"]
     if names is None:
         names = ["wq", "bq", "wk", "bk", "wvv", "bvv", "gabS"]
         if header["geometric_bias"] == "dynamic":
@@ -171,9 +187,9 @@ def main():
     if abs(elo) < err:
         print("difference within noise: no conclusion")
     print(f"A evals: {stats_a.evals} refined: {stats_a.refinement_rate():.3f} "
-          f"avg_us: {stats_a.avg_latency_us():.2f}")
+          f"avg_us: {stats_a.avg_latency_us():.2f} mean_u: {stats_a.mean_uncertainty():.3f}")
     print(f"B evals: {stats_b.evals} refined: {stats_b.refinement_rate():.3f} "
-          f"avg_us: {stats_b.avg_latency_us():.2f}")
+          f"avg_us: {stats_b.avg_latency_us():.2f} mean_u: {stats_b.mean_uncertainty():.3f}")
     meta = {
         "engine_version": args.engine_version,
         "network_a": args.model_a,
@@ -192,9 +208,11 @@ def main():
         "model_a_evals": stats_a.evals,
         "model_a_refinement_rate": stats_a.refinement_rate(),
         "model_a_avg_latency_us": stats_a.avg_latency_us(),
+        "model_a_mean_uncertainty": stats_a.mean_uncertainty(),
         "model_b_evals": stats_b.evals,
         "model_b_refinement_rate": stats_b.refinement_rate(),
         "model_b_avg_latency_us": stats_b.avg_latency_us(),
+        "model_b_mean_uncertainty": stats_b.mean_uncertainty(),
     }
     if args.report:
         import json

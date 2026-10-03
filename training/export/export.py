@@ -78,10 +78,10 @@ def export_model(model, path, quantization="fp32"):
     for key in ("gate", "alpha", "context_dim", "variant", "token_dims", "pooling",
                 "pool_clip", "gate_on", "shared_width", "cheap_pooling",
                 "threshold", "t_high", "t_low", "refine_precision",
-                "pruned_pairs"):
+                "pruned_pairs", "uncertainty", "stability_head"):
         if key in spec:
             header[key] = spec[key]
-    if spec["arch"].startswith("RUNE-03-") or spec["arch"].startswith("RUNE-04"):
+    if spec["arch"].startswith(("RUNE-03-", "RUNE-04", "RUNE-05")):
         header["checksum"] = format(fnv1a(payload), "016x")
     hbytes = json.dumps(header, separators=(",", ":")).encode()
     with open(path, "wb") as f:

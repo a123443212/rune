@@ -32,6 +32,7 @@ struct RuneFile {
   VarQuantTables varQ;
   VarScales varScales;
   bool isAdaptive = false;
+  bool isUncertainty = false;
 };
 
 bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err);
