@@ -32,6 +32,7 @@ add_library(rune_core STATIC
   core/architectures/dense/var_accum.cpp
   core/architectures/dense/pooling.cpp
   core/architectures/dense/dense.cpp
+  core/architectures/adaptive/adaptive.cpp
   core/inference/evaluator.cpp
   core/model_io/model_io.cpp
   core/model_io/model_save.cpp
@@ -51,6 +52,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_model.cpp
     tests/cpp/test_relational.cpp
     tests/cpp/test_dense.cpp
+    tests/cpp/test_adaptive.cpp
   )
   target_link_libraries(rune_tests PRIVATE rune_core)
   add_test(NAME rune_cpp_tests COMMAND rune_tests)
@@ -74,7 +76,7 @@ if(RUNE_BUILD_BINDINGS)
     find_package(pybind11 CONFIG QUIET)
   endif()
   if(pybind11_FOUND)
-    pybind11_add_module(rune_bindings bindings/rune_bindings.cpp bindings/relational_bindings.cpp bindings/dense_bindings.cpp)
+    pybind11_add_module(rune_bindings bindings/rune_bindings.cpp bindings/relational_bindings.cpp bindings/dense_bindings.cpp bindings/adaptive_bindings.cpp)
     target_link_libraries(rune_bindings PRIVATE rune_core)
   else()
     message(STATUS "pybind11 not found, skipping bindings target")

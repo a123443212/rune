@@ -3,8 +3,39 @@ import math
 import os
 import random
 import sys
+import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+
+
+class EvalStats:
+    def __init__(self):
+        self.evals = 0
+        self.refined = 0
+        self.seconds = 0.0
+
+    def refinement_rate(self):
+        return self.refined / max(1, self.evals)
+
+    def avg_latency_us(self):
+        return self.seconds * 1e6 / max(1, self.evals)
+
+
+def eval_position(model, fen, stats, mode="adaptive", threshold=-1e30):
+    t0 = time.perf_counter()
+    try:
+        out = model.eval_fen(fen, mode, threshold)
+    except TypeError:
+        out = model.eval_fen(fen)
+    dt = time.perf_counter() - t0
+    stats.evals += 1
+    stats.seconds += dt
+    if len(out) == 4:
+        v, _, _, refined = out
+        stats.refined += 1 if refined else 0
+        return v
+    v, _ = out
+    return v
 
 
 def elo_from_score(score, games):
@@ -17,7 +48,7 @@ def elo_from_score(score, games):
     return elo, err
 
 
-def greedy_move(board, model, rng, epsilon=0.0):
+def greedy_move(board, model, rng, stats, epsilon=0.0):
     moves = board.legal_moves()
     if not moves:
         return None
@@ -32,7 +63,7 @@ def greedy_move(board, model, rng, epsilon=0.0):
         mv.from_sq, mv.to_sq, mv.promo = m[0], m[1], m[2]
         if not board.make_move(mv):
             continue
-        v, _ = model.eval_fen(board.to_fen())
+        v = eval_position(model, board.to_fen(), stats)
         board.unmake_move()
         own = v if stm == 0 else -v
         if best_v is None or own > best_v:
@@ -40,7 +71,7 @@ def greedy_move(board, model, rng, epsilon=0.0):
     return best if best is not None else rng.choice(moves)
 
 
-def play_game(white_model, black_model, opening_fen, rng):
+def play_game(white_model, black_model, white_stats, black_stats, opening_fen, rng):
     import rune_bindings as rb
 
     b = rb.Board(opening_fen)
@@ -50,11 +81,12 @@ def play_game(white_model, black_model, opening_fen, rng):
             return 0.5
         stm = b.side_to_move()
         model = white_model if stm == 0 else black_model
-        m = greedy_move(b, model, rng)
+        stats = white_stats if stm == 0 else black_stats
+        m = greedy_move(b, model, rng, stats)
         mv = rb.Move()
         mv.from_sq, mv.to_sq, mv.promo = m[0], m[1], m[2]
         b.make_move(mv)
-    v, _ = white_model.eval_fen(b.to_fen())
+    v = eval_position(white_model, b.to_fen(), white_stats)
     return 1.0 if v > 0.2 else (0.0 if v < -0.2 else 0.5)
 
 
@@ -69,6 +101,9 @@ def load_model_for_match(arch_id, runepath, build_dir):
     if header["arch"] == "RUNE-REL-02":
         model = rb.FlexModel(header["tokens"], header["token_dim"], header.get("gate", "clip"),
                              header.get("alpha", 1.0), header["geometric_bias"] == "dynamic")
+    elif header["arch"] == "RUNE-04":
+        model = rb.AdaptiveModel(header["token_dim"], header.get("cheap_pooling", "none"),
+                                 float(header.get("threshold", 0.5)))
     else:
         model = rb.RuneModel(header["arch"])
     for g in range(8):
@@ -77,6 +112,15 @@ def load_model_for_match(arch_id, runepath, build_dir):
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]
         model.set_embedding(g, [float(x) for x in arr.reshape(-1)])
     names = list(EXPORT_ORDER[header["arch"]]) if header["arch"] != "RUNE-REL-02" else None
+    if header["arch"] == "RUNE-04":
+        names = []
+        if header.get("cheap_pooling", "none") == "shared":
+            names += ["pool_S"]
+            for t in range(8):
+                names += [f"pool_s{t}", f"pool_b{t}"]
+        names += ["cw1", "cb1", "cwv", "cbv", "cww", "cbw", "dw", "db",
+                  "wq", "bq", "wk", "bk", "wvv", "bvv", "gabS",
+                  "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
     if names is None:
         names = ["wq", "bq", "wk", "bk", "wvv", "bvv", "gabS"]
         if header["geometric_bias"] == "dynamic":
@@ -113,17 +157,23 @@ def main():
         "rnbqkb1r/pp2pppp/5n2/2pp4/3P4/2N5/PPP1PPPP/R1BQKBNR w KQkq - 0 1",
     ]
     score = 0.0
+    stats_a = EvalStats()
+    stats_b = EvalStats()
     for i in range(args.games):
         if i % 2 == 0:
-            res = play_game(ma, mb, openings[i % len(openings)], rng)
+            res = play_game(ma, mb, stats_a, stats_b, openings[i % len(openings)], rng)
             score += res
         else:
-            res = play_game(mb, ma, openings[i % len(openings)], rng)
+            res = play_game(mb, ma, stats_b, stats_a, openings[i % len(openings)], rng)
             score += 1.0 - res
     elo, err = elo_from_score(score, args.games)
     print(f"score A: {score}/{args.games} elo: {elo:.1f} +/- {err:.1f} (95% CI)")
     if abs(elo) < err:
         print("difference within noise: no conclusion")
+    print(f"A evals: {stats_a.evals} refined: {stats_a.refinement_rate():.3f} "
+          f"avg_us: {stats_a.avg_latency_us():.2f}")
+    print(f"B evals: {stats_b.evals} refined: {stats_b.refinement_rate():.3f} "
+          f"avg_us: {stats_b.avg_latency_us():.2f}")
     meta = {
         "engine_version": args.engine_version,
         "network_a": args.model_a,
@@ -139,6 +189,12 @@ def main():
         "score_a": score,
         "elo_a": elo,
         "elo_err95": err,
+        "model_a_evals": stats_a.evals,
+        "model_a_refinement_rate": stats_a.refinement_rate(),
+        "model_a_avg_latency_us": stats_a.avg_latency_us(),
+        "model_b_evals": stats_b.evals,
+        "model_b_refinement_rate": stats_b.refinement_rate(),
+        "model_b_avg_latency_us": stats_b.avg_latency_us(),
     }
     if args.report:
         import json

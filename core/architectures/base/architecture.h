@@ -2,6 +2,7 @@
 
 #include <cstdint>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace rune {
@@ -23,6 +24,13 @@ struct ModelSpec {
   std::string pooling = "none";
   bool gateOn = false;
   bool poolClip = true;
+  std::string cheapPooling = "none";
+  float threshold = 0.5f;
+  float tHigh = 0.5f;
+  bool hasTLow = false;
+  float tLow = 0.5f;
+  std::string refinePrecision = "fp32";
+  std::vector<std::pair<int, int>> prunedPairs;
 
   std::string canonicalString() const;
   uint64_t configHash() const;

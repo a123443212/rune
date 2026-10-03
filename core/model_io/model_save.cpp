@@ -310,4 +310,130 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   return true;
 }
 
+bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
+                          const VarEmbeddings& embeddings, const IArchitecture& arch,
+                          const std::string& quantization, std::string& err) {
+  std::vector<std::string> names;
+  std::vector<std::vector<int>> shapes;
+  std::vector<const float*> data;
+  arch.getTensors(names, shapes, data);
+  int dim = spec.tokenDim;
+  VarWidths gw;
+  for (int g = 0; g < 8; ++g) gw.w[g] = (spec.cheapPooling == "shared") ? 32 : dim;
+  VarQuantTables qt;
+  qt.configure(gw, quantization == "int16");
+  VarScales sc;
+  std::string embDtype = "float32";
+  if (quantization == "int8" || quantization == "int16") {
+    qt.quantizeFrom(embeddings, sc);
+    embDtype = quantization;
+  } else {
+    for (int g = 0; g < 8; ++g) sc.token[g] = 1.0f;
+  }
+  std::string payload;
+  for (int g = 0; g < 8; ++g) {
+    int w = gw.w[g];
+    size_t count = static_cast<size_t>(GroupedFeatureSet::vocabSize(g)) * w;
+    const std::vector<float>& d = embeddings.groupData(g);
+    if (embDtype == "int8") {
+      for (size_t i = 0; i < count; ++i) {
+        int q = static_cast<int>(std::lround(d[i] / sc.token[g]));
+        if (q > 127) q = 127;
+        if (q < -127) q = -127;
+        payload.push_back(static_cast<char>(q));
+      }
+    } else if (embDtype == "int16") {
+      for (size_t i = 0; i < count; ++i) {
+        int q = static_cast<int>(std::lround(d[i] / sc.token[g]));
+        if (q > 32767) q = 32767;
+        if (q < -32767) q = -32767;
+        int16_t v = static_cast<int16_t>(q);
+        payload.append(reinterpret_cast<const char*>(&v), 2);
+      }
+    } else {
+      payload.append(reinterpret_cast<const char*>(d.data()), count * 4);
+    }
+  }
+  for (size_t i = 0; i < data.size(); ++i) {
+    size_t n = 1;
+    for (int s : shapes[i]) n *= static_cast<size_t>(s);
+    payload.append(reinterpret_cast<const char*>(data[i]), n * 4);
+  }
+  std::string checksum = toHex(fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()),
+                                         payload.size()));
+  std::ostringstream h;
+  h << "{\"format\":1";
+  h << ",\"arch\":\"" << spec.arch << "\"";
+  h << ",\"arch_version\":\"" << spec.archVersion << "\"";
+  h << ",\"feature_set\":\"" << spec.featureSet << "\"";
+  h << ",\"tokens\":" << spec.tokens;
+  h << ",\"token_dim\":" << spec.tokenDim;
+  h << ",\"attention\":\"" << spec.attention << "\"";
+  h << ",\"geometric_bias\":\"" << spec.geometricBias << "\"";
+  h << ",\"head\":\"" << spec.head << "\"";
+  h << ",\"quantization\":\"" << quantization << "\"";
+  h << ",\"gate\":\"" << spec.gate << "\"";
+  h << ",\"alpha\":" << spec.alpha;
+  h << ",\"context_dim\":" << ContextSpec::kDim;
+  h << ",\"cheap_pooling\":\"" << spec.cheapPooling << "\"";
+  h << ",\"threshold\":" << spec.threshold;
+  h << ",\"t_high\":" << spec.tHigh;
+  if (spec.hasTLow) h << ",\"t_low\":" << spec.tLow;
+  else h << ",\"t_low\":null";
+  h << ",\"refine_precision\":\"" << spec.refinePrecision << "\"";
+  h << ",\"pruned_pairs\":[";
+  for (size_t i = 0; i < spec.prunedPairs.size(); ++i) {
+    if (i > 0) h << ",";
+    h << "[" << spec.prunedPairs[i].first << "," << spec.prunedPairs[i].second << "]";
+  }
+  h << "]";
+  h << ",\"token_dims\":[";
+  for (int g = 0; g < 8; ++g) {
+    if (g > 0) h << ",";
+    h << dim;
+  }
+  h << "]";
+  h << ",\"scales\":{";
+  for (int g = 0; g < 8; ++g) {
+    if (g > 0) h << ",";
+    h << "\"emb" << g << "\":" << sc.token[g];
+  }
+  h << "}";
+  h << ",\"tensors\":[";
+  bool first = true;
+  auto emit = [&](const std::string& n, const std::string& shape, const std::string& dtype) {
+    if (!first) h << ",";
+    first = false;
+    h << "{\"name\":\"" << n << "\",\"shape\":" << shape << ",\"dtype\":\"" << dtype << "\"}";
+  };
+  for (int g = 0; g < 8; ++g) {
+    int v = GroupedFeatureSet::vocabSize(g);
+    emit("emb" + std::to_string(g), "[" + std::to_string(v) + "," + std::to_string(gw.w[g]) + "]",
+         embDtype);
+  }
+  for (size_t i = 0; i < names.size(); ++i) {
+    std::string shape = "[";
+    for (size_t j = 0; j < shapes[i].size(); ++j) {
+      if (j > 0) shape += ",";
+      shape += std::to_string(shapes[i][j]);
+    }
+    shape += "]";
+    emit(names[i], shape, "float32");
+  }
+  h << "]";
+  h << ",\"checksum\":\"" << checksum << "\"}";
+  std::string header = h.str();
+  std::ofstream f(path, std::ios::binary);
+  if (!f) {
+    err = "cannot open output";
+    return false;
+  }
+  f.write("RUNE", 4);
+  uint32_t hlen = static_cast<uint32_t>(header.size());
+  f.write(reinterpret_cast<const char*>(&hlen), 4);
+  f.write(header.data(), header.size());
+  f.write(payload.data(), payload.size());
+  return true;
+}
+
 }

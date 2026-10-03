@@ -17,11 +17,21 @@ MODEL_IDS = {
     "rune_03B": "RUNE-03-B",
     "rune_03C": "RUNE-03-C",
     "rune_03D": "RUNE-03-D",
+    "rune_04_cheap": "RUNE-04",
+    "rune_04_always": "RUNE-04",
+    "rune_04_adaptive": "RUNE-04",
 }
 
 CORE_MODELS = ("rune_mlp",)
 EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
-                       "rune_03A", "rune_03B", "rune_03C", "rune_03D")
+                       "rune_03A", "rune_03B", "rune_03C", "rune_03D",
+                       "rune_04_cheap", "rune_04_always", "rune_04_adaptive")
+
+ADAPTIVE_MODES = {
+    "rune_04_cheap": "cheap",
+    "rune_04_always": "always",
+    "rune_04_adaptive": "adaptive",
+}
 
 CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
 
@@ -136,6 +146,19 @@ class ScreeningRunner:
                 "gate_on": self.cfg.get("architecture", {}).get("gate_on", False),
                 "shared_width": self.cfg.get("architecture", {}).get("shared_width", 32),
             },
+            "adaptive_params": {
+                "mode": ADAPTIVE_MODES.get(model_key, "adaptive"),
+                "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
+                "cheap_pooling": self.cfg.get("architecture", {}).get("cheap_pooling", "none"),
+                "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
+                "threshold": self.cfg.get("routing", {}).get("threshold", 0.5),
+                "t_high": self.cfg.get("routing", {}).get("t_high", None),
+                "t_low": self.cfg.get("routing", {}).get("t_low", None),
+                "pruned_pairs": self.cfg.get("architecture", {}).get("pruned_pairs", []),
+                "refine_precision": self.cfg.get("precision", {}).get("refine", "fp32"),
+                "lambda_diff": self.cfg.get("loss", {}).get("lambda_diff", 0.1),
+                "diff_margin": self.cfg.get("loss", {}).get("diff_margin", 0.1),
+            },
         }
         trainer = Trainer(tcfg)
         val = splits["val"]
@@ -162,7 +185,10 @@ class ScreeningRunner:
                 "experiment_id": self.exp_name,
                 "model": model_key,
                 "architecture": arch,
-                "architecture_version": "0.2.0" if arch == "RUNE-REL-02" else "0.1.0",
+                "architecture_version": "0.4.0" if arch.startswith("RUNE-04") else ("0.3.0" if arch.startswith("RUNE-03-") else ("0.2.0" if arch == "RUNE-REL-02" else "0.1.0")),
+                "routing": {"mode": tcfg["adaptive_params"]["mode"],
+                            **self.cfg.get("routing", {})} if arch.startswith("RUNE-04") else {"mode": "none"},
+                "precision": self.cfg.get("precision", {"base": "fp32"}) if arch.startswith("RUNE-04") else {},
                 "experimental": experimental_reasons(self.cfg),
                 "milestone_positions": ms,
                 "trained_positions": trainer.positions_seen,

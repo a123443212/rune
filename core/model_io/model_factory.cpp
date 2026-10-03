@@ -29,11 +29,17 @@ std::unique_ptr<RelationalModel> createRelational(const FlexBuildSpec& spec, std
 }
 
 bool isSupportedVersion(const std::string& version) {
-  return version == "0.1.0" || version == "0.2.0" || version == "0.3.0";
+  return version == "0.1.0" || version == "0.2.0" || version == "0.3.0" || version == "0.4.0";
 }
 
 std::unique_ptr<DenseModel> createDense(const DenseBuildSpec& spec, std::string& err) {
   std::unique_ptr<DenseModel> m(new DenseModel());
+  if (!m->configure(spec, err)) return nullptr;
+  return m;
+}
+
+std::unique_ptr<AdaptiveModel> createAdaptive(const AdaptiveBuildSpec& spec, std::string& err) {
+  std::unique_ptr<AdaptiveModel> m(new AdaptiveModel());
   if (!m->configure(spec, err)) return nullptr;
   return m;
 }

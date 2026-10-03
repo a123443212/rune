@@ -9,6 +9,7 @@
 #include "core/inference/evaluator.h"
 #include "bindings/dense_bindings.h"
 #include "bindings/relational_bindings.h"
+#include "bindings/adaptive_bindings.h"
 #include "core/model_io/model_factory.h"
 #include "core/model_io/model_io.h"
 
@@ -128,4 +129,5 @@ PYBIND11_MODULE(rune_bindings, m) {
 
   registerRelational(m);
   registerDense(m);
+  registerAdaptive(m);
 }

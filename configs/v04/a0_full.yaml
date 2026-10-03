@@ -1,0 +1,55 @@
+experiment:
+  name: rune_v04_a0_full
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v04_a0_full
+
+data:
+  dataset: clean_v04
+  teacher: teacher_v04
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_03A
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  token_dims: [32, 32, 32, 32, 32, 32, 32, 32]
+  pooling: none
+  pool_clip: true
+  gate_on: false
+  shared_width: 32
+  gate: clip
+  alpha: 1.0
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  A0. v0.3 full evaluator (RUNE-03-A uniform until the v0.3 ladder
+  promotes a successor). Reference every adaptive leg compares against.

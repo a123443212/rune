@@ -47,8 +47,9 @@ class Trainer:
             p = config.get("rel_params", {})
             self.model = build_rel_model(tokens=p.get("tokens", 8), dim=p.get("dim", 32),
                                          gate=p.get("gate", "clip"), alpha=p.get("alpha", 1.0),
-                                         dynamic_bias=p.get("dynamic_bias", False))
+                                          dynamic_bias=p.get("dynamic_bias", False))
             self.needs_context = True
+            self.is_adaptive = False
         elif config["arch"].startswith("RUNE-03-"):
             from training.models.dense import build_dense_model
 
@@ -60,17 +61,47 @@ class Trainer:
                                            gate_on=p.get("gate_on", False),
                                            shared_width=p.get("shared_width", 32))
             self.needs_context = False
+            self.is_adaptive = False
+        elif config["arch"].startswith("RUNE-04"):
+            from training.models.adaptive import build_adaptive_model
+
+            p = config.get("adaptive_params", {})
+            self.model = build_adaptive_model(dim=p.get("dim", 32),
+                                              cheap_pooling=p.get("cheap_pooling", "none"),
+                                              alpha=p.get("alpha", 1.0),
+                                              threshold=p.get("threshold", 0.5),
+                                              t_high=p.get("t_high", None),
+                                              t_low=p.get("t_low", None),
+                                              pruned_pairs=p.get("pruned_pairs", ()),
+                                              refine_precision=p.get("refine_precision", "fp32"))
+            self.needs_context = False
+            self.is_adaptive = True
         else:
             self.model = build_model(config["arch"])
             self.needs_context = False
-        self.loss_fn = CompositeLoss(
-            value=True,
-            wdl=config.get("lambda_wdl", 0.5) > 0,
-            ranking=config.get("lambda_rank", 0.0) > 0,
-            lambda_wdl=config.get("lambda_wdl", 0.5),
-            lambda_rank=config.get("lambda_rank", 0.1),
-            rank_margin=config.get("rank_margin", 0.05),
-        )
+            self.is_adaptive = False
+        if config["arch"].startswith("RUNE-04"):
+            from training.losses.adaptive import AdaptiveLoss
+
+            self.loss_fn = AdaptiveLoss(
+                value=True,
+                wdl=config.get("lambda_wdl", 0.5) > 0,
+                ranking=config.get("lambda_rank", 0.0) > 0,
+                lambda_wdl=config.get("lambda_wdl", 0.5),
+                lambda_rank=config.get("lambda_rank", 0.1),
+                rank_margin=config.get("rank_margin", 0.05),
+                lambda_diff=config.get("lambda_diff", 0.1),
+                diff_margin=config.get("diff_margin", 0.1),
+            )
+        else:
+            self.loss_fn = CompositeLoss(
+                value=True,
+                wdl=config.get("lambda_wdl", 0.5) > 0,
+                ranking=config.get("lambda_rank", 0.0) > 0,
+                lambda_wdl=config.get("lambda_wdl", 0.5),
+                lambda_rank=config.get("lambda_rank", 0.1),
+                rank_margin=config.get("rank_margin", 0.05),
+            )
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
             lr=config.get("lr", 3e-4),
@@ -103,11 +134,15 @@ class Trainer:
         value = value.to(self.device)
         wdl = wdl.to(self.device)
         self.model.train()
-        v_pred, w_pred = self.forward_model(ids, masks, ctx)
+        out = self.forward_model(ids, masks, ctx)
         rank = None
         if rank_batch is not None:
             rids, rmasks, rctx, a_idx, b_idx, signs, weights = rank_batch
-            rv_pred, _ = self.forward_model(rids, rmasks, rctx)
+            r_out = self.forward_model(rids, rmasks, rctx)
+            if self.is_adaptive:
+                rv_pred = r_out[2]
+            else:
+                rv_pred, _ = r_out
             a = torch.tensor(a_idx, device=self.device)
             b = torch.tensor(b_idx, device=self.device)
             rank = (rv_pred[a], rv_pred[b], torch.tensor(signs, device=self.device),
@@ -116,8 +151,15 @@ class Trainer:
             idx = count_ranking_pairs(value.tolist(), self.cfg.get("rank_group", 4))
             if idx is not None:
                 a, b, s = idx
-                rank = (v_pred[a], v_pred[b], s.to(self.device))
-        losses = self.loss_fn(v_pred, w_pred, value, wdl, rank)
+                base = out[2] if self.is_adaptive else out[0]
+                rank = (base[a], base[b], s.to(self.device))
+        if self.is_adaptive:
+            cheap_v, cheap_w, ref_v, ref_w, diff = out
+            losses = self.loss_fn(cheap_v, cheap_w, ref_v, ref_w, diff,
+                                  value, wdl, rank)
+        else:
+            v_pred, w_pred = out
+            losses = self.loss_fn(v_pred, w_pred, value, wdl, rank)
         self.opt.zero_grad()
         losses["total"].backward()
         grad_norm = torch.nn.utils.clip_grad_norm_(self.model.parameters(), 1.0)
@@ -149,10 +191,20 @@ class Trainer:
         tot = {"total": 0.0, "value": 0.0, "wdl": 0.0, "rank": 0.0}
         racc, wacc, n = 0.0, 0.0, 0
         nb = 0
+        cwacc, cn, dsum = 0.0, 0, 0.0
         for batch in loader:
             ids, masks, ctx, value, wdl = self.unpack(batch)
-            v_pred, w_pred = self.forward_model(ids, masks, ctx)
-            losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
+            out = self.forward_model(ids, masks, ctx)
+            if self.is_adaptive:
+                cheap_v, cheap_w, v_pred, w_pred, diff = out
+                losses = self.loss_fn(cheap_v, cheap_w, v_pred, w_pred, diff,
+                                      value.to(self.device), wdl.to(self.device))
+                cwacc += wdl_accuracy(cheap_w, wdl).item() * len(value)
+                cn += len(value)
+                dsum += diff.float().mean().item() * len(value)
+            else:
+                v_pred, w_pred = out
+                losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
             for k in tot:
                 tot[k] += losses[k].item()
             wacc += wdl_accuracy(w_pred, wdl).item() * len(value)
@@ -168,6 +220,10 @@ class Trainer:
         out["rank_acc"] = racc / max(1, n)
         out["positions_seen"] = self.positions_seen
         out["params"] = self.model.parameter_count()
+        if self.is_adaptive:
+            out["cheap_wdl_acc"] = cwacc / max(1, cn)
+            out["difficulty_mean"] = dsum / max(1, cn)
+            out["cheap_params"] = self.model.cheap_parameter_count()
         return out
 
     def make_train_loader(self, records, batch_size, shuffle, seed):

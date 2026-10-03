@@ -8,6 +8,7 @@
 #include "core/accumulators/grouped_accumulator.h"
 #include "core/accumulators/token_layout.h"
 #include "core/architectures/attention/attention.h"
+#include "core/architectures/adaptive/adaptive.h"
 #include "core/architectures/dense/dense.h"
 #include "core/architectures/mlp/mlp.h"
 #include "core/architectures/relational/relational.h"
@@ -225,6 +226,74 @@ int main(int argc, char** argv) {
       }
     } else {
       std::printf("dense_config_error: %s\n", derr.c_str());
+    }
+  }
+
+  {
+    AdaptiveBuildSpec aspec;
+    aspec.dim = 32;
+    aspec.cheapPooling = "none";
+    aspec.threshold = 0.5f;
+    AdaptiveModel amodel;
+    std::string aerr;
+    if (amodel.configure(aspec, aerr)) {
+      VarWidths agw;
+      for (int g = 0; g < 8; ++g) agw.w[g] = 32;
+      VarEmbeddings aemb;
+      aemb.configure(agw);
+      aemb.init(3);
+      AdaptiveEvaluator aev;
+      std::string aeerr;
+      if (aev.configure(&aemb, &amodel, aeerr)) {
+        report("adapt_cheap_refresh_us", benchUs([&](int) {
+                 aev.refresh(start);
+                 aev.evaluate(AdaptiveMode::Cheap, 0.0f, true, false);
+               }, 2000));
+        aev.refresh(start);
+        report("adapt_cheap_incremental_us", benchUs([&](int) {
+                 aev.evaluate(AdaptiveMode::Cheap, 0.0f, true, false);
+               }, 5000));
+        report("adapt_always_incremental_us", benchUs([&](int) {
+                 aev.evaluate(AdaptiveMode::Always, 0.0f, true, false);
+               }, 5000));
+        report("adapt_adaptive_low_us", benchUs([&](int) {
+                 aev.evaluate(AdaptiveMode::Adaptive, 1e30f, true, false);
+               }, 5000));
+        report("adapt_adaptive_high_us", benchUs([&](int) {
+                 aev.evaluate(AdaptiveMode::Adaptive, -1e30f, true, false);
+               }, 5000));
+        std::vector<float> araw(256), acheap(256);
+        aev.currentTokens(araw.data());
+        aev.currentCheap(acheap.data());
+        float av;
+        float awdl[3];
+        float adiff = 0.0f;
+        report("adapt_cheap_forward_us", benchUs([&](int) {
+                 amodel.cheapForward(araw.data(), acheap.data(), av, awdl, adiff);
+               }, 5000));
+        report("adapt_refine_forward_us", benchUs([&](int) {
+                 amodel.refineForward(acheap.data(), av, awdl);
+               }, 5000));
+        report("adapt_route_us",
+               benchUs([&](int) { volatile bool r = amodel.route(adiff, false); }, 50000));
+        AdaptiveEvalResult c0 = aev.evaluateBoard(start, AdaptiveMode::Cheap, 0.0f, true, false);
+        AdaptiveEvalResult a0 = aev.evaluateBoard(start, AdaptiveMode::Always, 0.0f, true, false);
+        AdaptiveEvalResult lo =
+            aev.evaluateBoard(start, AdaptiveMode::Adaptive, 1e30f, true, false);
+        AdaptiveEvalResult hi =
+            aev.evaluateBoard(start, AdaptiveMode::Adaptive, -1e30f, true, false);
+        std::printf("adapt_check_cheap_eq: %d\n",
+                    (lo.value == c0.value && !lo.refined) ? 1 : 0);
+        std::printf("adapt_check_always_eq: %d\n",
+                    (hi.value == a0.value && hi.refined) ? 1 : 0);
+        std::printf("adapt_params: %zu\n", amodel.parameterCount() + aemb.numFloats());
+        std::printf("adapt_cheap_params: %zu\n",
+                    amodel.cheapParameterCount() + aemb.numFloats());
+      } else {
+        std::printf("adapt_eval_error: %s\n", aeerr.c_str());
+      }
+    } else {
+      std::printf("adapt_config_error: %s\n", aerr.c_str());
     }
   }
   return 0;

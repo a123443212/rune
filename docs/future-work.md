@@ -25,3 +25,31 @@ Ideas parked here instead of leaking into the v0.1 scope:
 - Teacher labeling pipeline (blocks RQ3/RQ4 training).
 - Quiet-machine latency protocol with pinned frequency for publishable
   inference numbers.
+
+# Parked during v0.3 (do not implement during v0.3)
+
+- Full Transformer / multi-head / multi-layer attention.
+- Mamba/SSM mixer, MoE, large recurrent networks.
+- Self-supervised pretraining, contrastive learning, reconstruction
+  or consistency losses.
+- Complex bilinear blocks, giant heads, expert routing.
+- Architecture search or random-search over allocations.
+- Dynamic GAB revival: needs 100M per-us evidence over static, twice.
+- Channel gate revival if A3 fails: needs a new hypothesis, not a retry.
+- Non-uniform shared projection (shared width > 32): only if
+  representation analysis shows sharing helps but width binds.
+- Per-token quantization scales: only after per-token sensitivity
+  analysis proves global scales are the bottleneck.
+
+# Parked during v0.4 (do not implement during v0.4)
+
+- MoE, full Transformer, Mamba/SSM over the tokens.
+- Recurrent multi-step refinement ("refine until good enough").
+- Large expert routing, reinforcement learning, neural search policy.
+- Giant uncertainty networks (difficulty stays one linear layer until
+  proven insufficient, then a stated hypothesis — never silent growth).
+- L_compute as a reported scalar objective; quality, rate, avg and
+  worst-case latency stay separate forever.
+- FP16 refinement on CPUs where it shows no measured benefit.
+- Search-aware evaluation beyond stability analysis (v0.5 topic,
+  not v0.4 implementation).

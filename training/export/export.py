@@ -76,10 +76,12 @@ def export_model(model, path, quantization="fp32"):
         "tensors": tensors_meta,
     }
     for key in ("gate", "alpha", "context_dim", "variant", "token_dims", "pooling",
-                "pool_clip", "gate_on", "shared_width"):
+                "pool_clip", "gate_on", "shared_width", "cheap_pooling",
+                "threshold", "t_high", "t_low", "refine_precision",
+                "pruned_pairs"):
         if key in spec:
             header[key] = spec[key]
-    if spec["arch"].startswith("RUNE-03-"):
+    if spec["arch"].startswith("RUNE-03-") or spec["arch"].startswith("RUNE-04"):
         header["checksum"] = format(fnv1a(payload), "016x")
     hbytes = json.dumps(header, separators=(",", ":")).encode()
     with open(path, "wb") as f:

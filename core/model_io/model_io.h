@@ -31,6 +31,7 @@ struct RuneFile {
   VarEmbeddings varEmbeddings;
   VarQuantTables varQ;
   VarScales varScales;
+  bool isAdaptive = false;
 };
 
 bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err);
@@ -42,5 +43,8 @@ bool saveFlexRuneFile(const std::string& path, const ModelSpec& spec,
 bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
                        const VarEmbeddings& embeddings, const IArchitecture& arch,
                        const std::string& quantization, std::string& err);
+bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
+                          const VarEmbeddings& embeddings, const IArchitecture& arch,
+                          const std::string& quantization, std::string& err);
 
 }

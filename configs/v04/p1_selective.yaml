@@ -1,0 +1,62 @@
+experiment:
+  name: rune_v04_p1_selective
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v04_p1_selective
+
+data:
+  dataset: clean_v04
+  teacher: teacher_v04
+  positions:
+    - 25000000
+    - 50000000
+
+models:
+  - rune_04_adaptive
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  cheap_pooling: none
+  gate: clip
+  alpha: 1.0
+
+routing:
+  threshold: 0.5
+  t_high: null
+  t_low: null
+
+precision:
+  base: int8
+  refine: int16
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+  lambda_diff: 0.1
+  diff_margin: 0.1
+
+sampling:
+  mode: none
+
+export_quant: int8
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  P1. INT8 base + higher-precision refinement. Decided by target-CPU
+  bench, not assumption. Reports numerical error, latency, NPS, size,
+  engine impact together.

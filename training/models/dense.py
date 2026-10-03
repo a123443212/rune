@@ -224,6 +224,24 @@ def dense_presets():
     }
 
 
+ALLOCATION_H1 = [28, 32, 32, 28, 20, 48, 40, 28]
+
+
+BUDGET_ALLOCS = {
+    "uniform_128": [16] * 8,
+    "uniform_192": [24] * 8,
+    "uniform_256": [32] * 8,
+    "uniform_320": [40] * 8,
+    "h1_256": list(ALLOCATION_H1),
+}
+
+
+def allocation_for(name):
+    if name not in BUDGET_ALLOCS:
+        raise ValueError(f"unknown allocation {name}")
+    return list(BUDGET_ALLOCS[name])
+
+
 def build_dense_model(variant="A", token_dims=None, pooling=None, pool_clip=True,
                       gate_on=None, shared_width=SHARED_WIDTH):
     base = dict(dense_presets()[variant])

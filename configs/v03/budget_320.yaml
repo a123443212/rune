@@ -1,0 +1,56 @@
+experiment:
+  name: rune_v03_budget_320
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v03_budget_320
+
+data:
+  dataset: clean_v03
+  teacher: teacher_v03
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_03A
+
+architecture:
+  tokens: 8
+  token_dim: 40
+  token_dims: [40, 40, 40, 40, 40, 40, 40, 40]
+  pooling: none
+  pool_clip: true
+  gate_on: false
+  shared_width: 32
+  gate: clip
+  alpha: 1.0
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  Budget ladder leg: 320 total dims. If 320 wins only by capacity,
+  that is a capacity result, not an architecture result. See
+  budget_128 note.

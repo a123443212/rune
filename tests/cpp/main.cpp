@@ -35,6 +35,12 @@ int main() {
   testPoolGateMath();
   testDenseModelIO();
   testDenseParamAccounting();
+  testAdaptiveConfigure();
+  testAdaptiveRoutingModes();
+  testAdaptiveHysteresis();
+  testAdaptiveIncremental();
+  testAdaptiveModelIO();
+  testAdaptiveParamAccounting();
   if (g_failures == 0) {
     std::printf("ALL CPP TESTS PASSED\n");
     return 0;
