@@ -1,7 +1,7 @@
 use std::collections::{HashMap, HashSet};
 use std::fs::File;
 use std::io::{BufRead, BufReader, BufWriter, Write};
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
@@ -117,9 +117,14 @@ impl PoolRecord {
             source_id: v.get("source_id").and_then(|x| x.as_u64()).unwrap_or(0) as u32,
             teacher_value: v
                 .get("teacher_v")
+                .or_else(|| v.get("teacher_value"))
                 .and_then(|x| x.as_f64())
                 .map(|x| x as f32),
-            teacher_wdl: v.get("teacher_w").and_then(|x| x.as_u64()).map(|x| x as u8),
+            teacher_wdl: v
+                .get("teacher_w")
+                .or_else(|| v.get("teacher_wdl"))
+                .and_then(|x| x.as_u64())
+                .map(|x| x as u8),
             teacher_cp: v
                 .get("teacher_cp")
                 .and_then(|x| x.as_i64())
@@ -253,6 +258,7 @@ pub fn dedup_external(
         let mut buf = Vec::new();
         write_shard(
             &ShardHeader {
+                schema: 2,
                 feature_version: String::new(),
                 compression: Compression::Raw,
                 record_count: 1,
@@ -523,6 +529,7 @@ pub fn write_shards(
     for (s, chunk) in order.chunks(per_shard.max(1)).enumerate() {
         let recs: Vec<Record> = chunk.iter().map(|&i| records[i].clone()).collect();
         let header = ShardHeader {
+                schema: 2,
             feature_version: feature_version.to_string(),
             compression,
             record_count: recs.len() as u64,
@@ -560,6 +567,30 @@ pub fn read_shard_file(path: &Path) -> Result<Vec<Record>> {
     let data = std::fs::read(path)?;
     let f = ShardFile::parse(&data)?;
     f.read_all()
+}
+
+pub fn shard_files(path: &Path) -> Result<Vec<PathBuf>> {
+    if path.is_dir() {
+        let man_path = path.join("manifest.json");
+        let man: serde_json::Value = serde_json::from_reader(
+            File::open(&man_path).map_err(|e| Error::Io(e.to_string()))?,
+        )
+        .map_err(|e| Error::BadFormat(e.to_string()))?;
+        let files = man
+            .get("shard_files")
+            .and_then(|v| v.as_array())
+            .ok_or_else(|| Error::BadFormat("manifest missing shard_files".to_string()))?;
+        let mut out = Vec::new();
+        for f in files {
+            let name = f
+                .as_str()
+                .ok_or_else(|| Error::BadFormat("bad shard name".to_string()))?;
+            out.push(path.join(name));
+        }
+        Ok(out)
+    } else {
+        Ok(vec![path.to_path_buf()])
+    }
 }
 
 pub fn phase_counts(records: &[Record]) -> [usize; 3] {
@@ -871,4 +902,191 @@ pub fn ingest_pgn_threads(
         stats.output = out.len();
         out
     })
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct ScoreComponents {
+    pub disagreement: f32,
+    pub uncertainty: f32,
+    pub instability: f32,
+    pub rank_disagreement: f32,
+    pub rarity: f32,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScoreWeights {
+    pub disagreement: f32,
+    pub uncertainty: f32,
+    pub instability: f32,
+    pub rarity: f32,
+}
+
+impl Default for ScoreWeights {
+    fn default() -> Self {
+        ScoreWeights { disagreement: 1.0, uncertainty: 0.0, instability: 0.0, rarity: 0.0 }
+    }
+}
+
+fn clip01(x: f32) -> f32 {
+    x.clamp(0.0, 1.0)
+}
+
+pub fn final_score(c: &ScoreComponents, w: &ScoreWeights) -> f32 {
+    (w.disagreement * clip01(c.disagreement / 2.0)
+        + w.uncertainty * clip01(c.uncertainty)
+        + w.instability * clip01(c.instability / 2.0)
+        + w.rarity * clip01(c.rarity))
+        / (w.disagreement + w.uncertainty + w.instability + w.rarity).max(1e-9)
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct SelectionConfig {    pub budget: usize,
+    pub method: crate::record::SelMethod,
+    pub round: u32,
+    pub weights: ScoreWeights,
+    pub diversity_cap: usize,
+    pub floor_ratio: f64,
+    pub seed: u64,
+    pub shard_topk: usize,
+}
+
+#[derive(Debug, Clone)]
+pub struct ScoredRecord {
+    pub record: Record,
+    pub components: ScoreComponents,
+    pub final_score: f32,
+}
+
+pub fn attach_scores(
+    records: Vec<Record>,
+    scores: &HashMap<u64, ScoreComponents>,
+    weights: &ScoreWeights,
+    stats: &mut StageStats,
+) -> (Vec<ScoredRecord>, usize) {
+    let mut out = Vec::with_capacity(records.len());
+    let mut missing = 0usize;
+    let mut buckets: HashMap<(u8, u8, u8), usize> = HashMap::new();
+    for r in &records {
+        stats.input += 1;
+        let key = (r.phase.min(2), r.imbalance_bucket.min(7), (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8);
+        *buckets.entry(key).or_insert(0) += 1;
+    }
+    let peak = buckets.values().cloned().max().unwrap_or(1) as f32;
+    for mut r in records {
+        match scores.get(&r.identity) {
+            None => {
+                missing += 1;
+                stats.reject("missing_score");
+            }
+            Some(c) => {
+                let mut comp = c.clone();
+                let key = (r.phase.min(2), r.imbalance_bucket.min(7), (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8);
+                comp.rarity = 1.0 - buckets.get(&key).cloned().unwrap_or(1) as f32 / peak;
+                let final_score = final_score(&comp, weights);
+                r.sel_score = final_score;
+                out.push(ScoredRecord { record: r, components: comp, final_score });
+            }
+        }
+    }
+    stats.output = out.len();
+    (out, missing)
+}
+
+pub fn select_topk(
+    scored: Vec<ScoredRecord>,
+    cfg: &SelectionConfig,
+    stats: &mut StageStats,
+) -> Vec<ScoredRecord> {
+    for _ in &scored {
+        stats.input += 1;
+    }
+    let top = topk_by_score(&scored, cfg.budget);
+    let k = cfg.budget.min(scored.len());
+    let mut accepted: Vec<usize> = Vec::new();
+    let mut taken: HashSet<usize> = HashSet::new();
+    let mut bucket_count: HashMap<(u8, u8), usize> = HashMap::new();
+    for &idx in &top {
+        let r = &scored[idx].record;
+        let key = (r.phase.min(2), r.imbalance_bucket.min(7));
+        let c = bucket_count.entry(key).or_insert(0);
+        if *c < cfg.diversity_cap.max(1) {
+            *c += 1;
+            accepted.push(idx);
+            taken.insert(idx);
+        } else {
+            stats.reject("diversity_cap");
+        }
+        if accepted.len() >= k {
+            break;
+        }
+    }
+    if accepted.len() < k {
+        for idx in 0..scored.len() {
+            if accepted.len() >= k {
+                break;
+            }
+            if taken.contains(&idx) {
+                continue;
+            }
+            accepted.push(idx);
+        }
+    }
+    stats.output = accepted.len();
+    let mut rng = Rng::new(cfg.seed);
+    let floor_n = ((k as f64 * cfg.floor_ratio).round() as usize).min(accepted.len());
+    let mut out: Vec<ScoredRecord> = Vec::with_capacity(accepted.len());
+    let mut floor_idx: HashSet<usize> = HashSet::new();
+    while floor_idx.len() < floor_n && floor_idx.len() < accepted.len() {
+        floor_idx.insert(rng.below(accepted.len()));
+    }
+    for (pos, idx) in accepted.into_iter().enumerate() {
+        let mut s = scored[idx].clone();
+        if floor_idx.contains(&pos) {
+            s.record.sel_method = crate::record::SelMethod::Stratified;
+        } else {
+            s.record.sel_method = cfg.method;
+        }
+        s.record.active_round = cfg.round;
+        out.push(s);
+    }
+    out
+}
+
+pub fn topk_by_score(scored: &[ScoredRecord], k: usize) -> Vec<usize> {
+    use std::cmp::Ordering;
+    use std::collections::BinaryHeap;
+    struct Item {
+        score: f32,
+        ident: u64,
+        idx: usize,
+    }
+    impl PartialEq for Item {
+        fn eq(&self, other: &Self) -> bool {
+            self.score == other.score && self.ident == other.ident
+        }
+    }
+    impl Eq for Item {}
+    impl PartialOrd for Item {
+        fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
+            Some(self.cmp(other))
+        }
+    }
+    impl Ord for Item {
+        fn cmp(&self, other: &Self) -> Ordering {
+            self.score
+                .total_cmp(&other.score)
+                .then_with(|| other.ident.cmp(&self.ident))
+        }
+    }
+    let k = k.min(scored.len());
+    let mut heap: BinaryHeap<Item> = BinaryHeap::with_capacity(k + 1);
+    for (idx, s) in scored.iter().enumerate() {
+        heap.push(Item { score: s.final_score, ident: s.record.identity, idx });
+        if heap.len() > k.max(1) {
+            heap.pop();
+        }
+    }
+    let mut top: Vec<usize> = heap.into_sorted_vec().into_iter().map(|it| it.idx).collect();
+    top.reverse();
+    top
 }

@@ -48,7 +48,8 @@ def main():
         _, stm, _, _ = parse_fen(r["fen"])
         v = v_white if stm == 0 else -v_white
         wdl = 1 if abs(v) < 0.15 else (0 if v > 0 else 2)
-        out.append({**r, "value": v, "wdl": wdl, "teacher_value": v, "teacher_wdl": wdl,
+        out.append({**r, "value": v, "wdl": wdl, "teacher_v": v, "teacher_w": wdl,
+                    "teacher_value": v, "teacher_wdl": wdl,
                     "teacher_id": "synth_mlp_v1", "student_value": 0.0, "student_wdl": 1,
                     "value_perspective": "side_to_move"})
     P.save_jsonl(args.out, out)

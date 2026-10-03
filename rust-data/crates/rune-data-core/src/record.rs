@@ -2,6 +2,59 @@ use crate::board::Board;
 use crate::features::{extract_features, VOCAB_SIZES};
 use crate::hash;
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[repr(u8)]
+pub enum SelMethod {
+    #[default]
+    None = 0,
+    Random = 1,
+    Stratified = 2,
+    Disagreement = 3,
+    Uncertainty = 4,
+    Rarity = 5,
+    Multi = 6,
+}
+
+impl SelMethod {
+    pub fn from_u8(v: u8) -> Option<SelMethod> {
+        match v {
+            0 => Some(SelMethod::None),
+            1 => Some(SelMethod::Random),
+            2 => Some(SelMethod::Stratified),
+            3 => Some(SelMethod::Disagreement),
+            4 => Some(SelMethod::Uncertainty),
+            5 => Some(SelMethod::Rarity),
+            6 => Some(SelMethod::Multi),
+            _ => None,
+        }
+    }
+
+    pub fn name(self) -> &'static str {
+        match self {
+            SelMethod::None => "none",
+            SelMethod::Random => "random",
+            SelMethod::Stratified => "stratified",
+            SelMethod::Disagreement => "disagreement",
+            SelMethod::Uncertainty => "uncertainty",
+            SelMethod::Rarity => "rarity",
+            SelMethod::Multi => "multi",
+        }
+    }
+
+    pub fn from_name(s: &str) -> Option<SelMethod> {
+        match s {
+            "none" => Some(SelMethod::None),
+            "random" => Some(SelMethod::Random),
+            "stratified" => Some(SelMethod::Stratified),
+            "disagreement" => Some(SelMethod::Disagreement),
+            "uncertainty" => Some(SelMethod::Uncertainty),
+            "rarity" => Some(SelMethod::Rarity),
+            "multi" => Some(SelMethod::Multi),
+            _ => None,
+        }
+    }
+}
+
 #[derive(Debug, Clone)]
 pub struct Record {
     pub fen: String,
@@ -21,6 +74,9 @@ pub struct Record {
     pub ply: u16,
     pub source_id: u32,
     pub features: Vec<(u8, u16)>,
+    pub active_round: u32,
+    pub sel_method: SelMethod,
+    pub sel_score: f32,
 }
 
 impl Record {
@@ -56,6 +112,9 @@ impl Record {
             ply,
             source_id,
             features: feats,
+            active_round: 0,
+            sel_method: SelMethod::None,
+            sel_score: 0.0,
         })
     }
 

@@ -58,6 +58,8 @@ def main():
             rec = dict(r)
             rec["teacher_v"] = v
             rec["teacher_w"] = wdl
+            rec["teacher_value"] = v
+            rec["teacher_wdl"] = wdl
             rec["teacher_cp"] = cp
             rec["value_perspective"] = "side_to_move"
             if info.get("wdl") is not None:

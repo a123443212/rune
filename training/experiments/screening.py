@@ -135,7 +135,11 @@ class ScreeningRunner:
             raise ValueError("empty train/val split: grow the pool or change seed")
         sampling = self.cfg.get("sampling", {})
         mode = sampling.get("mode", "none")
-        if mode == "disagreement_mix":
+        if mode == "stratified":
+            n = sampling.get("max_positions", len(splits["train"]))
+            splits["train"] = P.sample_stratified(
+                splits["train"], min(n, len(splits["train"])), seed=self.seed)
+        elif mode == "disagreement_mix":
             from training.samplers.disagreement import sample_mixture
 
             n = sampling.get("max_positions", len(splits["train"]))
@@ -218,6 +222,13 @@ class ScreeningRunner:
             },
         }
         trainer = Trainer(tcfg)
+        init_ckpt = self.cfg.get("training", {}).get("init_ckpt", "")
+        init_positions = 0
+        if init_ckpt:
+            if not trainer.load_checkpoint(init_ckpt):
+                raise ValueError(f"init_ckpt not loadable: {init_ckpt}")
+            init_positions = trainer.positions_seen
+            trainer.positions_seen = 0
         val = splits["val"]
         prev_dir = None
         for ms in milestones:
@@ -250,6 +261,8 @@ class ScreeningRunner:
                 "experimental": experimental_reasons(self.cfg),
                 "milestone_positions": ms,
                 "trained_positions": trainer.positions_seen,
+                "init_ckpt": init_ckpt,
+                "init_positions": init_positions,
                 "feature_set": "grouped_hkav2_fullthreats_v01",
                 "teacher_id": self.cfg.get("data", {}).get("teacher", "unknown"),
                 "distillation": self.cfg.get("distillation", {"enabled": False}),

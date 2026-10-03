@@ -17,7 +17,7 @@ def read_shard(path):
     assert fver == FORMAT_VERSION, f"unsupported format version {fver}"
     (schema,) = struct.unpack_from("<I", blob, off)
     off += 4
-    assert schema == 1, f"unsupported schema {schema}"
+    assert schema in (1, 2), f"unsupported schema {schema}"
     (flen,) = struct.unpack_from("<H", blob, off)
     off += 2
     feature_version = blob[off:off + flen].decode()
@@ -76,6 +76,15 @@ def read_shard(path):
         p += 2
         (nfen,) = struct.unpack_from("<H", raw, p)
         p += 2
+        if schema >= 2:
+            (active_round,) = struct.unpack_from("<I", raw, p)
+            p += 4
+            (sel_score,) = struct.unpack_from("<f", raw, p)
+            p += 4
+            (sel_method,) = struct.unpack_from("<B", raw, p)
+            p += 1
+        else:
+            active_round, sel_score, sel_method = 0, 0.0, 0
         feats = []
         for _ in range(nfeat):
             (g, i) = struct.unpack_from("<HH", raw, p)
@@ -89,10 +98,13 @@ def read_shard(path):
             "has_teacher": bool(flags & 1), "perspective_stm": bool(flags & 2),
             "teacher_value": tvalue, "teacher_cp": tcp, "game_hash": game_hash,
             "ply": ply, "source_id": source_id, "features": feats,
+            "active_round": active_round, "sel_score": sel_score,
+            "sel_method": sel_method,
         })
     header = {"feature_version": feature_version, "compression": compression,
               "record_count": count, "shard_id": shard_id,
-              "shard_count": shard_count, "dataset_id": dataset_id}
+              "shard_count": shard_count, "dataset_id": dataset_id,
+              "schema": schema}
     return header, records
 
 

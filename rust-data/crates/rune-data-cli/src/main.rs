@@ -7,12 +7,13 @@ use clap::{Args, Parser, Subcommand};
 use rune_data_core::error::{Error, Result};
 use rune_data_core::format::{Compression, ShardFile};
 use rune_data_core::pipeline::{
-    dedup_external, dedup_in_memory, filter_records, game_split, ingest_pgn_threads, join_labels,
-    near_duplicate_stats, phase_balance, phase_counts, pool_to_records, read_jsonl_pool,
-    read_shard_file, rss_mb_estimate, sample_stratified, sample_uniform, write_report,
-    write_shards, FilterConfig, PipelineConfig, PipelineReport, StageStats,
+    FilterConfig, PipelineConfig, PipelineReport, ScoreComponents, ScoreWeights, ScoredRecord,
+    SelectionConfig, StageStats, attach_scores, dedup_external, dedup_in_memory, filter_records,
+    final_score, game_split, ingest_pgn_threads, join_labels, near_duplicate_stats, phase_balance,
+    phase_counts, pool_to_records, read_jsonl_pool, read_shard_file, sample_stratified,
+    sample_uniform, select_topk, write_report, write_shards, rss_mb_estimate,
 };
-use rune_data_core::record::Record;
+use rune_data_core::record::{Record, SelMethod};
 
 #[derive(Parser)]
 #[command(name = "rune-data", version, about = "RUNE Data Engine")]
@@ -36,6 +37,8 @@ enum Cmd {
     JoinLabels(JoinArgs),
     ExportLabels(ExportLabelsArgs),
     Split(SplitArgs),
+    Score(ScoreArgs),
+    Select(SelectArgs),
     Benchmark(BenchArgs),
 }
 
@@ -47,8 +50,7 @@ struct Common {
     dataset_id: Option<String>,
 }
 
-fn base_cfg(c: &Common) -> PipelineConfig {
-    let mut cfg = PipelineConfig::default();
+fn base_cfg(c: &Common) -> PipelineConfig {    let mut cfg = PipelineConfig::default();
     if let Some(s) = c.seed {
         cfg.seed = s;
     }
@@ -223,6 +225,60 @@ struct SplitArgs {
 }
 
 #[derive(Args)]
+struct ScoreArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    scores: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[command(flatten)]
+    common: Common,
+    #[arg(long, default_value_t = 1.0)]
+    w_disagreement: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_uncertainty: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_instability: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_rarity: f32,
+}
+
+#[derive(Args)]
+struct SelectArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[command(flatten)]
+    common: Common,
+    #[arg(long)]
+    budget: usize,
+    #[arg(long, default_value = "multi")]
+    method: String,
+    #[arg(long, default_value_t = 0)]
+    round: u32,
+    #[arg(long, default_value_t = 1.0)]
+    w_disagreement: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_uncertainty: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_instability: f32,
+    #[arg(long, default_value_t = 0.0)]
+    w_rarity: f32,
+    #[arg(long, default_value_t = 1000000)]
+    diversity_cap: usize,
+    #[arg(long, default_value_t = 0.2)]
+    floor_ratio: f64,
+    #[arg(long, default_value_t = 0)]
+    shard_topk: usize,
+    #[arg(long, default_value = "")]
+    teacher_version: String,
+    #[arg(long, default_value = "")]
+    student_version: String,
+}
+
+#[derive(Args)]
 struct BenchArgs {
     #[arg(long)]
     pool: Option<PathBuf>,
@@ -272,6 +328,51 @@ fn load_input(path: &Path) -> Result<(Vec<Record>, String, String)> {
         let recs = read_shard_file(path)?;
         Ok((recs, String::new(), String::new()))
     }
+}
+
+fn read_score_components(path: &Path) -> Result<HashMap<u64, ScoreComponents>> {
+    let f = File::open(path)?;
+    let mut map = HashMap::new();
+    for line in BufReader::new(f).lines() {
+        let line = line.map_err(|e| Error::Io(e.to_string()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| Error::BadFormat(e.to_string()))?;
+        let id = if let Some(h) = v.get("identity").and_then(|x| x.as_str()) {
+            u64::from_str_radix(h.trim_start_matches("0x"), 16)
+                .map_err(|_| Error::BadFormat("bad identity hex".to_string()))?
+        } else if let Some(fen) = v.get("fen").and_then(|x| x.as_str()) {
+            rune_data_core::board::canonical_identity(fen, false)
+        } else {
+            return Err(Error::BadFormat("score line needs identity or fen".to_string()));
+        };
+        map.insert(
+            id,
+            ScoreComponents {
+                disagreement: v.get("disagreement").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                uncertainty: v.get("uncertainty").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                instability: v.get("instability").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                rank_disagreement: v
+                    .get("rank_disagreement")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0) as f32,
+                rarity: 0.0,
+            },
+        );
+    }
+    Ok(map)
+}
+
+fn git_commit() -> String {
+    std::process::Command::new("git")
+        .args(["rev-parse", "--short", "HEAD"])
+        .output()
+        .ok()
+        .and_then(|o| String::from_utf8(o.stdout).ok())
+        .map(|s| s.trim().to_string())
+        .unwrap_or_else(|| "unknown".to_string())
 }
 
 fn save_stage(
@@ -628,6 +729,153 @@ fn run() -> Result<()> {
             }
             println!("split written to {}", a.out.display());
         }
+        Cmd::Score(a) => {
+            let cfg = base_cfg(&a.common);
+            let t0 = std::time::Instant::now();
+            let (recs, _, _) = load_input(&a.input)?;
+            let scores = read_score_components(&a.scores)?;
+            let weights = ScoreWeights {
+                disagreement: a.w_disagreement,
+                uncertainty: a.w_uncertainty,
+                instability: a.w_instability,
+                rarity: a.w_rarity,
+            };
+            let mut st = StageStats::default();
+            let (scored, missing) = attach_scores(recs, &scores, &weights, &mut st);
+            let dt = t0.elapsed().as_secs_f64();
+            let scored_recs: Vec<Record> =
+                scored.iter().map(|s| s.record.clone()).collect();
+            let comp_path = a.out.join("score_components.jsonl");
+            std::fs::create_dir_all(&a.out)?;
+            {
+                let f = File::create(&comp_path)?;
+                let mut w = BufWriter::new(f);
+                for s in &scored {
+                    let o = serde_json::json!({
+                        "identity": format!("{:016x}", s.record.identity),
+                        "disagreement": s.components.disagreement,
+                        "uncertainty": s.components.uncertainty,
+                        "instability": s.components.instability,
+                        "rank_disagreement": s.components.rank_disagreement,
+                        "rarity": s.components.rarity,
+                        "final": s.final_score,
+                    });
+                    writeln!(w, "{o}")?;
+                }
+                w.flush()?;
+            }
+            save_stage(&a.out, &scored_recs, &cfg, stage_map("score", st), dt)?;
+            println!("scored {} records, missing scores: {missing}", scored.len());
+        }
+        Cmd::Select(a) => {
+            let cfg = base_cfg(&a.common);
+            let method = SelMethod::from_name(&a.method)
+                .ok_or_else(|| Error::BadConfig(format!("unknown method {}", a.method)))?;
+            let t0 = std::time::Instant::now();
+            let shard_paths = rune_data_core::pipeline::shard_files(&a.input)?;
+            let weights = ScoreWeights {
+                disagreement: a.w_disagreement,
+                uncertainty: a.w_uncertainty,
+                instability: a.w_instability,
+                rarity: a.w_rarity,
+            };
+            let sel_cfg = SelectionConfig {
+                budget: a.budget,
+                method,
+                round: a.round,
+                weights,
+                diversity_cap: a.diversity_cap,
+                floor_ratio: a.floor_ratio,
+                seed: cfg.seed,
+                shard_topk: a.shard_topk,
+            };
+            let mut winners: Vec<ScoredRecord> = Vec::new();
+            let mut st = StageStats::default();
+            let local_k = if a.shard_topk > 0 { a.shard_topk } else { a.budget };
+            for sp in &shard_paths {
+                let recs = read_shard_file(sp)?;
+                let mut local: Vec<ScoredRecord> = recs
+                    .into_iter()
+                    .map(|mut r| {
+                        let c = ScoreComponents {
+                            disagreement: r.sel_score,
+                            ..Default::default()
+                        };
+                        let final_score = final_score(&c, &sel_cfg.weights);
+                        r.sel_score = final_score;
+                        ScoredRecord { record: r, components: c, final_score }
+                    })
+                    .collect();
+                for _ in &local {
+                    st.input += 1;
+                }
+                if shard_paths.len() > 1 && local.len() > local_k {
+                    use rune_data_core::pipeline::topk_by_score;
+
+                    let keep = topk_by_score(&local, local_k);
+                    let mut reduced = Vec::with_capacity(keep.len());
+                    for i in keep {
+                        reduced.push(local[i].clone());
+                    }
+                    local = reduced;
+                }
+                winners.extend(local);
+            }
+            let selected = select_topk(winners, &sel_cfg, &mut st);
+            let dt = t0.elapsed().as_secs_f64();
+            let out_recs: Vec<Record> =
+                selected.iter().map(|s| s.record.clone()).collect();
+            let requested = out_recs.iter().filter(|r| !r.has_teacher).count();
+            let reused = out_recs.len() - requested;
+            save_stage(&a.out, &out_recs, &cfg, stage_map("select", st), dt)?;
+            {
+                let f = File::create(a.out.join("selection_audit.jsonl"))?;
+                let mut w = BufWriter::new(f);
+                for s in &selected {
+                    let o = serde_json::json!({
+                        "position_id": format!("{:016x}", s.record.identity),
+                        "fen": s.record.fen,
+                        "game_hash": format!("{:016x}", s.record.game_hash),
+                        "selection_method": s.record.sel_method.name(),
+                        "score_components": {
+                            "disagreement": s.components.disagreement,
+                            "uncertainty": s.components.uncertainty,
+                            "instability": s.components.instability,
+                            "rank_disagreement": s.components.rank_disagreement,
+                            "rarity": s.components.rarity,
+                        },
+                        "final_score": s.final_score,
+                        "round": s.record.active_round,
+                        "teacher_version": a.teacher_version,
+                        "student_version": a.student_version,
+                    });
+                    writeln!(w, "{o}")?;
+                }
+                w.flush()?;
+            }
+            let round_doc = format!(
+                "round:\n  id: {}\n  parent_round: {}\n\ndataset:\n  candidate_id: {}\n  base_training_id: {}\n\nmodel:\n  student_id: {}\n  teacher_id: {}\n\nselection:\n  method: {}\n  seed: {}\n  budget: {}\n\nteacher:\n  version: {}\n  labels_requested: {}\n  labels_reused: {}\n\nsystem:\n  git_commit: {}\n  hardware: {}\n",
+                a.round,
+                if a.round > 0 { a.round - 1 } else { 0 },
+                a.input.display(),
+                a.input.display(),
+                a.student_version,
+                a.teacher_version,
+                method.name(),
+                cfg.seed,
+                a.budget,
+                a.teacher_version,
+                requested,
+                reused,
+                git_commit(),
+                std::env::consts::ARCH,
+            );
+            std::fs::write(a.out.join("round.yaml"), round_doc)?;
+            println!(
+                "selected {} (requested {requested}, reused {reused})",
+                out_recs.len()
+            );
+        }
         Cmd::Benchmark(a) => {
             run_benchmark(a)?;
         }
@@ -704,6 +952,7 @@ fn run_benchmark(a: BenchArgs) -> Result<()> {
         let mut buf = Vec::new();
         rune_data_core::format::write_shard(
             &rune_data_core::format::ShardHeader {
+                schema: 2,
                 feature_version: "bench".to_string(),
                 compression: c,
                 record_count: dd.len() as u64,
@@ -745,6 +994,7 @@ fn run_benchmark(a: BenchArgs) -> Result<()> {
     let mut wbuf = Vec::new();
     rune_data_core::format::write_shard(
         &rune_data_core::format::ShardHeader {
+                schema: 2,
             feature_version: "bench".to_string(),
             compression: rune_data_core::format::Compression::Raw,
             record_count: dd.len() as u64,

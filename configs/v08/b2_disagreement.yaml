@@ -1,0 +1,82 @@
+experiment:
+  name: rune_v08_b2_disagreement
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/rune_v08_b2_disagreement
+
+data:
+  dataset: seed_v08
+  teacher: teacher_v06
+  positions:
+    - 25000000
+    - 50000000
+    - 100000000
+
+models:
+  - rune_s2
+
+architecture:
+  tokens: 8
+  token_dim: 16
+  token_dims: [16, 16, 16, 16, 16, 16, 16, 16]
+  pooling: none
+  pool_clip: true
+  gate_on: false
+  shared_width: 32
+  head_h1: 64
+  head_h2: 16
+  cheap_pooling: none
+  gate: clip
+  alpha: 1.0
+
+routing:
+  threshold: 0.5
+  search_routing: difficulty
+  t_high: null
+  t_low: null
+
+precision:
+  base: fp32
+  refine: fp32
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+  uncertainty: false
+  stability: false
+  lambda_diff: 0.1
+  diff_margin: 0.1
+
+distillation:
+  enabled: false
+  task: value_wdl
+  alpha: 0.5
+  weight_mode: uniform
+
+sampling:
+  mode: disagreement_mix
+  base: stratified
+  disagreement_ratio: 0.2
+  max_positions: 50000000
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+note: >
+  A0/D0 control. S2 student trained directly, no teacher. The result that can kill the distillation track.
+
+# v0.8 note: B2 disagreement baseline. Pipeline-only so far; must beat B1 first (§2).

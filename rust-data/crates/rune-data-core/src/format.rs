@@ -24,6 +24,7 @@ impl Compression {
 
 #[derive(Debug, Clone)]
 pub struct ShardHeader {
+    pub schema: u32,
     pub feature_version: String,
     pub compression: Compression,
     pub record_count: u64,
@@ -54,7 +55,7 @@ fn put_str(out: &mut Vec<u8>, s: &str) {
 
 const RECORD_FIXED: usize = 42;
 
-fn encode_record(r: &Record, out: &mut Vec<u8>) {
+fn encode_record(r: &Record, out: &mut Vec<u8>, schema_v2: bool) {
     let base = out.len();
     put_u64(out, r.identity);
     out.push(r.phase);
@@ -79,7 +80,12 @@ fn encode_record(r: &Record, out: &mut Vec<u8>) {
     put_u32(out, r.source_id);
     put_u16(out, r.features.len().min(65535) as u16);
     put_u16(out, r.fen.len().min(65535) as u16);
-    debug_assert_eq!(out.len() - base, fixed_prefix_len());
+    if schema_v2 {
+        put_u32(out, r.active_round);
+        put_f32(out, r.sel_score);
+        out.push(r.sel_method as u8);
+    }
+    debug_assert_eq!(out.len() - base, fixed_prefix_len(schema_v2));
     for &(g, i) in &r.features {
         put_u16(out, g as u16);
         put_u16(out, i);
@@ -87,8 +93,8 @@ fn encode_record(r: &Record, out: &mut Vec<u8>) {
     out.extend_from_slice(&r.fen.as_bytes()[..r.fen.len().min(65535)]);
 }
 
-fn fixed_prefix_len() -> usize {
-    RECORD_FIXED
+fn fixed_prefix_len(schema_v2: bool) -> usize {
+    RECORD_FIXED + if schema_v2 { 9 } else { 0 }
 }
 
 pub struct Cursor<'a> {
@@ -144,7 +150,7 @@ impl<'a> Cursor<'a> {
     }
 }
 
-fn decode_record(cur: &mut Cursor) -> Result<Record> {
+fn decode_record(cur: &mut Cursor, schema: u32) -> Result<Record> {
     let start = cur.pos;
     let identity = cur.u64()?;
     let phase = cur.u8()?;
@@ -162,7 +168,20 @@ fn decode_record(cur: &mut Cursor) -> Result<Record> {
     let source_id = cur.u32()?;
     let feat_count = cur.u16()? as usize;
     let fen_len = cur.u16()? as usize;
-    debug_assert_eq!(cur.pos - start, fixed_prefix_len());
+    let (active_round, sel_score, sel_method) = if schema >= 2 {
+        let r = cur.u32()?;
+        let s = cur.f32()?;
+        let m = cur.u8()?;
+        (
+            r,
+            s,
+            crate::record::SelMethod::from_u8(m)
+                .ok_or_else(|| Error::BadFormat(format!("bad sel method {m}")))?,
+        )
+    } else {
+        (0, 0.0, crate::record::SelMethod::None)
+    };
+    debug_assert_eq!(cur.pos - start, fixed_prefix_len(schema >= 2));
     let mut features = Vec::with_capacity(feat_count);
     for _ in 0..feat_count {
         let g = cur.u16()?;
@@ -193,6 +212,9 @@ fn decode_record(cur: &mut Cursor) -> Result<Record> {
         ply,
         source_id,
         features,
+        active_round,
+        sel_method,
+        sel_score,
     })
 }
 
@@ -229,13 +251,14 @@ fn decompress_payload(stored: &[u8], c: Compression, expect_len: u64) -> Result<
 }
 
 pub fn write_shard(header: &ShardHeader, records: &[Record], out: &mut Vec<u8>) -> Result<()> {
+    let v2 = header.schema >= 2;
     let mut raw: Vec<u8> = Vec::new();
     let mut offsets: Vec<u64> = Vec::with_capacity(records.len());
     let mut recbuf: Vec<u8> = Vec::new();
     for r in records {
         offsets.push(recbuf.len() as u64);
         let before = recbuf.len();
-        encode_record(r, &mut recbuf);
+        encode_record(r, &mut recbuf, v2);
         debug_assert!(recbuf.len() > before);
     }
     for o in &offsets {
@@ -247,7 +270,7 @@ pub fn write_shard(header: &ShardHeader, records: &[Record], out: &mut Vec<u8>) 
     let mut h: Vec<u8> = Vec::new();
     h.extend_from_slice(MAGIC);
     put_u32(&mut h, FORMAT_VERSION);
-    put_u32(&mut h, SCHEMA_VERSION);
+    put_u32(&mut h, header.schema);
     put_str(&mut h, &header.feature_version);
     h.push(header.compression as u8);
     put_u64(&mut h, header.record_count);
@@ -264,10 +287,12 @@ pub fn write_shard(header: &ShardHeader, records: &[Record], out: &mut Vec<u8>) 
     Ok(())
 }
 
+#[derive(Debug)]
 pub struct ShardFile {
     pub header: ShardHeader,
     pub payload: Vec<u8>,
     pub uncompressed_len: u64,
+    pub schema: u32,
 }
 
 impl ShardFile {
@@ -286,6 +311,10 @@ impl ShardFile {
             });
         }
         let _schema = cur.u32()?;
+        if _schema != 1 && _schema != 2 {
+            return Err(Error::UnsupportedVersion { want: 2, got: _schema });
+        }
+        let schema = _schema;
         let feature_version = cur.string()?;
         let compression = Compression::from_u8(cur.u8()?)?;
         let record_count = cur.u64()?;
@@ -317,6 +346,7 @@ impl ShardFile {
         let payload = decompress_payload(stored, compression, uncompressed_len)?;
         Ok(ShardFile {
             header: ShardHeader {
+                schema,
                 feature_version,
                 compression,
                 record_count,
@@ -326,6 +356,7 @@ impl ShardFile {
             },
             payload,
             uncompressed_len,
+            schema,
         })
     }
 
@@ -347,7 +378,7 @@ impl ShardFile {
         }
         let mut out = Vec::with_capacity(n);
         for _ in 0..n {
-            out.push(decode_record(&mut cur)?);
+            out.push(decode_record(&mut cur, self.schema)?);
         }
         if out.len() != n {
             return Err(Error::BadFormat("record count mismatch".to_string()));
@@ -365,7 +396,7 @@ impl ShardFile {
             return Err(Error::BadFormat("offset out of range".to_string()));
         }
         let mut cur = Cursor::new(&self.payload[start..]);
-        decode_record(&mut cur)
+        decode_record(&mut cur, self.schema)
     }
 }
 
@@ -391,6 +422,7 @@ mod tests {
 
     fn roundtrip(c: Compression) {
         let h = ShardHeader {
+            schema: 2,
             feature_version: "grouped_hkav2_fullthreats_v01".to_string(),
             compression: c,
             record_count: 2,
@@ -432,6 +464,7 @@ mod tests {
     #[test]
     fn rejects_tamper() {
         let h = ShardHeader {
+            schema: 2,
             feature_version: "f".to_string(),
             compression: Compression::Raw,
             record_count: 1,
@@ -444,5 +477,75 @@ mod tests {
         let last = buf.len() - 1;
         buf[last] ^= 0xFF;
         assert!(ShardFile::parse(&buf).is_err());
+    }
+
+    #[test]
+    fn schema_v1_defaults_selection() {
+        let h = ShardHeader {
+            schema: 1,
+            feature_version: "f".to_string(),
+            compression: Compression::Raw,
+            record_count: 1,
+            shard_id: 0,
+            shard_count: 1,
+            dataset_id: "t".to_string(),
+        };
+        let mut buf = Vec::new();
+        write_shard(&h, &sample()[..1], &mut buf).unwrap();
+        let f = ShardFile::parse(&buf).unwrap();
+        assert_eq!(f.schema, 1);
+        let back = f.read_all().unwrap();
+        assert_eq!(back[0].active_round, 0);
+        assert_eq!(back[0].sel_score, 0.0);
+        assert_eq!(back[0].sel_method, crate::record::SelMethod::None);
+    }
+
+    #[test]
+    fn schema_v2_selection_roundtrip() {
+        let h = ShardHeader {
+            schema: 2,
+            feature_version: "f".to_string(),
+            compression: Compression::Raw,
+            record_count: 1,
+            shard_id: 0,
+            shard_count: 1,
+            dataset_id: "t".to_string(),
+        };
+        let mut recs = sample()[..1].to_vec();
+        recs[0].active_round = 3;
+        recs[0].sel_method = crate::record::SelMethod::Multi;
+        recs[0].sel_score = 0.75;
+        let mut buf = Vec::new();
+        write_shard(&h, &recs, &mut buf).unwrap();
+        let f = ShardFile::parse(&buf).unwrap();
+        let back = f.read_all().unwrap();
+        assert_eq!(back[0].active_round, 3);
+        assert_eq!(back[0].sel_method, crate::record::SelMethod::Multi);
+        assert!((back[0].sel_score - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rejects_unknown_schema() {
+        let h = ShardHeader {
+            schema: 2,
+            feature_version: "f".to_string(),
+            compression: Compression::Raw,
+            record_count: 1,
+            shard_id: 0,
+            shard_count: 1,
+            dataset_id: "t".to_string(),
+        };
+        let mut buf = Vec::new();
+        write_shard(&h, &sample()[..1], &mut buf).unwrap();
+        let schema_pos = 8 + 4;
+        buf[schema_pos] = 99;
+        buf[schema_pos + 1] = 0;
+        buf[schema_pos + 2] = 0;
+        buf[schema_pos + 3] = 0;
+        let crc_pos = 8 + 4 + 4 + 2 + 1 + 1 + 8 + 4 + 4 + 2 + 1 + 8;
+        let fixed = crc32fast::hash(&buf[..crc_pos]);
+        buf[crc_pos..crc_pos + 4].copy_from_slice(&fixed.to_le_bytes());
+        let err = ShardFile::parse(&buf).unwrap_err();
+        assert!(matches!(err, Error::UnsupportedVersion { .. }));
     }
 }

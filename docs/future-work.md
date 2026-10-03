@@ -95,3 +95,16 @@ Ideas parked here instead of leaking into the v0.1 scope:
 - Cold-cache/large-shard mmap verdict (path ships, verdict pending).
 - New evaluator architectures, loss families, search algorithms
   (§60 — v0.7 touches none of these).
+
+# Parked during v0.8 (do not implement during v0.8)
+
+- RL, MCTS, full policy training, giant generative data model,
+  synthetic self-play generator, automated architecture search.
+- Sibling-group selection at scale (mechanism ships; needs child
+  data + individual-selection control beside it).
+- Curriculum framings of active selection (easy→hard analysis
+  only on explicit hypothesis).
+- Billion-scale two-level validation and pyo3 zero-copy bridge
+  (bounded paths ship; scale proof scheduled).
+- Neural move ordering and any production dependency on selection
+  metadata (§62–§63).

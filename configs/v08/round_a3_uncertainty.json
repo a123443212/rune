@@ -1,0 +1,26 @@
+{
+  "seed_pool": "data/smoke/labeled.jsonl",
+  "seed_checkpoint": "",
+  "candidate_shards": "data/candidates",
+  "dataset_id": "active_v08",
+  "seed": 42,
+  "budget": 1000000,
+  "method": "uncertainty",
+  "diversity_cap": 100000,
+  "floor_ratio": 0.2,
+  "teacher_id": "stockfish17_d12",
+  "teacher_engine": "/path/to/stockfish",
+  "teacher_depth": 12,
+  "train_config": "configs/v06/s2_distill.yaml",
+  "train_model_key": "rune_s2",
+  "train_milestone_tag": "100m",
+  "train_mode": "mixed",
+  "replay_ratio": 0.2,
+  "_note": "A0 uncertainty-only. Single signal before multi (\u00a77).",
+  "weights": {
+    "disagreement": 0.0,
+    "uncertainty": 1.0,
+    "instability": 0.0,
+    "rarity": 0.0
+  }
+}
