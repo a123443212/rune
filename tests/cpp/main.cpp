@@ -2,6 +2,7 @@
 #include "tests/cpp/test_v10.h"
 #include "tests/cpp/test_v11.h"
 #include "tests/cpp/test_v12.h"
+#include "tests/cpp/test_v13.h"
 
 static int g_failures = 0;
 
@@ -53,6 +54,7 @@ int main() {
   runV10Tests();
   runV11Tests();
   runV12Tests();
+  runV13Tests();
   if (g_failures == 0) {
     std::printf("ALL CPP TESTS PASSED\n");
     return 0;

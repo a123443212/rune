@@ -1,5 +1,6 @@
 pub mod artifact;
 pub mod cache;
+pub mod incremental;
 pub mod optimizer;
 pub mod parser;
 pub mod planner;

@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+pub mod incremental;
+
 pub const IR_VERSION: &str = "1.0";
 pub const SPEC_VERSION: &str = "RUNE-10";
 pub const COMPILER_VERSION: &str = "0.11.0";

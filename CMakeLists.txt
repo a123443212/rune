@@ -37,6 +37,10 @@ add_library(rune_core STATIC
   core/engine/eval_cache.cpp
   core/engine/search.cpp
   core/accumulators/grouped_accumulator.cpp
+  core/incremental/token_delta.cpp
+  core/incremental/interaction_graph.cpp
+  core/incremental/relational_cache.cpp
+  core/incremental/incremental_mixer.cpp
   core/accumulators/token_layout.cpp
   core/accumulators/flex_accumulator.cpp
   core/architectures/base/architecture.cpp
@@ -73,6 +77,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_v10.cpp
     tests/cpp/test_v11.cpp
     tests/cpp/test_v12.cpp
+    tests/cpp/test_v13.cpp
   )
   target_link_libraries(rune_tests PRIVATE rune_core)
   add_test(NAME rune_cpp_tests COMMAND rune_tests)
@@ -99,6 +104,8 @@ if(RUNE_BUILD_BENCH)
   target_link_libraries(rune_search PRIVATE rune_core)
   add_executable(rune_search_diff tools/search/rune_search_diff.cpp)
   target_link_libraries(rune_search_diff PRIVATE rune_core)
+  add_executable(rune_bench_v13 tools/bench/rune_bench_v13.cpp)
+  target_link_libraries(rune_bench_v13 PRIVATE rune_core)
 endif()
 
 if(RUNE_BUILD_BINDINGS)

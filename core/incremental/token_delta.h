@@ -1,0 +1,31 @@
+#pragma once
+
+#include <cstdint>
+#include <vector>
+
+#include "core/accumulators/grouped_accumulator.h"
+#include "core/features/feature_set.h"
+
+namespace rune {
+namespace v13 {
+
+struct GroupDelta {
+  std::vector<ActiveFeature> added[GroupedFeatureSet::kNumGroups];
+  std::vector<ActiveFeature> removed[GroupedFeatureSet::kNumGroups];
+  std::vector<int> changedGroups;
+};
+
+GroupDelta detectChangedGroups(const std::vector<ActiveFeature>& before,
+                               const std::vector<ActiveFeature>& after);
+
+std::vector<int> changedTokensFromGroups(const GroupDelta& delta,
+                                         const int* tokenOfGroup, int numTokens);
+
+std::vector<int> changedTokensByCompare(const float* tokOld, const float* tokNew,
+                                        int numTokens, int dim);
+
+void applyAccumDelta(const EmbeddingTables& tables, float* acc, int numGroups, int dim,
+                     const GroupDelta& delta);
+
+}
+}
