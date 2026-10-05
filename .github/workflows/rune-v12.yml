@@ -1,0 +1,64 @@
+name: rune-v12
+on:
+  push:
+  pull_request:
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+      - name: build
+        run: cmake --build build -j4
+      - name: cpp tests
+        run: ./build/rune_tests
+      - name: search smoke
+        run: ./build/rune_search --model spec/test-vectors/models/small-gab-fp32.rune --depth 2 --lazy L0
+      - name: search diff smoke
+        run: ./build/rune_search_diff --depth 2
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: workspace tests
+        run: cargo test --workspace --locked
+      - name: search smoke
+        run: cargo run --release -p rune-cli -- search --model spec/test-vectors/models/small-gab-fp32.rune --depth 2 --lazy L0
+      - name: search parity smoke
+        run: cargo run --release -p rune-cli -- search-diff --model-a spec/test-vectors/models/small-gab-fp32.rune --model-b spec/test-vectors/models/small-gab-int8.rune --depth 2
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: v12 unit tests
+        run: pytest tests/test_v12_contract.py tests/test_v12_search.py -v
+      - name: calibration smoke
+        run: |
+          python3 tools/search/build_search_set.py --positions benchmark/positions/quiet.epd benchmark/positions/tactical.epd --out /tmp/ci-search-set.jsonl --max-n 20
+          head -n 5 /tmp/ci-search-set.jsonl
+  search-parity:
+    runs-on: ubuntu-latest
+    needs: [cpp, rust, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: build both
+        run: |
+          cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+          cmake --build build -j4 --target rune_search
+          cargo build --release -p rune-cli
+      - name: engine bench smoke
+        run: python3 tools/search/engine_bench.py --model spec/test-vectors/models/small-gab-fp32.rune --depth 2 --lazy L0

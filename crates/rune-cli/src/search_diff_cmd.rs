@@ -1,0 +1,63 @@
+use std::cell::Cell;
+use std::path::PathBuf;
+use std::rc::Rc;
+use rune_runtime::board::Board;
+use rune_runtime::evaluator::Evaluator;
+use rune_search::lazy::{LazyConfig, LazyMode};
+
+pub fn run(model_a: &str, model_b: &str, fen: &str, depth: usize, tol: f32) -> i32 {
+    let mut eva = match Evaluator::load(&PathBuf::from(model_a)) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("load A failed: {}", e);
+            return 1;
+        }
+    };
+    let mut evb = match Evaluator::load(&PathBuf::from(model_b)) {
+        Ok(v) => v,
+        Err(e) => {
+            eprintln!("load B failed: {}", e);
+            return 1;
+        }
+    };
+    let cfg = LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1 };
+    let ca = Rc::new(Cell::new(0usize));
+    let cb = Rc::new(Cell::new(0usize));
+    let (sa, ma, na, apa) = {
+        let cc = ca.clone();
+        let mut eval_fn = move |fl: &str| {
+            cc.set(cc.get() + 1);
+            match Board::parse_fen(fl) {
+                Ok(b) => eva.evaluate_board(&b).value,
+                Err(_) => 0.0,
+            }
+        };
+        let mut ab = rune_search::AlphaBeta::new(&mut eval_fn, cfg.clone());
+        let (s, m) = ab.search(fen, depth);
+        (s, m, ab.stats.nodes, ab.stats.cutoffs)
+    };
+    let (sb, mb, nb, cpb) = {
+        let cc = cb.clone();
+        let mut eval_fn = move |fl: &str| {
+            cc.set(cc.get() + 1);
+            match Board::parse_fen(fl) {
+                Ok(b) => evb.evaluate_board(&b).value,
+                Err(_) => 0.0,
+            }
+        };
+        let mut ab = rune_search::AlphaBeta::new(&mut eval_fn, cfg);
+        let (s, m) = ab.search(fen, depth);
+        (s, m, ab.stats.nodes, ab.stats.cutoffs)
+    };
+    let d = (sa - sb).abs();
+    println!("a_score {:.4} a_move {} a_nodes {} a_evals {} a_cutoffs {}", sa, ma.unwrap_or_default(), na, ca.get(), apa);
+    println!("b_score {:.4} b_move {} b_nodes {} b_evals {} b_cutoffs {}", sb, mb.unwrap_or_default(), nb, cb.get(), cpb);
+    if d <= tol && na == nb {
+        println!("status PARITY");
+        0
+    } else {
+        println!("first_divergence ply 0 fen {} a {:.4} b {:.4} diff {:.2e}", fen, sa, sb, d);
+        println!("status DIVERGED");
+        2
+    }
+}

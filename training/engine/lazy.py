@@ -1,0 +1,29 @@
+class LazyConfig:
+    def __init__(self, mode="L0", margin=0.08, max_refine=1, fallback="full"):
+        self.mode = str(mode)
+        self.margin = float(margin)
+        self.max_refine = int(max_refine)
+        self.fallback = str(fallback)
+
+    def to_dict(self):
+        return {"mode": self.mode, "margin": self.margin, "max_refine": self.max_refine, "fallback": self.fallback}
+
+
+def should_refine(cheap_value, alpha, beta, uncertainty, threshold, cfg):
+    if cfg.mode == "L0":
+        return True
+    if cheap_value != cheap_value:
+        return True
+    if cfg.mode == "L1":
+        return cheap_value >= threshold
+    lo = alpha - cfg.margin
+    hi = beta + cfg.margin
+    if cheap_value <= lo or cheap_value >= hi:
+        return False
+    if uncertainty >= 0.5:
+        return True
+    return True
+
+
+def bounded_refine(n_refined, cfg):
+    return n_refined < cfg.max_refine

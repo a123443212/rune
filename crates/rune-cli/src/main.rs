@@ -174,6 +174,8 @@ mod bench_cmd;
 mod compile_cmd;
 mod diff_cmd;
 mod inspect_cmd;
+mod search_cmd;
+mod search_diff_cmd;
 fn usage() {
     println!("rune eval --model <path> --fen <fen> --kernel <auto|scalar|simd>");
     println!("rune inspect --fen <fen>");
@@ -184,6 +186,8 @@ fn usage() {
     println!("rune bench-compile --model <path> --compiled <path> --iters <n>");
     println!("rune inspect-compiled --model <path>");
     println!("rune diff-compiled --generic <path> --compiled <path> --positions <file> --tol <f>");
+    println!("rune search --model <path> --fen <fen> --depth <n> --lazy <L0|L1|L2>");
+    println!("rune search-diff --model-a <path> --model-b <path> --fen <fen> --depth <n> --tol <f>");
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -279,6 +283,29 @@ fn main() {
             1
         } else {
             diff_cmd::run(&g, &c, &pos, tol)
+        }
+    } else if cmd == "search" {
+        let m = arg_val(&rest, "--model").unwrap_or_default();
+        let f = arg_val(&rest, "--fen").unwrap_or_else(|| "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
+        let d = arg_val(&rest, "--depth").and_then(|x| x.parse::<usize>().ok()).unwrap_or(2);
+        let l = arg_val(&rest, "--lazy").unwrap_or_else(|| "L0".to_string());
+        if m.is_empty() {
+            usage();
+            1
+        } else {
+            search_cmd::run(&m, &f, d, &l)
+        }
+    } else if cmd == "search-diff" {
+        let a = arg_val(&rest, "--model-a").unwrap_or_default();
+        let b = arg_val(&rest, "--model-b").unwrap_or_default();
+        let f = arg_val(&rest, "--fen").unwrap_or_else(|| "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
+        let d = arg_val(&rest, "--depth").and_then(|x| x.parse::<usize>().ok()).unwrap_or(2);
+        let t = arg_val(&rest, "--tol").and_then(|x| x.parse::<f32>().ok()).unwrap_or(1e-6);
+        if a.is_empty() || b.is_empty() {
+            usage();
+            1
+        } else {
+            search_diff_cmd::run(&a, &b, &f, d, t)
         }
     } else {
         usage();

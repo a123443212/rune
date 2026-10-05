@@ -1,0 +1,12 @@
+mate_threats:
+  - r1bqk2r/pppp1ppp/2n2n2/2b1p3/2B1P3/3P1N2/PPP2PPP/RNBQK2R w KQkq - 4 5
+  - r1bqkbnr/pppp1ppp/2n5/1B2p3/4P3/5N2/PPPP1PPP/RNBQK2R b KQkq - 3 3
+king_attacks:
+  - rnbqk2r/ppp1bppp/5n2/3p4/3P1B2/5N2/PPPNPPPP/R2QKB1R b KQkq - 5 5
+  - rnbq1rk1/ppp1ppbp/5np1/3p4/2PP4/2N1PN2/PP3PPP/R1BQKB1R w - - 0 7
+checks:
+  - rnbqkbnr/ppp1pppp/8/3p4/4P3/8/PPPP1PPP/RNBQKBNR w KQkq d6 0 2
+promotion:
+  - 8/8/4k3/8/8/4K3/4P3/8 w - - 0 1
+material_traps:
+  - 2rr3k/pp3ppp/2n1pn2/q2p4/2PP4/2N1PN2/PP3PPP/R1BQKB1R w - - 0 12

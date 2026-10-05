@@ -144,6 +144,7 @@ dependencies = [
  "rune-kernel",
  "rune-model",
  "rune-runtime",
+ "rune-search",
  "rune-spec",
  "serde_json",
  "shakmaty",
@@ -208,6 +209,15 @@ dependencies = [
  "rune-spec",
  "serde",
  "serde_json",
+]
+
+[[package]]
+name = "rune-search"
+version = "0.12.0"
+dependencies = [
+ "rune-runtime",
+ "rune-spec",
+ "shakmaty",
 ]
 
 [[package]]

@@ -1,0 +1,19 @@
+engine:
+  threads: 4
+  hash_mb: 128
+evaluation:
+  mode: adaptive
+  lazy: true
+  lazy_mode: L2
+  margin: 0.08
+  max_refine: 1
+  precision: int8
+search:
+  mode: alpha_beta
+  depth: 3
+model:
+  id: small-gab-int8
+  path: spec/test-vectors/models/small-gab-int8.rune
+repro:
+  seed: 0
+  openings: benchmark/positions/quiet.epd

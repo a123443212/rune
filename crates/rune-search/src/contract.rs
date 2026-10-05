@@ -1,0 +1,53 @@
+#[derive(Debug, Clone)]
+pub struct EvalOutput {
+    pub value: f32,
+    pub wdl: [f32; 3],
+    pub uncertainty: f32,
+    pub refine: bool,
+}
+
+pub fn canonical_value(raw: f32) -> f32 {
+    if raw.is_nan() {
+        return 0.0;
+    }
+    raw.clamp(-1.0, 1.0)
+}
+
+pub fn engine_score(value: f32) -> i32 {
+    let v = canonical_value(value);
+    let mut s = (v * 1000.0 + if v >= 0.0 { 0.5 } else { -0.5 }) as i32;
+    if s >= 9000 {
+        s = 8999;
+    }
+    if s <= -9000 {
+        s = -8999;
+    }
+    s
+}
+
+pub fn normalize_wdl(w: &mut [f32; 3]) {
+    let s = w[0] + w[1] + w[2];
+    if s <= 0.0 {
+        *w = [0.0, 1.0, 0.0];
+        return;
+    }
+    w[0] /= s;
+    w[1] /= s;
+    w[2] /= s;
+}
+
+pub fn wdl_value(w: &[f32; 3]) -> f32 {
+    let s = w[0] + w[1] + w[2];
+    if s <= 0.0 {
+        return 0.0;
+    }
+    (w[0] - w[2]) / s
+}
+
+pub fn value_wdl_consistent(value: f32, w: &[f32; 3], tol: f32) -> bool {
+    (canonical_value(value) - wdl_value(w)).abs() <= tol
+}
+
+pub fn is_extreme(value: f32, bound: f32) -> bool {
+    canonical_value(value).abs() >= bound
+}

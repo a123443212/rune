@@ -1,0 +1,9 @@
+[package]
+name = "rune-search"
+version = "0.12.0"
+edition = "2021"
+
+[dependencies]
+rune-runtime = { path = "../rune-runtime" }
+rune-spec = { path = "../rune-spec" }
+shakmaty = "0.30"
