@@ -529,7 +529,7 @@ pub fn write_shards(
     for (s, chunk) in order.chunks(per_shard.max(1)).enumerate() {
         let recs: Vec<Record> = chunk.iter().map(|&i| records[i].clone()).collect();
         let header = ShardHeader {
-                schema: 2,
+            schema: 2,
             feature_version: feature_version.to_string(),
             compression,
             record_count: recs.len() as u64,
@@ -572,10 +572,9 @@ pub fn read_shard_file(path: &Path) -> Result<Vec<Record>> {
 pub fn shard_files(path: &Path) -> Result<Vec<PathBuf>> {
     if path.is_dir() {
         let man_path = path.join("manifest.json");
-        let man: serde_json::Value = serde_json::from_reader(
-            File::open(&man_path).map_err(|e| Error::Io(e.to_string()))?,
-        )
-        .map_err(|e| Error::BadFormat(e.to_string()))?;
+        let man: serde_json::Value =
+            serde_json::from_reader(File::open(&man_path).map_err(|e| Error::Io(e.to_string()))?)
+                .map_err(|e| Error::BadFormat(e.to_string()))?;
         let files = man
             .get("shard_files")
             .and_then(|v| v.as_array())
@@ -923,7 +922,12 @@ pub struct ScoreWeights {
 
 impl Default for ScoreWeights {
     fn default() -> Self {
-        ScoreWeights { disagreement: 1.0, uncertainty: 0.0, instability: 0.0, rarity: 0.0 }
+        ScoreWeights {
+            disagreement: 1.0,
+            uncertainty: 0.0,
+            instability: 0.0,
+            rarity: 0.0,
+        }
     }
 }
 
@@ -940,7 +944,8 @@ pub fn final_score(c: &ScoreComponents, w: &ScoreWeights) -> f32 {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct SelectionConfig {    pub budget: usize,
+pub struct SelectionConfig {
+    pub budget: usize,
     pub method: crate::record::SelMethod,
     pub round: u32,
     pub weights: ScoreWeights,
@@ -968,7 +973,11 @@ pub fn attach_scores(
     let mut buckets: HashMap<(u8, u8, u8), usize> = HashMap::new();
     for r in &records {
         stats.input += 1;
-        let key = (r.phase.min(2), r.imbalance_bucket.min(7), (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8);
+        let key = (
+            r.phase.min(2),
+            r.imbalance_bucket.min(7),
+            (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8,
+        );
         *buckets.entry(key).or_insert(0) += 1;
     }
     let peak = buckets.values().cloned().max().unwrap_or(1) as f32;
@@ -980,11 +989,19 @@ pub fn attach_scores(
             }
             Some(c) => {
                 let mut comp = c.clone();
-                let key = (r.phase.min(2), r.imbalance_bucket.min(7), (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8);
+                let key = (
+                    r.phase.min(2),
+                    r.imbalance_bucket.min(7),
+                    (r.teacher_value + 1.0).clamp(0.0, 2.0) as u8,
+                );
                 comp.rarity = 1.0 - buckets.get(&key).cloned().unwrap_or(1) as f32 / peak;
                 let final_score = final_score(&comp, weights);
                 r.sel_score = final_score;
-                out.push(ScoredRecord { record: r, components: comp, final_score });
+                out.push(ScoredRecord {
+                    record: r,
+                    components: comp,
+                    final_score,
+                });
             }
         }
     }
@@ -1081,12 +1098,315 @@ pub fn topk_by_score(scored: &[ScoredRecord], k: usize) -> Vec<usize> {
     let k = k.min(scored.len());
     let mut heap: BinaryHeap<Item> = BinaryHeap::with_capacity(k + 1);
     for (idx, s) in scored.iter().enumerate() {
-        heap.push(Item { score: s.final_score, ident: s.record.identity, idx });
+        heap.push(Item {
+            score: s.final_score,
+            ident: s.record.identity,
+            idx,
+        });
         if heap.len() > k.max(1) {
             heap.pop();
         }
     }
-    let mut top: Vec<usize> = heap.into_sorted_vec().into_iter().map(|it| it.idx).collect();
+    let mut top: Vec<usize> = heap
+        .into_sorted_vec()
+        .into_iter()
+        .map(|it| it.idx)
+        .collect();
     top.reverse();
     top
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct LevelEval {
+    pub cp: i32,
+    pub value_stm: f32,
+    pub wdl_stm: u8,
+    pub nodes: u64,
+    pub uncertainty: Option<f32>,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct MultiDepth {
+    pub fen: String,
+    pub levels: Vec<(String, LevelEval)>,
+}
+
+pub fn parse_multidepth_jsonl(path: &Path) -> Result<Vec<MultiDepth>> {
+    let f = File::open(path)?;
+    let mut out = Vec::new();
+    for line in BufReader::new(f).lines() {
+        let line = line.map_err(|e| Error::Io(e.to_string()))?;
+        if line.trim().is_empty() {
+            continue;
+        }
+        let v: serde_json::Value =
+            serde_json::from_str(&line).map_err(|e| Error::BadFormat(e.to_string()))?;
+        let fen = v
+            .get("fen")
+            .and_then(|x| x.as_str())
+            .ok_or_else(|| Error::BadFormat("multidepth record missing fen".to_string()))?
+            .to_string();
+        let lv = v.get("teacher_levels").ok_or_else(|| {
+            Error::BadFormat("multidepth record missing teacher_levels".to_string())
+        })?;
+        let obj = lv
+            .as_object()
+            .ok_or_else(|| Error::BadFormat("teacher_levels not an object".to_string()))?;
+        let mut levels: Vec<(String, LevelEval)> = Vec::new();
+        for (k, e) in obj {
+            levels.push((
+                k.clone(),
+                LevelEval {
+                    cp: e.get("cp").and_then(|x| x.as_i64()).unwrap_or(0) as i32,
+                    value_stm: e.get("value_stm").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                    wdl_stm: e.get("wdl_stm").and_then(|x| x.as_u64()).unwrap_or(1) as u8,
+                    nodes: e.get("nodes").and_then(|x| x.as_u64()).unwrap_or(0),
+                    uncertainty: e
+                        .get("uncertainty")
+                        .and_then(|x| x.as_f64())
+                        .map(|x| x as f32),
+                },
+            ));
+        }
+        levels.sort_by(|a, b| a.0.cmp(&b.0));
+        out.push(MultiDepth { fen, levels });
+    }
+    Ok(out)
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct StabilityReport {
+    pub n: usize,
+    pub max_delta_mean: f32,
+    pub max_delta_p90: f32,
+    pub wdl_flip_rate: f32,
+    pub unstable_frac: f32,
+    pub unstable_threshold: f32,
+}
+
+pub fn stability_report(records: &[MultiDepth], unstable_above: f32) -> StabilityReport {
+    let mut deltas = Vec::new();
+    let mut flips = 0usize;
+    let mut unstable = 0usize;
+    for r in records {
+        let vals: Vec<f32> = r.levels.iter().map(|(_, e)| e.value_stm).collect();
+        if vals.len() < 2 {
+            continue;
+        }
+        let mut mx = 0.0f32;
+        let mut fl = 0usize;
+        for w in vals.windows(2) {
+            mx = mx.max((w[1] - w[0]).abs());
+            let ca = if w[0].abs() < 0.15 {
+                1
+            } else if w[0] > 0.0 {
+                0
+            } else {
+                2
+            };
+            let cb = if w[1].abs() < 0.15 {
+                1
+            } else if w[1] > 0.0 {
+                0
+            } else {
+                2
+            };
+            fl += usize::from(ca != cb);
+        }
+        deltas.push(mx);
+        flips += usize::from(fl > 0);
+        unstable += usize::from(mx > unstable_above);
+    }
+    deltas.sort_by(|a, b| a.total_cmp(b));
+    let n = deltas.len();
+    StabilityReport {
+        n: records.len(),
+        max_delta_mean: if n > 0 {
+            deltas.iter().sum::<f32>() / n as f32
+        } else {
+            0.0
+        },
+        max_delta_p90: if n > 0 {
+            deltas[(n * 9 / 10).min(n - 1)]
+        } else {
+            0.0
+        },
+        wdl_flip_rate: flips as f32 / n.max(1) as f32,
+        unstable_frac: unstable as f32 / n.max(1) as f32,
+        unstable_threshold: unstable_above,
+    }
+}
+
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CascadePlan {
+    pub levels: Vec<String>,
+    pub per_level_cost_sec: Vec<f64>,
+    pub accept_threshold: f32,
+    pub accepted_low: usize,
+    pub escalated: usize,
+    pub total_cost_sec: f64,
+    pub all_high_cost_sec: f64,
+    pub savings_frac: f64,
+    pub residual_unstable: usize,
+}
+
+pub fn cascade_plan(
+    records: &[MultiDepth],
+    level_order: &[String],
+    per_level_cost_sec: &[f64],
+    accept_threshold: f32,
+) -> CascadePlan {
+    let mut accepted_low = 0usize;
+    let mut escalated = 0usize;
+    let mut residual_unstable = 0usize;
+    let mut total = 0.0;
+    for r in records {
+        let get = |name: &str| r.levels.iter().find(|(k, _)| k == name).map(|(_, e)| e);
+        total += per_level_cost_sec.first().cloned().unwrap_or(0.0);
+        let mut stable = false;
+        if level_order.len() >= 2 {
+            if let (Some(lo), Some(hi)) = (get(&level_order[0]), get(&level_order[1])) {
+                stable = (hi.value_stm - lo.value_stm).abs() <= accept_threshold;
+            }
+        }
+        if stable {
+            accepted_low += 1;
+        } else {
+            escalated += 1;
+            total += per_level_cost_sec.iter().skip(1).sum::<f64>();
+            if let (Some(first), Some(last)) =
+                (get(&level_order[0]), get(level_order.last().unwrap()))
+            {
+                if (last.value_stm - first.value_stm).abs() > accept_threshold {
+                    residual_unstable += 1;
+                }
+            }
+        }
+    }
+    let all_high = records.len() as f64 * per_level_cost_sec.iter().sum::<f64>();
+    CascadePlan {
+        levels: level_order.to_vec(),
+        per_level_cost_sec: per_level_cost_sec.to_vec(),
+        accept_threshold,
+        accepted_low,
+        escalated,
+        total_cost_sec: total,
+        all_high_cost_sec: all_high,
+        savings_frac: if all_high > 0.0 {
+            1.0 - total / all_high
+        } else {
+            0.0
+        },
+        residual_unstable,
+    }
+}
+
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct TargetVerifyReport {
+    pub records: usize,
+    pub ok: usize,
+    pub missing_teacher: usize,
+    pub bad_range: usize,
+    pub bad_wdl: usize,
+    pub perspective_mismatch: usize,
+    pub stated_perspective_stm: bool,
+}
+
+pub fn verify_target_records(records: &[Record], expect_stm: bool) -> TargetVerifyReport {
+    let mut rep = TargetVerifyReport {
+        records: records.len(),
+        stated_perspective_stm: expect_stm,
+        ..Default::default()
+    };
+    for r in records {
+        if !r.has_teacher {
+            rep.missing_teacher += 1;
+            continue;
+        }
+        if !(-1.0..=1.0).contains(&r.teacher_value) {
+            rep.bad_range += 1;
+            continue;
+        }
+        if r.teacher_wdl > 2 {
+            rep.bad_wdl += 1;
+            continue;
+        }
+        if r.perspective_stm != expect_stm {
+            rep.perspective_mismatch += 1;
+            continue;
+        }
+        rep.ok += 1;
+    }
+    rep
+}
+
+#[cfg(test)]
+mod target_tests {
+    use super::*;
+
+    fn md(vals: &[f32]) -> MultiDepth {
+        MultiDepth {
+            fen: "x".to_string(),
+            levels: vals
+                .iter()
+                .enumerate()
+                .map(|(i, v)| {
+                    (
+                        format!("d{i}"),
+                        LevelEval {
+                            cp: (v * 400.0) as i32,
+                            value_stm: *v,
+                            wdl_stm: 1,
+                            nodes: 100,
+                            uncertainty: None,
+                        },
+                    )
+                })
+                .collect(),
+        }
+    }
+
+    #[test]
+    fn stability_stable_vs_flip() {
+        let r = stability_report(&[md(&[0.1, 0.12, 0.11])], 0.3);
+        assert_eq!(r.wdl_flip_rate, 0.0);
+        assert_eq!(r.unstable_frac, 0.0);
+        let r = stability_report(&[md(&[-0.8, 0.1, 0.9])], 0.3);
+        assert!(r.unstable_frac > 0.0);
+        assert!(r.wdl_flip_rate > 0.0);
+    }
+
+    #[test]
+    fn cascade_saves_when_stable() {
+        let recs = vec![md(&[0.1, 0.11]), md(&[0.1, 0.12]), md(&[-0.9, 0.9])];
+        let plan = cascade_plan(
+            &recs,
+            &["d0".to_string(), "d1".to_string()],
+            &[0.02, 0.08],
+            0.3,
+        );
+        assert_eq!(plan.accepted_low, 2);
+        assert_eq!(plan.escalated, 1);
+        assert!(plan.savings_frac > 0.0);
+        assert!(plan.total_cost_sec < plan.all_high_cost_sec);
+    }
+
+    #[test]
+    fn verify_targets_counts() {
+        let good = Record::from_fen(
+            "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+            "g",
+            8,
+            0,
+            false,
+        )
+        .unwrap()
+        .with_teacher(0.2, 1, 50, true);
+        let mut bad = good.clone();
+        bad.teacher_value = 5.0;
+        let mut unlabeled = good.clone();
+        unlabeled.has_teacher = false;
+        let rep = verify_target_records(&[good, bad, unlabeled], true);
+        assert_eq!((rep.ok, rep.bad_range, rep.missing_teacher), (1, 1, 1));
+    }
 }

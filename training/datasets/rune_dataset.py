@@ -49,7 +49,24 @@ class RuneDataset(Dataset):
                                [self.records[i] for i in idxs]], dtype=torch.long)
             tu = torch.tensor([r.get("teacher_u", 0.5) for r in
                                [self.records[i] for i in idxs]], dtype=torch.float32)
-            return ids, masks, None, value, wdl, {"v": tv, "w": tw, "u": tu}
+            wp = []
+            qw = []
+            for i in idxs:
+                r = self.records[i]
+                probs = r.get("teacher_wdl_probs", None)
+                if isinstance(probs, (list, tuple)) and len(probs) == 3 and sum(probs) > 0:
+                    s = sum(probs)
+                    wp.append([p / s for p in probs])
+                else:
+                    one = [0.0, 0.0, 0.0]
+                    one[r.get("teacher_w", 1)] = 1.0
+                    wp.append(one)
+                qw.append(r.get("target_quality", 1.0))
+            return ids, masks, None, value, wdl, {
+                "v": tv, "w": tw, "u": tu,
+                "wp": torch.tensor(wp, dtype=torch.float32),
+                "qw": torch.tensor(qw, dtype=torch.float32),
+            }
         return ids, masks, value, wdl
 
 

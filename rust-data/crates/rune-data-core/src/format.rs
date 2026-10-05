@@ -312,7 +312,10 @@ impl ShardFile {
         }
         let _schema = cur.u32()?;
         if _schema != 1 && _schema != 2 {
-            return Err(Error::UnsupportedVersion { want: 2, got: _schema });
+            return Err(Error::UnsupportedVersion {
+                want: 2,
+                got: _schema,
+            });
         }
         let schema = _schema;
         let feature_version = cur.string()?;

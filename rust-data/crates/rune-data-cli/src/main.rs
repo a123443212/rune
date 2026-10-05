@@ -7,11 +7,11 @@ use clap::{Args, Parser, Subcommand};
 use rune_data_core::error::{Error, Result};
 use rune_data_core::format::{Compression, ShardFile};
 use rune_data_core::pipeline::{
-    FilterConfig, PipelineConfig, PipelineReport, ScoreComponents, ScoreWeights, ScoredRecord,
-    SelectionConfig, StageStats, attach_scores, dedup_external, dedup_in_memory, filter_records,
-    final_score, game_split, ingest_pgn_threads, join_labels, near_duplicate_stats, phase_balance,
-    phase_counts, pool_to_records, read_jsonl_pool, read_shard_file, sample_stratified,
-    sample_uniform, select_topk, write_report, write_shards, rss_mb_estimate,
+    attach_scores, dedup_external, dedup_in_memory, filter_records, final_score, game_split,
+    ingest_pgn_threads, join_labels, near_duplicate_stats, phase_balance, phase_counts,
+    pool_to_records, read_jsonl_pool, read_shard_file, rss_mb_estimate, sample_stratified,
+    sample_uniform, select_topk, write_report, write_shards, FilterConfig, PipelineConfig,
+    PipelineReport, ScoreComponents, ScoreWeights, ScoredRecord, SelectionConfig, StageStats,
 };
 use rune_data_core::record::{Record, SelMethod};
 
@@ -39,6 +39,9 @@ enum Cmd {
     Split(SplitArgs),
     Score(ScoreArgs),
     Select(SelectArgs),
+    VerifyTargets(VerifyTargetsArgs),
+    TargetStats(TargetStatsArgs),
+    CascadePlan(CascadePlanArgs),
     Benchmark(BenchArgs),
 }
 
@@ -50,7 +53,8 @@ struct Common {
     dataset_id: Option<String>,
 }
 
-fn base_cfg(c: &Common) -> PipelineConfig {    let mut cfg = PipelineConfig::default();
+fn base_cfg(c: &Common) -> PipelineConfig {
+    let mut cfg = PipelineConfig::default();
     if let Some(s) = c.seed {
         cfg.seed = s;
     }
@@ -279,6 +283,40 @@ struct SelectArgs {
 }
 
 #[derive(Args)]
+struct VerifyTargetsArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(long, default_value_t = true, action = clap::ArgAction::Set)]
+    expect_stm: bool,
+}
+
+#[derive(Args)]
+struct TargetStatsArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(long, default_value_t = 0.3)]
+    unstable_above: f32,
+}
+
+#[derive(Args)]
+struct CascadePlanArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: Option<PathBuf>,
+    #[arg(long, default_value = "d8,d12")]
+    levels: String,
+    #[arg(long, default_value = "0.01,0.05")]
+    costs: String,
+    #[arg(long, default_value_t = 0.1)]
+    accept_threshold: f32,
+}
+
+#[derive(Args)]
 struct BenchArgs {
     #[arg(long)]
     pool: Option<PathBuf>,
@@ -346,12 +384,17 @@ fn read_score_components(path: &Path) -> Result<HashMap<u64, ScoreComponents>> {
         } else if let Some(fen) = v.get("fen").and_then(|x| x.as_str()) {
             rune_data_core::board::canonical_identity(fen, false)
         } else {
-            return Err(Error::BadFormat("score line needs identity or fen".to_string()));
+            return Err(Error::BadFormat(
+                "score line needs identity or fen".to_string(),
+            ));
         };
         map.insert(
             id,
             ScoreComponents {
-                disagreement: v.get("disagreement").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
+                disagreement: v
+                    .get("disagreement")
+                    .and_then(|x| x.as_f64())
+                    .unwrap_or(0.0) as f32,
                 uncertainty: v.get("uncertainty").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
                 instability: v.get("instability").and_then(|x| x.as_f64()).unwrap_or(0.0) as f32,
                 rank_disagreement: v
@@ -743,8 +786,7 @@ fn run() -> Result<()> {
             let mut st = StageStats::default();
             let (scored, missing) = attach_scores(recs, &scores, &weights, &mut st);
             let dt = t0.elapsed().as_secs_f64();
-            let scored_recs: Vec<Record> =
-                scored.iter().map(|s| s.record.clone()).collect();
+            let scored_recs: Vec<Record> = scored.iter().map(|s| s.record.clone()).collect();
             let comp_path = a.out.join("score_components.jsonl");
             std::fs::create_dir_all(&a.out)?;
             {
@@ -791,7 +833,11 @@ fn run() -> Result<()> {
             };
             let mut winners: Vec<ScoredRecord> = Vec::new();
             let mut st = StageStats::default();
-            let local_k = if a.shard_topk > 0 { a.shard_topk } else { a.budget };
+            let local_k = if a.shard_topk > 0 {
+                a.shard_topk
+            } else {
+                a.budget
+            };
             for sp in &shard_paths {
                 let recs = read_shard_file(sp)?;
                 let mut local: Vec<ScoredRecord> = recs
@@ -803,7 +849,11 @@ fn run() -> Result<()> {
                         };
                         let final_score = final_score(&c, &sel_cfg.weights);
                         r.sel_score = final_score;
-                        ScoredRecord { record: r, components: c, final_score }
+                        ScoredRecord {
+                            record: r,
+                            components: c,
+                            final_score,
+                        }
                     })
                     .collect();
                 for _ in &local {
@@ -823,8 +873,7 @@ fn run() -> Result<()> {
             }
             let selected = select_topk(winners, &sel_cfg, &mut st);
             let dt = t0.elapsed().as_secs_f64();
-            let out_recs: Vec<Record> =
-                selected.iter().map(|s| s.record.clone()).collect();
+            let out_recs: Vec<Record> = selected.iter().map(|s| s.record.clone()).collect();
             let requested = out_recs.iter().filter(|r| !r.has_teacher).count();
             let reused = out_recs.len() - requested;
             save_stage(&a.out, &out_recs, &cfg, stage_map("select", st), dt)?;
@@ -875,6 +924,93 @@ fn run() -> Result<()> {
                 "selected {} (requested {requested}, reused {reused})",
                 out_recs.len()
             );
+        }
+        Cmd::VerifyTargets(a) => {
+            use rune_data_core::pipeline::verify_target_records;
+
+            let mut all = Vec::new();
+            for sp in rune_data_core::pipeline::shard_files(&a.input)? {
+                all.extend(read_shard_file(&sp)?);
+            }
+            let rep = verify_target_records(&all, a.expect_stm);
+            let body =
+                serde_json::to_string_pretty(&rep).map_err(|e| Error::BadFormat(e.to_string()))?;
+            println!("{body}");
+            if let Some(p) = a.out {
+                std::fs::write(p, body)?;
+            }
+            if rep.bad_range + rep.bad_wdl + rep.perspective_mismatch > 0 {
+                return Err(Error::BadFormat(format!(
+                    "target verification failed: corrupt records present (bad_range={} bad_wdl={} perspective_mismatch={})",
+                    rep.bad_range, rep.bad_wdl, rep.perspective_mismatch
+                )));
+            }
+        }
+        Cmd::TargetStats(a) => {
+            use rune_data_core::pipeline::{parse_multidepth_jsonl, stability_report};
+
+            let recs = parse_multidepth_jsonl(&a.input)?;
+            let rep = stability_report(&recs, a.unstable_above);
+            let mut hist = [0usize; 10];
+            for r in &recs {
+                for (_, e) in &r.levels {
+                    let b = ((e.value_stm + 1.0) * 5.0).floor().clamp(0.0, 9.0) as usize;
+                    hist[b] += 1;
+                }
+            }
+            let body = serde_json::json!({
+                "records": rep.n,
+                "max_delta_mean": rep.max_delta_mean,
+                "max_delta_p90": rep.max_delta_p90,
+                "wdl_flip_rate": rep.wdl_flip_rate,
+                "unstable_frac": rep.unstable_frac,
+                "unstable_threshold": rep.unstable_threshold,
+                "value_hist10": hist,
+            });
+            println!("{}", serde_json::to_string_pretty(&body).unwrap());
+            if let Some(p) = a.out {
+                std::fs::write(p, serde_json::to_string_pretty(&body).unwrap())?;
+            }
+        }
+        Cmd::CascadePlan(a) => {
+            use rune_data_core::pipeline::{cascade_plan, parse_multidepth_jsonl};
+
+            let recs = parse_multidepth_jsonl(&a.input)?;
+            let levels: Vec<String> = a.levels.split(',').map(|s| s.trim().to_string()).collect();
+            let costs: Vec<f64> = a
+                .costs
+                .split(',')
+                .map(|s| {
+                    s.trim()
+                        .parse::<f64>()
+                        .map_err(|_| Error::BadConfig(format!("bad cost value {s}")))
+                })
+                .collect::<Result<Vec<f64>>>()?;
+            if costs.len() != levels.len() && costs.len() != levels.len() - 1 && costs.len() != 1 {
+                return Err(Error::BadConfig(
+                    "costs must match levels, levels-1 (escalation), or single low cost"
+                        .to_string(),
+                ));
+            }
+            let full_costs: Vec<f64> = if costs.len() == levels.len() {
+                costs
+            } else if costs.len() == 1 {
+                vec![costs[0]; levels.len()]
+            } else {
+                let mut c = vec![costs[0]];
+                c.extend(costs.iter().skip(1).cloned());
+                while c.len() < levels.len() {
+                    c.push(*c.last().unwrap());
+                }
+                c
+            };
+            let plan = cascade_plan(&recs, &levels, &full_costs, a.accept_threshold);
+            let body =
+                serde_json::to_string_pretty(&plan).map_err(|e| Error::BadFormat(e.to_string()))?;
+            println!("{body}");
+            if let Some(p) = a.out {
+                std::fs::write(p, body)?;
+            }
         }
         Cmd::Benchmark(a) => {
             run_benchmark(a)?;
@@ -994,7 +1130,7 @@ fn run_benchmark(a: BenchArgs) -> Result<()> {
     let mut wbuf = Vec::new();
     rune_data_core::format::write_shard(
         &rune_data_core::format::ShardHeader {
-                schema: 2,
+            schema: 2,
             feature_version: "bench".to_string(),
             compression: rune_data_core::format::Compression::Raw,
             record_count: dd.len() as u64,

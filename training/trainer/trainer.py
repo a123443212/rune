@@ -21,7 +21,7 @@ def derive_seed(config):
     return int(hashlib.sha256(key.encode()).hexdigest(), 16) % (2 ** 31)
 
 
-def count_ranking_pairs(values, group_size=4):
+def count_ranking_pairs(values, group_size=4, tie_margin=0.0):
     n = (len(values) // group_size) * group_size
     if n < 2:
         return None
@@ -30,6 +30,8 @@ def count_ranking_pairs(values, group_size=4):
         for j in range(group_size):
             for k in range(j + 1, group_size):
                 i1, i2 = start + j, start + k
+                if abs(values[i1] - values[i2]) < tie_margin:
+                    continue
                 s = 1.0 if values[i1] >= values[i2] else -1.0
                 a_idx.append(i1)
                 b_idx.append(i2)
@@ -163,6 +165,8 @@ class Trainer:
                 weight_lo=dist.get("weight_lo", 0.25),
                 weight_hi=dist.get("weight_hi", 1.0),
                 lambda_unc_distill=dist.get("lambda_unc_distill", 0.0),
+                soft_wdl=dist.get("soft_wdl", False),
+                quality_weighted=dist.get("quality_weighted", False),
             )
         self.opt = torch.optim.AdamW(
             self.model.parameters(),
@@ -220,7 +224,8 @@ class Trainer:
             rank = (rv_pred[a], rv_pred[b], torch.tensor(signs, device=self.device),
                     torch.tensor(weights, device=self.device))
         elif self.cfg.get("lambda_rank", 0.0) > 0 and len(value) >= 4:
-            idx = count_ranking_pairs(value.tolist(), self.cfg.get("rank_group", 4))
+            idx = count_ranking_pairs(value.tolist(), self.cfg.get("rank_group", 4),
+                                  self.cfg.get("rank_tie_margin", 0.0))
             if idx is not None:
                 a, b, s = idx
                 base = out[2] if self.is_adaptive else out[0]
@@ -244,7 +249,9 @@ class Trainer:
             tw = teach["w"].to(self.device)
             tu = teach["u"].to(self.device)
             dlosses = self.distill_fn(sv, sw, tv, F.one_hot(tw, 3).float(), value,
-                                      wdl, teacher_u=tu, student_u=su, rank=rank)
+                                      wdl, teacher_u=tu, student_u=su, rank=rank,
+                                      teacher_probs=teach.get("wp", None),
+                                      quality=teach.get("qw", None))
             losses = dict(losses)
             for k, v in dlosses.items():
                 losses[k if k != "total" else "dist_total"] = v
@@ -326,7 +333,9 @@ class Trainer:
                 tu = teach["u"].to(self.device)
                 dlosses = self.distill_fn(sv, sw, tv, _F.one_hot(tw, 3).float(),
                                           value.to(self.device), wdl.to(self.device),
-                                          teacher_u=tu, student_u=su)
+                                          teacher_u=tu, student_u=su,
+                                          teacher_probs=teach.get("wp", None),
+                                          quality=teach.get("qw", None))
                 for k, v in dlosses.items():
                     losses[k if k != "total" else "dist_total"] = v
             if teach is not None:
@@ -341,7 +350,8 @@ class Trainer:
                     tot[k] += losses[k].item()
             wacc += wdl_accuracy(w_pred, wdl).item() * len(value)
             if len(value) >= 4:
-                idx = count_ranking_pairs(value.tolist())
+                idx = count_ranking_pairs(value.tolist(), 4,
+                                          self.cfg.get("rank_tie_margin", 0.0))
                 if idx is not None:
                     a, b, s = idx
                     racc += ranking_accuracy(v_pred[a], v_pred[b], s).item() * len(a)

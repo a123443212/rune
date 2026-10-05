@@ -108,3 +108,14 @@ Ideas parked here instead of leaking into the v0.1 scope:
   (bounded paths ship; scale proof scheduled).
 - Neural move ordering and any production dependency on selection
   metadata (§62–§63).
+
+# Parked during v0.9 (do not implement during v0.9)
+
+- RL, MCTS, full policy network, giant teacher ensemble,
+  synthetic generative model, full self-play infrastructure,
+  large Transformer, new search algorithm (§61).
+- QAT-training for students (Q2 = INT8 export + full eval only).
+- Multi-teacher ensembles beyond pairwise agreement probes.
+- Target compression schemes (measure first per §55).
+- Reference-depth production default (minimum useful effort
+  undecided until §53–§54 legs run).

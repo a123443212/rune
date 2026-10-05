@@ -264,10 +264,8 @@ fn write_scores(path: &std::path::Path, fens: &[String], val: f32) {
 
 fn collect_fens(dir: &std::path::Path) -> Vec<String> {
     let mut out = Vec::new();
-    let man: serde_json::Value = serde_json::from_str(
-        &std::fs::read_to_string(dir.join("manifest.json")).unwrap(),
-    )
-    .unwrap();
+    let man: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(dir.join("manifest.json")).unwrap()).unwrap();
     for sf in man["shard_files"].as_array().unwrap() {
         let p = dir.join(sf.as_str().unwrap());
         let bytes = std::fs::read(p).unwrap();
@@ -284,20 +282,40 @@ fn select_is_deterministic_with_audit() {
     let pgn = fixture("two_games.pgn");
     let base = tmp("sel_det");
     let cand = base.join("cand");
-    assert!(run(&[
-        "ingest", "--pgn", pgn.to_str().unwrap(), "--out", cand.to_str().unwrap(),
-        "--dataset-id", "sel", "--every", "1"
-    ]).0);
+    assert!(
+        run(&[
+            "ingest",
+            "--pgn",
+            pgn.to_str().unwrap(),
+            "--out",
+            cand.to_str().unwrap(),
+            "--dataset-id",
+            "sel",
+            "--every",
+            "1"
+        ])
+        .0
+    );
     let fens = collect_fens(&cand);
     assert!(!fens.is_empty());
     let scores = base.join("scores.jsonl");
     write_scores(&scores, &fens, 0.9);
     // NOTE: select takes scores via scored shards; score step first
     let scored = base.join("scored");
-    assert!(run(&[
-        "score", "--input", cand.to_str().unwrap(), "--scores", scores.to_str().unwrap(),
-        "--out", scored.to_str().unwrap(), "--dataset-id", "sel",
-    ]).0);
+    assert!(
+        run(&[
+            "score",
+            "--input",
+            cand.to_str().unwrap(),
+            "--scores",
+            scores.to_str().unwrap(),
+            "--out",
+            scored.to_str().unwrap(),
+            "--dataset-id",
+            "sel",
+        ])
+        .0
+    );
     let s1 = base.join("s1");
     let s2 = base.join("s2");
     for o in [&s1, &s2] {
@@ -333,7 +351,9 @@ fn select_is_deterministic_with_audit() {
     let a1txt = std::fs::read_to_string(s1.join("selection_audit.jsonl")).unwrap();
     let a2txt = std::fs::read_to_string(s2.join("selection_audit.jsonl")).unwrap();
     assert_eq!(a1txt, a2txt);
-    assert!(std::fs::read_to_string(s1.join("round.yaml")).unwrap().contains("id: 2"));
+    assert!(std::fs::read_to_string(s1.join("round.yaml"))
+        .unwrap()
+        .contains("id: 2"));
 }
 
 #[test]
@@ -341,25 +361,67 @@ fn select_respects_diversity_and_floor() {
     let pgn = fixture("two_games.pgn");
     let base = tmp("sel_div");
     let cand = base.join("cand");
-    assert!(run(&[
-        "ingest", "--pgn", pgn.to_str().unwrap(), "--out", cand.to_str().unwrap(),
-        "--dataset-id", "sel", "--every", "1"
-    ]).0);
+    assert!(
+        run(&[
+            "ingest",
+            "--pgn",
+            pgn.to_str().unwrap(),
+            "--out",
+            cand.to_str().unwrap(),
+            "--dataset-id",
+            "sel",
+            "--every",
+            "1"
+        ])
+        .0
+    );
     let fens = collect_fens(&cand);
     let scores = base.join("scores.jsonl");
     write_scores(&scores, &fens, 0.9);
     let scored = base.join("scored");
-    assert!(run(&[
-        "score", "--input", cand.to_str().unwrap(), "--scores", scores.to_str().unwrap(),
-        "--out", scored.to_str().unwrap(), "--dataset-id", "sel",
-    ]).0);
+    assert!(
+        run(&[
+            "score",
+            "--input",
+            cand.to_str().unwrap(),
+            "--scores",
+            scores.to_str().unwrap(),
+            "--out",
+            scored.to_str().unwrap(),
+            "--dataset-id",
+            "sel",
+        ])
+        .0
+    );
     let sel = base.join("sel");
-    assert!(run(&[
-        "select", "--input", scored.to_str().unwrap(), "--out", sel.to_str().unwrap(),
-        "--dataset-id", "sel", "--seed", "7", "--budget", "12", "--method", "multi",
-        "--round", "1", "--diversity-cap", "2", "--floor-ratio", "0.25",
-        "--teacher-version", "t", "--student-version", "s",
-    ]).0);
+    assert!(
+        run(&[
+            "select",
+            "--input",
+            scored.to_str().unwrap(),
+            "--out",
+            sel.to_str().unwrap(),
+            "--dataset-id",
+            "sel",
+            "--seed",
+            "7",
+            "--budget",
+            "12",
+            "--method",
+            "multi",
+            "--round",
+            "1",
+            "--diversity-cap",
+            "2",
+            "--floor-ratio",
+            "0.25",
+            "--teacher-version",
+            "t",
+            "--student-version",
+            "s",
+        ])
+        .0
+    );
     let txt = std::fs::read_to_string(sel.join("selection_audit.jsonl")).unwrap();
     let lines: Vec<&str> = txt.lines().filter(|l| !l.trim().is_empty()).collect();
     assert_eq!(lines.len(), 12);
@@ -368,4 +430,91 @@ fn select_respects_diversity_and_floor() {
         .filter(|l| l.contains("\"selection_method\":\"stratified\""))
         .count();
     assert_eq!(strat, 3);
+}
+
+fn write_md_jsonl(path: &std::path::Path) {
+    use std::io::Write;
+    let mut f = std::fs::File::create(path).unwrap();
+    for (i, vals) in [[0.1, 0.12, 0.11], [-0.8, 0.1, 0.9], [0.5, 0.52, 0.51]]
+        .iter()
+        .enumerate()
+    {
+        let levels: Vec<String> = vals
+            .iter()
+            .enumerate()
+            .map(|(k, v)| {
+                format!(
+                    "\"d{k}\":{{\"cp\":{},\"value_stm\":{v},\"wdl_stm\":1,\"nodes\":100}}",
+                    (v * 400.0) as i32
+                )
+            })
+            .collect();
+        writeln!(
+            f,
+            "{{\"fen\": \"8/8/4k3/8/8/4K3/4P3/{} w - - 0 1\", \"teacher_levels\": {{{}}}}}",
+            i,
+            levels.join(",")
+        )
+        .unwrap();
+    }
+}
+
+#[test]
+fn target_stats_reports_stability() {
+    let base = tmp("tstats");
+    std::fs::create_dir_all(&base).unwrap();
+    let md = base.join("md.jsonl");
+    write_md_jsonl(&md);
+    let (ok, out) = run(&[
+        "target-stats",
+        "--input",
+        md.to_str().unwrap(),
+        "--out",
+        base.join("stats.json").to_str().unwrap(),
+    ]);
+    assert!(ok, "{out}");
+    assert!(out.contains("unstable_frac"));
+}
+
+#[test]
+fn cascade_plan_prices_routing() {
+    let base = tmp("cascade");
+    std::fs::create_dir_all(&base).unwrap();
+    let md = base.join("md.jsonl");
+    write_md_jsonl(&md);
+    let (ok, out) = run(&[
+        "cascade-plan",
+        "--input",
+        md.to_str().unwrap(),
+        "--levels",
+        "d0,d1,d2",
+        "--costs",
+        "0.02,0.08",
+        "--accept-threshold",
+        "0.3",
+    ]);
+    assert!(ok, "{out}");
+    assert!(out.contains("savings_frac"));
+    assert!(out.contains("escalated"));
+}
+
+#[test]
+fn verify_targets_rejects_bad() {
+    let pgn = fixture("two_games.pgn");
+    let base = tmp("verify");
+    let ing = base.join("ing");
+    assert!(
+        run(&[
+            "ingest",
+            "--pgn",
+            pgn.to_str().unwrap(),
+            "--out",
+            ing.to_str().unwrap(),
+            "--dataset-id",
+            "vf",
+        ])
+        .0
+    );
+    let (ok, _) = run(&["verify-targets", "--input", ing.to_str().unwrap()]);
+    assert!(ok);
 }

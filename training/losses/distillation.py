@@ -30,7 +30,8 @@ class WeightedDistillationLoss(nn.Module):
 class DistillCompositeLoss(nn.Module):
     def __init__(self, task="value_wdl", alpha=0.5, rank_margin=0.05,
                  lambda_wdl=0.5, lambda_rank=0.1, weight_mode="uniform",
-                 weight_lo=0.25, weight_hi=1.0, lambda_unc_distill=0.0):
+                 weight_lo=0.25, weight_hi=1.0, lambda_unc_distill=0.0,
+                 soft_wdl=False, quality_weighted=False):
         super().__init__()
         from training.losses.components import RankingLoss, ValueLoss, WDLLoss
 
@@ -42,6 +43,8 @@ class DistillCompositeLoss(nn.Module):
         self.weight_mode = weight_mode
         self.weight_lo = weight_lo
         self.weight_hi = weight_hi
+        self.soft_wdl = soft_wdl
+        self.quality_weighted = quality_weighted
         self.value_loss = ValueLoss()
         self.wdl_loss = WDLLoss()
         self.rank_loss = RankingLoss(rank_margin)
@@ -50,7 +53,8 @@ class DistillCompositeLoss(nn.Module):
         self.mse = nn.MSELoss()
 
     def forward(self, student_v, student_w, teacher_v, teacher_w, value, wdl,
-                teacher_u=None, student_u=None, rank=None, teacher_rank=None):
+                teacher_u=None, student_u=None, rank=None, teacher_rank=None,
+                teacher_probs=None, quality=None):
         parts = {}
         total = torch.zeros((), device=student_v.device)
         if self.task in ("value_wdl", "value"):
@@ -64,12 +68,16 @@ class DistillCompositeLoss(nn.Module):
         else:
             parts["task_wdl"] = torch.zeros((), device=student_v.device)
         if teacher_v is not None:
-            if self.weight_mode == "uniform" or teacher_u is None:
+            use_quality = self.quality_weighted and quality is not None
+            use_signal = self.weight_mode != "uniform" and teacher_u is not None
+            if not use_quality and not use_signal:
                 parts["distill"] = self.distill_loss(student_v, teacher_v)
                 parts["distill_wmean"] = torch.ones((), device=student_v.device)
             else:
-                w = confidence_weights(teacher_u, self.weight_mode,
-                                       self.weight_lo, self.weight_hi)
+                w = confidence_weights(teacher_u if teacher_u is not None else torch.zeros_like(teacher_v),
+                                       self.weight_mode, self.weight_lo, self.weight_hi)
+                if use_quality:
+                    w = w * quality.to(w.device).clamp(0.0, 1.0)
                 parts["distill"] = self.wdistill_loss(student_v, teacher_v, w)
                 parts["distill_wmean"] = w.mean()
             total = total + self.alpha * parts["distill"]
@@ -77,7 +85,11 @@ class DistillCompositeLoss(nn.Module):
             parts["distill"] = torch.zeros((), device=student_v.device)
             parts["distill_wmean"] = torch.zeros((), device=student_v.device)
         if teacher_w is not None and self.task == "value_wdl":
-            parts["distill_wdl"] = self.wdl_loss(student_w, teacher_w.argmax(dim=-1))
+            if self.soft_wdl and teacher_probs is not None:
+                logp = F.log_softmax(student_w, dim=-1)
+                parts["distill_wdl"] = -(teacher_probs.to(logp.device) * logp).sum(-1).mean()
+            else:
+                parts["distill_wdl"] = self.wdl_loss(student_w, teacher_w.argmax(dim=-1))
             total = total + self.alpha * parts["distill_wdl"]
         else:
             parts["distill_wdl"] = torch.zeros((), device=student_v.device)
