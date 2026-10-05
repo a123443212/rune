@@ -1,0 +1,33 @@
+{
+  "ir_version": "1.0",
+  "spec_version": "RUNE-10",
+  "model": {
+    "architecture": "RUNE-ATTN-GAB",
+    "tokens": 8,
+    "token_dim": 32,
+    "dtype": "fp32",
+    "quantization": "fp32"
+  },
+  "target": {
+    "cpu": "generic-x86-64",
+    "isa": "portable",
+    "vector_width": 1
+  },
+  "ops": [
+    "FeatureUpdate",
+    "AccumulatorUpdate",
+    "Tokenize",
+    "Q",
+    "K",
+    "V",
+    "Score",
+    "Bias",
+    "Gate",
+    "Mix",
+    "Residual",
+    "HeadH1",
+    "HeadH2",
+    "value",
+    "WDL"
+  ]
+}

@@ -1,6 +1,6 @@
 [package]
 name = "rune-cli"
-version = "0.10.0"
+version = "0.11.0"
 edition = "2021"
 
 [[bin]]
@@ -13,6 +13,9 @@ rune-model = { path = "../rune-model" }
 rune-kernel = { path = "../rune-kernel" }
 rune-runtime = { path = "../rune-runtime" }
 rune-data = { path = "../rune-data" }
+rune-ir = { path = "../rune-ir" }
+rune-compiler = { path = "../rune-compiler" }
+serde_json = "1"
 
 [dev-dependencies]
 shakmaty = "0.30"

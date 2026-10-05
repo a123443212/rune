@@ -1,0 +1,18 @@
+target:
+  cpu: generic-x86-64
+  isa: avx2
+  vector_width: 8
+model:
+  architecture: RUNE-ATTN-GAB
+  tokens: 8
+  token_dim: 32
+  dtype: fp32
+  quantization: fp32
+kernels:
+  - {op: op03, kind: Q, kernel_id: qkv_fused_8x32, shape: 8x32, dtype: fp32, packing: row-major-aligned32, isa: avx2, fusion_group: f_qkv}
+  - {op: op06, kind: Score, kernel_id: score_bias_gate_8x8, shape: 8x8, dtype: fp32, packing: row-major-aligned32, isa: avx2, fusion_group: f_score_bias_gate}
+  - {op: op11, kind: HeadH1, kernel_id: linear_bias_clip, shape: 128x256, dtype: fp32, packing: row-major-aligned32, isa: avx2, fusion_group: f_head_h1}
+memory:
+  arena_bytes: 7936
+  alignment: 32
+  strategy: reuse q/h1, k/h2, scores/gate

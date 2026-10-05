@@ -1,5 +1,9 @@
 use rune_spec as spec;
+pub mod arena;
+pub mod fused;
+pub mod quant;
 pub mod simd;
+pub mod specialized;
 pub use simd::{active_path, active_path_name, clear_path_for_test, set_path_for_test, uses_simd, KernelPath};
 pub fn clipped_relu(x: f32) -> f32 {
     if !(x >= 0.0) {

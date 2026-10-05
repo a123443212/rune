@@ -1,0 +1,22 @@
+experiment:
+  name: rune_v11_int8
+  seed: 11
+
+research:
+  allow_experimental: false
+
+out_dir: runs/rune_v11_int8
+
+compile:
+  model: spec/test-vectors/models/small-gab-int8.rune
+  target: isa=portable
+  out: artifacts/network.int8.portable.rune
+
+bench:
+  iters: 2000
+  modes: [generic, specialized]
+
+gates:
+  latency_warn_pct: 5.0
+  nps_warn_pct: 5.0
+  value_drift_warn: 0.01

@@ -1,0 +1,5 @@
+target:
+  cpu: generic-x86-64
+  isa: portable
+  vector_width: 1
+notes: portable artifact runs everywhere, specialized avx2 artifact needs AVX2+FMA and fails closed otherwise

@@ -1,0 +1,12 @@
+[package]
+name = "rune-compiler"
+version = "0.11.0"
+edition = "2021"
+
+[dependencies]
+rune-ir = { path = "../rune-ir" }
+rune-spec = { path = "../rune-spec" }
+rune-model = { path = "../rune-model" }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+sha2 = "0.10"

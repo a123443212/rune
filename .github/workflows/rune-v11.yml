@@ -1,0 +1,77 @@
+name: rune-v11
+on:
+  push:
+  pull_request:
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+      - name: build
+        run: cmake --build build -j4
+      - name: cpp tests
+        run: ./build/rune_tests
+      - name: cpp diff smoke
+        run: ./build/rune_diff --mode tolerant
+      - name: compile support smoke
+        run: ./build/rune_compile_support --model spec/test-vectors/models/small-gab-fp32.rune || true
+      - name: bench compile smoke
+        run: ./build/rune_bench_compile --iters 200
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: new workspace
+        run: cargo test --workspace --locked
+      - name: legacy data engine
+        run: cargo test --workspace --manifest-path rust-data/Cargo.toml
+      - name: compile smoke
+        run: cargo run --release -p rune-cli -- compile --model spec/test-vectors/models/small-gab-fp32.rune --out /tmp/ci-portable.rune --isa portable
+      - name: inspect smoke
+        run: cargo run --release -p rune-cli -- inspect-compiled --model /tmp/ci-portable.rune
+      - name: bench smoke
+        run: cargo run --release -p rune-cli -- bench --model spec/test-vectors/models/small-gab-fp32.rune --iters 200
+      - name: bench-compile smoke
+        run: cargo run --release -p rune-cli -- bench-compile --model spec/test-vectors/models/small-gab-fp32.rune --compiled /tmp/ci-portable.rune --iters 200
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: v11 unit tests
+        run: pytest tests/test_v11_ir.py tests/test_v11_compile.py tests/test_v11_kernels.py tests/test_v11_parity.py -v
+      - name: compile portable
+        run: python3 tools/compile/rune_compile.py --model spec/test-vectors/models/small-gab-fp32.rune --out /tmp/ci-network.rune --target isa=portable
+      - name: diff compiled
+        run: python3 tools/diff/diff_compiled.py --generic spec/test-vectors/models/small-gab-fp32.rune --compiled /tmp/ci-network.rune --tol 2e-5
+      - name: fuzz compiler
+        run: python3 tools/fuzz/fuzz_compiler.py --trials 200
+  triangle:
+    runs-on: ubuntu-latest
+    needs: [cpp, rust, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: build both
+        run: |
+          cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+          cmake --build build -j4 --target rune_eval
+          cargo build --release -p rune-cli
+      - name: generic vs compiled diff
+        run: |
+          python3 tools/compile/rune_compile.py --model spec/test-vectors/models/small-gab-fp32.rune --out /tmp/tri-portable.rune --target isa=portable
+          python3 tools/diff/diff_compiled.py --generic spec/test-vectors/models/small-gab-fp32.rune --compiled /tmp/tri-portable.rune --tol 2e-5
+          cargo run --release -p rune-cli -- diff-compiled --generic spec/test-vectors/models/small-gab-fp32.rune --compiled /tmp/tri-portable.rune --positions benchmark/positions/quiet.epd --tol 2e-5 || true

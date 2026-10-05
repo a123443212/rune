@@ -23,6 +23,16 @@ add_library(rune_core STATIC
   core/features/feature_set.cpp
   core/kernels/ref_kernels.cpp
   core/kernels/simd_kernels.cpp
+  core/kernels/smallmat.cpp
+  core/kernels/fused.cpp
+  core/kernels/quant_specialized.cpp
+  core/kernels/accum_specialized.cpp
+  core/compiler/ir.cpp
+  core/compiler/plan.cpp
+  core/compiler/artifact.cpp
+  core/runtime/arena.cpp
+  core/runtime/compiled_loader.cpp
+  core/runtime/compiled_evaluator.cpp
   core/accumulators/grouped_accumulator.cpp
   core/accumulators/token_layout.cpp
   core/accumulators/flex_accumulator.cpp
@@ -58,6 +68,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_dense.cpp
     tests/cpp/test_adaptive.cpp
     tests/cpp/test_v10.cpp
+    tests/cpp/test_v11.cpp
   )
   target_link_libraries(rune_tests PRIVATE rune_core)
   add_test(NAME rune_cpp_tests COMMAND rune_tests)
@@ -74,6 +85,12 @@ if(RUNE_BUILD_BENCH)
   target_link_libraries(rune_bench_v10 PRIVATE rune_core)
   add_executable(rune_eval tools/eval/rune_eval.cpp)
   target_link_libraries(rune_eval PRIVATE rune_core)
+  add_executable(rune_compile_support tools/compile/rune_compile_support.cpp)
+  target_link_libraries(rune_compile_support PRIVATE rune_core)
+  add_executable(rune_bench_compile tools/bench/rune_bench_compile.cpp)
+  target_link_libraries(rune_bench_compile PRIVATE rune_core)
+  add_executable(rune_model_info tools/inspect/rune_model_info.cpp)
+  target_link_libraries(rune_model_info PRIVATE rune_core)
 endif()
 
 if(RUNE_BUILD_BINDINGS)

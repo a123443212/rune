@@ -170,12 +170,20 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
         2
     }
 }
+mod bench_cmd;
+mod compile_cmd;
+mod diff_cmd;
+mod inspect_cmd;
 fn usage() {
     println!("rune eval --model <path> --fen <fen> --kernel <auto|scalar|simd>");
     println!("rune inspect --fen <fen>");
     println!("rune bench --model <path> --iters <n> --kernel <auto|scalar|simd>");
     println!("rune diff --model <path> --positions <file> --tol <f>");
     println!("rune model-info --model <path>");
+    println!("rune compile --model <path> --out <path> --isa <portable|avx2|avx512> --cpu <name>");
+    println!("rune bench-compile --model <path> --compiled <path> --iters <n>");
+    println!("rune inspect-compiled --model <path>");
+    println!("rune diff-compiled --generic <path> --compiled <path> --positions <file> --tol <f>");
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -231,6 +239,46 @@ fn main() {
             1
         } else {
             cmd_diff(&m, &pos, tol)
+        }
+    } else if cmd == "compile" {
+        let m = arg_val(&rest, "--model").unwrap_or_default();
+        let o = arg_val(&rest, "--out").unwrap_or_default();
+        let isa = arg_val(&rest, "--isa").unwrap_or_else(|| "portable".to_string());
+        let cpu = arg_val(&rest, "--cpu").unwrap_or_else(|| "generic-x86-64".to_string());
+        if m.is_empty() || o.is_empty() {
+            usage();
+            1
+        } else {
+            compile_cmd::run(&m, &o, &isa, &cpu)
+        }
+    } else if cmd == "bench-compile" {
+        let m = arg_val(&rest, "--model").unwrap_or_default();
+        let c = arg_val(&rest, "--compiled").unwrap_or_default();
+        let it = arg_val(&rest, "--iters").and_then(|x| x.parse::<usize>().ok()).unwrap_or(2000);
+        if m.is_empty() || c.is_empty() {
+            usage();
+            1
+        } else {
+            bench_cmd::run(&m, &c, it)
+        }
+    } else if cmd == "inspect-compiled" {
+        let m = arg_val(&rest, "--model").unwrap_or_default();
+        if m.is_empty() {
+            usage();
+            1
+        } else {
+            inspect_cmd::run(&m)
+        }
+    } else if cmd == "diff-compiled" {
+        let g = arg_val(&rest, "--generic").unwrap_or_default();
+        let c = arg_val(&rest, "--compiled").unwrap_or_default();
+        let pos = arg_val(&rest, "--positions").unwrap_or_default();
+        let tol = arg_val(&rest, "--tol").and_then(|x| x.parse::<f32>().ok()).unwrap_or(2e-5);
+        if g.is_empty() || c.is_empty() || pos.is_empty() {
+            usage();
+            1
+        } else {
+            diff_cmd::run(&g, &c, &pos, tol)
         }
     } else {
         usage();

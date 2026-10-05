@@ -1,5 +1,8 @@
 pub mod accumulator;
+pub mod accum_special;
 pub mod board;
+pub mod compiled;
+pub mod compiled_loader;
 pub mod error;
 pub mod evaluator;
 pub mod features;

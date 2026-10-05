@@ -1,0 +1,22 @@
+experiment:
+  name: rune_v11_portable
+  seed: 11
+
+research:
+  allow_experimental: false
+
+out_dir: runs/rune_v11_portable
+
+compile:
+  model: spec/test-vectors/models/small-gab-fp32.rune
+  target: isa=portable
+  out: artifacts/network.portable.rune
+
+bench:
+  iters: 2000
+  modes: [reference, generic, specialized]
+
+gates:
+  latency_warn_pct: 5.0
+  nps_warn_pct: 5.0
+  code_size_warn_pct: 20.0
