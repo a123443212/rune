@@ -1,0 +1,103 @@
+import argparse
+import json
+import os
+import subprocess
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+import numpy as np
+from training.export.export import load_exported_arrays
+from training.features.python_features import extract_features
+def py_value(model, fen):
+    header, arrays = load_exported_arrays(model)
+    feats = extract_features(fen)
+    acc = np.zeros((8, 32), dtype=np.float64)
+    for g, i in feats:
+        acc[g] += arrays["emb" + str(g)][i]
+    tok = np.clip(acc, 0, 1).astype(np.float32)
+    arch = header.get("architecture_id", header.get("arch"))
+    if arch in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
+        Q = tok @ arrays["wq"].T + arrays["bq"]
+        K = tok @ arrays["wk"].T + arrays["bk"]
+        V = tok @ arrays["wvv"].T + arrays["bvv"]
+        S = Q @ K.T + arrays["gab"]
+        mixed = tok + np.clip(S, 0, 1) @ V
+    elif arch == "RUNE-REL-02":
+        if header.get("geometric_bias") == "dynamic":
+            raise RuntimeError("dynamic relational bias needs board context")
+        Q = tok @ arrays["wq"].T + arrays["bq"]
+        K = tok @ arrays["wk"].T + arrays["bk"]
+        V = tok @ arrays["wvv"].T + arrays["bvv"]
+        gab = arrays.get("gabS", arrays.get("gab"))
+        S = Q @ K.T + gab
+        if header.get("gate", "clip") == "hard_sigmoid":
+            G = np.clip(0.2 * S + 0.5, 0, 1)
+        else:
+            G = np.clip(S, 0, 1)
+        alpha = float(header.get("alpha", 1.0))
+        mixed = tok + alpha * (G @ V)
+    else:
+        mixed = tok
+    flat = mixed.reshape(-1)
+    h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
+    h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)
+    wvo = arrays.get("wvo", arrays.get("wv"))
+    bvo = arrays.get("bvo", arrays.get("bv"))
+    v = float(np.tanh(h2 @ wvo.T + bvo).reshape(-1)[0])
+    wdl = (h2 @ arrays["wwdl"].T + arrays["bwdl"]).reshape(-1).tolist()
+    return v, wdl
+def run_cpp(cpp_bin, model, fen, path="auto"):
+    out = subprocess.check_output([cpp_bin, "--model", model, "--fen", fen, "--path", path], text=True)
+    parts = out.strip().split()
+    return float(parts[0]), [float(x) for x in parts[1:4]]
+def run_rust(rust_bin, model, fen, kernel="auto"):
+    out = subprocess.check_output([rust_bin, "eval", "--model", model, "--fen", fen, "--kernel", kernel], text=True)
+    v = None
+    w = None
+    for line in out.splitlines():
+        if line.startswith("value"):
+            v = float(line.split()[1])
+        if line.startswith("wdl"):
+            w = [float(x) for x in line.split()[1:4]]
+    return v, w
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--positions", required=True)
+    ap.add_argument("--cpp-bin", default="build/rune_eval")
+    ap.add_argument("--rust-bin", default="target/debug/rune")
+    ap.add_argument("--tol", type=float, default=2e-5)
+    ap.add_argument("--cpp-path", default="auto")
+    ap.add_argument("--rust-kernel", default="auto")
+    ap.add_argument("--out", default="")
+    args = ap.parse_args()
+    with open(args.positions) as f:
+        fens = [l.strip() for l in f if l.strip()]
+    rows = []
+    ok = True
+    for fen in fens:
+        pv, pw = py_value(args.model, fen)
+        try:
+            cv, cw = run_cpp(args.cpp_bin, args.model, fen, args.cpp_path)
+        except Exception as e:
+            cv, cw = float("nan"), [float("nan")] * 3
+            print("cpp failed " + str(e))
+        try:
+            rv, rw = run_rust(args.rust_bin, args.model, fen, args.rust_kernel)
+        except Exception as e:
+            rv, rw = float("nan"), [float("nan")] * 3
+            print("rust failed " + str(e))
+        d_pc = abs(pv - cv) if pv == pv and cv == cv else float("inf")
+        d_pr = abs(pv - rv) if pv == pv and rv == rv else float("inf")
+        d_cr = abs(cv - rv) if cv == cv and rv == rv else float("inf")
+        row = {"fen": fen, "py": pv, "cpp": cv, "rust": rv, "py_cpp": d_pc, "py_rust": d_pr, "cpp_rust": d_cr, "pass": d_pc <= args.tol and d_pr <= args.tol and d_cr <= args.tol}
+        rows.append(row)
+        if not row["pass"]:
+            ok = False
+        print(fen[:40] + " py=%.6f cpp=%.6f rust=%.6f d_cr=%.2g %s" % (pv, cv, rv, d_cr, "PASS" if row["pass"] else "FAIL"))
+    rep = {"model": args.model, "tol": args.tol, "rows": rows, "pass": ok}
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(rep, f, indent=2)
+    sys.exit(0 if ok else 2)
+if __name__ == "__main__":
+    main()

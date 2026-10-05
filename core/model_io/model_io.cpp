@@ -3,6 +3,7 @@
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <new>
 #include <sstream>
 
 namespace rune {
@@ -67,10 +68,40 @@ struct TensorMeta {
   std::string dtype;
 };
 
+bool parseDecimalInt(const std::string& s, int& out) {
+  size_t b = 0;
+  size_t e = s.size();
+  while (b < e && (s[b] == ' ' || s[b] == '\t')) ++b;
+  while (e > b && (s[e - 1] == ' ' || s[e - 1] == '\t')) --e;
+  if (b >= e || e - b > 10) return false;
+  bool neg = false;
+  if (s[b] == '-' || s[b] == '+') {
+    neg = (s[b] == '-');
+    ++b;
+    if (b >= e) return false;
+  }
+  long v = 0;
+  for (size_t i = b; i < e; ++i) {
+    if (s[i] < '0' || s[i] > '9') return false;
+    v = v * 10 + (s[i] - '0');
+    if (v > 2000000000L) return false;
+  }
+  out = neg ? -static_cast<int>(v) : static_cast<int>(v);
+  return true;
+}
+
+bool parseGroupIndex(const std::string& name, int& g) {
+  if (name.size() < 4 || name.compare(0, 3, "emb") != 0) return false;
+  if (!parseDecimalInt(name.substr(3), g)) return false;
+  return g >= 0 && g < 8;
+}
+
 bool parseTensors(const std::string& h, std::vector<TensorMeta>& out) {
-  size_t p = h.find("\"tensors\":[");
+  size_t p = h.find("\"tensor_metadata\":[");
+  if (p == std::string::npos) p = h.find("\"tensors\":[");
   if (p == std::string::npos) return false;
-  p += 11;
+  p = h.find('[', p);
+  p += 1;
   while (true) {
     size_t nb = h.find('{', p);
     size_t end = h.find(']', p);
@@ -82,21 +113,30 @@ bool parseTensors(const std::string& h, std::vector<TensorMeta>& out) {
     size_t pn = obj.find("\"name\":\"");
     if (pn == std::string::npos) return false;
     pn += 8;
-    t.name = obj.substr(pn, obj.find('"', pn) - pn);
+    size_t qn = obj.find('"', pn);
+    if (qn == std::string::npos) return false;
+    t.name = obj.substr(pn, qn - pn);
     size_t ps = obj.find("\"shape\":[");
     if (ps == std::string::npos) return false;
     ps += 9;
     size_t pe = obj.find(']', ps);
+    if (pe == std::string::npos) return false;
     std::string dims = obj.substr(ps, pe - ps);
     std::stringstream ss(dims);
     std::string tok;
     while (std::getline(ss, tok, ',')) {
-      if (!tok.empty()) t.shape.push_back(std::stoi(tok));
+      if (!tok.empty()) {
+        int dv = 0;
+        if (!parseDecimalInt(tok, dv)) return false;
+        t.shape.push_back(dv);
+      }
     }
     size_t pd = obj.find("\"dtype\":\"");
     if (pd == std::string::npos) return false;
     pd += 9;
-    t.dtype = obj.substr(pd, obj.find('"', pd) - pd);
+    size_t qd = obj.find('"', pd);
+    if (qd == std::string::npos) return false;
+    t.dtype = obj.substr(pd, qd - pd);
     out.push_back(t);
     p = ne + 1;
   }
@@ -118,6 +158,10 @@ bool readHeader(std::ifstream& f, std::string& header, std::string& err) {
   }
   header.assign(hlen, '\0');
   f.read(header.data(), hlen);
+  if (!f) {
+    err = "truncated header";
+    return false;
+  }
   return true;
 }
 
@@ -191,10 +235,16 @@ bool hasNonNull(const std::string& header, const std::string& key) {
   return header.compare(p, 4, "null") != 0;
 }
 
+std::string pickString(const std::string& h, const std::string& a, const std::string& b) {
+  std::string v = extractString(h, a);
+  if (!v.empty()) return v;
+  return extractString(h, b);
+}
+
 void fillSpec(const std::string& header, ModelSpec& spec) {
-  spec.arch = extractString(header, "arch");
-  spec.archVersion = extractString(header, "arch_version");
-  spec.featureSet = extractString(header, "feature_set");
+  spec.arch = pickString(header, "architecture_id", "arch");
+  spec.archVersion = pickString(header, "architecture_version", "arch_version");
+  spec.featureSet = pickString(header, "feature_version", "feature_set");
   spec.tokens = static_cast<int>(extractInt(header, "tokens", 8));
   spec.tokenDim = static_cast<int>(extractInt(header, "token_dim", 32));
   spec.attention = extractString(header, "attention");
@@ -241,10 +291,32 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   }
   std::string header;
   if (!readHeader(f, header, err)) return false;
+  long fmt = extractInt(header, "format", 1);
+  if (fmt != 1 && fmt != 2) {
+    err = "unsupported format version";
+    return false;
+  }
   fillSpec(header, out.spec);
+  if (out.spec.featureSet != "grouped_hkav2_fullthreats_v01") {
+    err = "feature version mismatch: " + out.spec.featureSet;
+    return false;
+  }
   if (!isSupportedVersion(out.spec.archVersion)) {
     err = "unsupported arch version " + out.spec.archVersion;
     return false;
+  }
+  if (out.spec.quantization != "fp32" && out.spec.quantization != "int8" &&
+      out.spec.quantization != "int16") {
+    err = "unsupported quantization " + out.spec.quantization;
+    return false;
+  }
+  const int* hyperDims[] = {&out.spec.headH1, &out.spec.headH2, &out.spec.cheapHidden,
+                            &out.spec.refH1, &out.spec.refH2};
+  for (const int* hp : hyperDims) {
+    if (*hp < 1 || *hp > 4096) {
+      err = "hyperparameter dim out of range";
+      return false;
+    }
   }
   std::string arch = out.spec.arch;
   out.isInt8 = (out.spec.quantization == "int8");
@@ -255,6 +327,19 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   out.isUncertainty = isUncertaintyArch(arch);
   const bool useVar =
       out.isDense || out.isAdaptive || out.isUncertainty;
+  if (out.isFlex) {
+    if (out.spec.tokens != 6 && out.spec.tokens != 8 && out.spec.tokens != 10) {
+      err = "token count mismatch";
+      return false;
+    }
+  } else if (out.spec.tokens != 8) {
+    err = "token count mismatch";
+    return false;
+  }
+  if (!out.isFlex && !useVar && out.spec.tokenDim != 32) {
+    err = "token dim mismatch";
+    return false;
+  }
   std::vector<TensorMeta> metas;
   if (!parseTensors(header, metas)) {
     err = "tensor list parse failed";
@@ -278,8 +363,12 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     ds.poolClip = extractBool(header, "pool_clip", true);
     ds.gateOn = out.spec.gateOn;
     ds.sharedWidth = static_cast<int>(extractInt(header, "shared_width", 32));
-    ds.headH1 = static_cast<int>(extractInt(header, "head_h1", 128));
-    ds.headH2 = static_cast<int>(extractInt(header, "head_h2", 32));
+    ds.headH1 = out.spec.headH1;
+    ds.headH2 = out.spec.headH2;
+    if (ds.sharedWidth < 1 || ds.sharedWidth > 64) {
+      err = "hyperparameter dim out of range";
+      return false;
+    }
     out.arch = createDense(ds, err);
     if (!out.arch) {
       if (err.empty()) err = "dense build failed";
@@ -360,11 +449,48 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   int dim = out.isFlex ? out.spec.tokenDim : 32;
   std::vector<std::string> archNames;
   std::vector<float> archFlat;
+  size_t totalBytes = 0;
+  try {
   for (const TensorMeta& t : metas) {
     size_t count = 1;
-    for (int s : t.shape) count *= static_cast<size_t>(s);
+    for (int s : t.shape) {
+      if (s < 0 || s > 1000000) {
+        err = "shape value out of range";
+        return false;
+      }
+      size_t prev = count;
+      count *= static_cast<size_t>(s);
+      if (s != 0 && count / static_cast<size_t>(s) != prev) {
+        err = "tensor size overflow";
+        return false;
+      }
+    }
+    if (count == 0 || count > 200000000) {
+      err = "tensor size out of range";
+      return false;
+    }
+    if (t.dtype != "float32" && t.dtype != "int8" && t.dtype != "int16") {
+      err = "unsupported dtype " + t.dtype;
+      return false;
+    }
+    size_t elemBytes = t.dtype == "float32" ? 4 : (t.dtype == "int16" ? 2 : 1);
+    totalBytes += count * elemBytes;
+    if (totalBytes > 800000000) {
+      err = "payload too large";
+      return false;
+    }
     if (t.name.rfind("emb", 0) == 0) {
-      int g = std::stoi(t.name.substr(3));
+      int g = -1;
+      if (!parseGroupIndex(t.name, g)) {
+        err = "bad embedding tensor name " + t.name;
+        return false;
+      }
+      int wantCols = useVar ? embWidths.w[g] : (out.isFlex ? dim : 32);
+      if (t.shape.size() != 2 || t.shape[0] != GroupedFeatureSet::vocabSize(g) ||
+          t.shape[1] != wantCols) {
+        err = "embedding shape mismatch " + t.name;
+        return false;
+      }
       double scale = extractNumber(header, t.name, 1.0);
       if (t.dtype == "int8" || t.dtype == "int16") {
         if (t.dtype == "int8") {
@@ -427,6 +553,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       for (float v : buf) archFlat.push_back(v);
     }
   }
+  } catch (const std::bad_alloc&) {
+    err = "oversized allocation";
+    return false;
+  }
   if (useVar) {
     out.varQ.configure(embWidths, out.isInt16);
     if (out.isInt8 || out.isInt16) out.varQ.quantizeFrom(out.varEmbeddings, out.varScales);
@@ -441,43 +571,50 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     err = "arch tensor mismatch";
     return false;
   }
-  if (useVar) {
-    std::string cs = extractString(header, "checksum");
-    if (cs.empty()) {
-      err = "dense model missing checksum";
+  {
+    std::string cs = pickString(header, "model_hash", "checksum");
+    bool needHash = (fmt == 2) || useVar;
+    if (needHash && cs.empty()) {
+      err = "model missing checksum";
       return false;
     }
-    uint64_t want = 0;
-    try {
-      want = std::stoull(cs, nullptr, 16);
-    } catch (...) {
-      err = "bad checksum format";
-      return false;
-    }
-    std::ifstream g(path, std::ios::binary);
-    if (!g) {
-      err = "cannot reopen file";
-      return false;
-    }
-    g.seekg(0, std::ios::end);
-    std::streampos end = g.tellg();
-    std::streampos start = 8 + static_cast<std::streampos>(header.size());
-    if (end < start) {
-      err = "bad payload range";
-      return false;
-    }
-    size_t n = static_cast<size_t>(end - start);
-    std::string payload(n, '\0');
-    g.seekg(start);
-    g.read(payload.data(), n);
-    if (!g) {
-      err = "cannot read payload";
-      return false;
-    }
-    uint64_t got = fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()), n);
-    if (got != want) {
-      err = "checksum mismatch";
-      return false;
+    if (!cs.empty()) {
+      uint64_t want = 0;
+      try {
+        want = std::stoull(cs, nullptr, 16);
+      } catch (...) {
+        err = "bad checksum format";
+        return false;
+      }
+      std::ifstream g(path, std::ios::binary);
+      if (!g) {
+        err = "cannot reopen file";
+        return false;
+      }
+      g.seekg(0, std::ios::end);
+      std::streampos end = g.tellg();
+      std::streampos start = 8 + static_cast<std::streampos>(header.size());
+      if (end < start) {
+        err = "bad payload range";
+        return false;
+      }
+      size_t n = static_cast<size_t>(end - start);
+      if (n > 800000000) {
+        err = "payload too large";
+        return false;
+      }
+      std::string payload(n, '\0');
+      g.seekg(start);
+      g.read(payload.data(), n);
+      if (!g) {
+        err = "cannot read payload";
+        return false;
+      }
+      uint64_t got = fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()), n);
+      if (got != want) {
+        err = "checksum mismatch";
+        return false;
+      }
     }
   }
   return true;

@@ -1,0 +1,12 @@
+{
+  "version": 1,
+  "files": [
+    "features.json",
+    "accumulator.json",
+    "quant.json",
+    "mixer.json",
+    "head.json",
+    "routing.json",
+    "full.json"
+  ]
+}

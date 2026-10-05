@@ -1,4 +1,5 @@
 #include "tests/cpp/test_framework.h"
+#include "tests/cpp/test_v10.h"
 
 static int g_failures = 0;
 
@@ -47,6 +48,7 @@ int main() {
   testSearchRoutingModes();
   testUncertaintyModelIO();
   testUncertaintyParamAccounting();
+  runV10Tests();
   if (g_failures == 0) {
     std::printf("ALL CPP TESTS PASSED\n");
     return 0;

@@ -1,0 +1,10 @@
+[package]
+name = "rune-kernel"
+version = "0.10.0"
+edition = "2021"
+
+[dependencies]
+rune-spec = { path = "../rune-spec" }
+
+[dev-dependencies]
+serde_json = "1"

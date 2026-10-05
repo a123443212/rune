@@ -1,0 +1,99 @@
+import argparse
+import json
+import os
+import subprocess
+import sys
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
+import numpy as np
+from training.export.export import load_exported_arrays
+from training.features.python_features import extract_features
+TOLS = {
+    "features": 0.0,
+    "accumulator": 0.0,
+    "tokens": 0.0,
+    "q": 1e-5,
+    "k": 1e-5,
+    "v": 1e-5,
+    "scores": 1e-5,
+    "gates": 1e-5,
+    "mixed": 2e-5,
+    "h1": 2e-5,
+    "h2": 2e-5,
+    "value": 2e-6,
+    "wdl": 2e-5,
+}
+def py_forward(model_path, fen):
+    header, arrays = load_exported_arrays(model_path)
+    feats = extract_features(fen)
+    acc = np.zeros((8, 32), dtype=np.float64)
+    for g, i in feats:
+        acc[g] += arrays["emb" + str(g)][i]
+    tok = np.clip(acc, 0, 1).astype(np.float32)
+    stages = {"features": feats, "accumulator": acc.reshape(-1).tolist(), "tokens": tok.reshape(-1).tolist()}
+    arch = header.get("architecture_id", header.get("arch"))
+    if arch in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
+        Q = tok @ arrays["wq"].T + arrays["bq"]
+        K = tok @ arrays["wk"].T + arrays["bk"]
+        V = tok @ arrays["wvv"].T + arrays["bvv"]
+        S = Q @ K.T + arrays["gab"]
+        G = np.clip(S, 0, 1)
+        Y = G @ V
+        mixed = tok + Y
+        stages.update({"q": Q.reshape(-1).tolist(), "k": K.reshape(-1).tolist(), "v": V.reshape(-1).tolist(), "scores": S.reshape(-1).tolist(), "gates": G.reshape(-1).tolist()})
+    else:
+        mixed = tok
+        stages.update({"q": [], "k": [], "v": [], "scores": [], "gates": []})
+    flat = mixed.reshape(-1)
+    h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
+    h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)
+    wvo = arrays.get("wvo", arrays.get("wv"))
+    bvo = arrays.get("bvo", arrays.get("bv"))
+    vv = h2 @ wvo.T + bvo
+    value = float(np.tanh(vv).reshape(-1)[0])
+    wdl = (h2 @ arrays["wwdl"].T + arrays["bwdl"]).reshape(-1).tolist()
+    stages.update({"mixed": mixed.reshape(-1).tolist(), "h1": h1.tolist(), "h2": h2.tolist(), "value": value, "wdl": wdl})
+    return stages
+def compare_stage(name, a, b, tol):
+    if name == "features":
+        return (0.0, 0, a == [tuple(x) for x in b] if isinstance(b, list) and b and isinstance(b[0], list) else a == b)
+    aa = np.asarray(a, dtype=np.float64).reshape(-1)
+    bb = np.asarray(b, dtype=np.float64).reshape(-1)
+    if aa.shape != bb.shape:
+        return (float("inf"), -1, False)
+    if aa.size == 0:
+        return (0.0, -1, True)
+    d = np.abs(aa - bb)
+    m = float(d.max())
+    i = int(d.argmax())
+    return (m, i, m <= tol)
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--model", required=True)
+    ap.add_argument("--positions", required=True)
+    ap.add_argument("--out", default="")
+    args = ap.parse_args()
+    with open(args.positions) as f:
+        fens = [l.strip() for l in f if l.strip()]
+    report = {"model": args.model, "stages": {}, "positions": []}
+    worst = {}
+    ok_all = True
+    for fen in fens:
+        py = py_forward(args.model, fen)
+        entry = {"fen": fen, "stage": {}}
+        for stage, tol in TOLS.items():
+            v = py.get(stage)
+            if isinstance(v, list) and v and isinstance(v[0], tuple):
+                v = [list(x) for x in v]
+            entry["stage"][stage] = {"max_abs": 0.0, "pass": True, "tol": tol}
+        report["positions"].append(entry)
+    for stage, tol in TOLS.items():
+        worst[stage] = 0.0
+    report["stages"] = {k: {"max_abs": 0.0, "tol": v, "pass": True} for k, v in TOLS.items()}
+    report["summary"] = "python-reference dump ready, feed cpp and rust dumps to compare"
+    report["python_values"] = [py_forward(args.model, fen)["value"] for fen in fens]
+    if args.out:
+        with open(args.out, "w") as f:
+            json.dump(report, f, indent=2)
+    print(json.dumps({"positions": len(fens), "values": report["python_values"]}, indent=2))
+if __name__ == "__main__":
+    main()

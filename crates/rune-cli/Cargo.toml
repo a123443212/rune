@@ -1,0 +1,18 @@
+[package]
+name = "rune-cli"
+version = "0.10.0"
+edition = "2021"
+
+[[bin]]
+name = "rune"
+path = "src/main.rs"
+
+[dependencies]
+rune-spec = { path = "../rune-spec" }
+rune-model = { path = "../rune-model" }
+rune-kernel = { path = "../rune-kernel" }
+rune-runtime = { path = "../rune-runtime" }
+rune-data = { path = "../rune-data" }
+
+[dev-dependencies]
+shakmaty = "0.30"

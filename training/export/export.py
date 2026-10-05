@@ -3,7 +3,8 @@ import struct
 import numpy as np
 
 MAGIC = b"RUNE"
-FORMAT_VERSION = 1
+FORMAT_VERSION = 2
+FEATURE_VERSION = "grouped_hkav2_fullthreats_v01"
 
 
 def fnv1a(data):
@@ -25,7 +26,11 @@ def quantize_array(arr, bits=8):
     scale = symmetric_scale(arr, bits)
     bound = 32767 if bits == 16 else 127
     dtype = np.int16 if bits == 16 else np.int8
-    q = np.clip(np.round(arr / scale), -bound, bound).astype(dtype)
+    flat = np.asarray(arr, dtype=np.float64) / scale
+    pos = np.floor(flat + 0.5)
+    neg = np.ceil(flat - 0.5)
+    r = np.where(flat >= 0, pos, neg)
+    q = np.clip(r, -bound, bound).astype(dtype)
     return q, scale
 
 
@@ -63,16 +68,21 @@ def export_model(model, path, quantization="fp32"):
             payload += arr.astype("<f4").tobytes()
     header = {
         "format": FORMAT_VERSION,
+        "architecture_id": spec["arch"],
+        "architecture_version": spec["arch_version"],
+        "feature_version": spec.get("feature_set", FEATURE_VERSION),
         "arch": spec["arch"],
         "arch_version": spec["arch_version"],
-        "feature_set": spec["feature_set"],
+        "feature_set": spec.get("feature_set", FEATURE_VERSION),
         "tokens": spec["tokens"],
         "token_dim": spec["token_dim"],
         "attention": spec["attention"],
         "geometric_bias": spec["geometric_bias"],
         "head": spec["head"],
         "quantization": quantization,
+        "quantization_metadata": {"mode": "symmetric", "scales": scales},
         "scales": scales,
+        "tensor_metadata": tensors_meta,
         "tensors": tensors_meta,
     }
     for key in ("gate", "alpha", "context_dim", "variant", "token_dims", "pooling",
@@ -83,8 +93,9 @@ def export_model(model, path, quantization="fp32"):
                 "teacher_hash", "student_of"):
         if key in spec:
             header[key] = spec[key]
-    if spec["arch"].startswith(("RUNE-03-", "RUNE-04", "RUNE-05")):
-        header["checksum"] = format(fnv1a(payload), "016x")
+    hh = format(fnv1a(payload), "016x")
+    header["model_hash"] = hh
+    header["checksum"] = hh
     hbytes = json.dumps(header, separators=(",", ":")).encode()
     with open(path, "wb") as f:
         f.write(MAGIC)
@@ -116,7 +127,8 @@ def load_exported_arrays(path):
         payload = f.read()
     arrays = {}
     off = 0
-    for t in header["tensors"]:
+    tlist = header.get("tensor_metadata", header.get("tensors"))
+    for t in tlist:
         name, shape, dtype = t["name"], t["shape"], t["dtype"]
         count = 1
         for s in shape:

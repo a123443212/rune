@@ -1,0 +1,65 @@
+{
+  "version": 1,
+  "vectors": [
+    {
+      "score": 0.1,
+      "threshold": 0.2,
+      "refine": false
+    },
+    {
+      "score": 0.5,
+      "threshold": 0.2,
+      "refine": true
+    },
+    {
+      "score": 0.9,
+      "threshold": 0.2,
+      "refine": true
+    },
+    {
+      "score": "nan",
+      "threshold": 0.2,
+      "refine": true
+    },
+    {
+      "score": 0.1,
+      "threshold": 0.5,
+      "refine": false
+    },
+    {
+      "score": 0.5,
+      "threshold": 0.5,
+      "refine": true
+    },
+    {
+      "score": 0.9,
+      "threshold": 0.5,
+      "refine": true
+    },
+    {
+      "score": "nan",
+      "threshold": 0.5,
+      "refine": true
+    },
+    {
+      "score": 0.1,
+      "threshold": 0.8,
+      "refine": false
+    },
+    {
+      "score": 0.5,
+      "threshold": 0.8,
+      "refine": false
+    },
+    {
+      "score": 0.9,
+      "threshold": 0.8,
+      "refine": true
+    },
+    {
+      "score": "nan",
+      "threshold": 0.8,
+      "refine": true
+    }
+  ]
+}

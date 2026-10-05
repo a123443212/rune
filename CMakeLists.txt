@@ -21,6 +21,8 @@ add_library(rune_core STATIC
   core/board/move_make.cpp
   core/position/position.cpp
   core/features/feature_set.cpp
+  core/kernels/ref_kernels.cpp
+  core/kernels/simd_kernels.cpp
   core/accumulators/grouped_accumulator.cpp
   core/accumulators/token_layout.cpp
   core/accumulators/flex_accumulator.cpp
@@ -34,9 +36,11 @@ add_library(rune_core STATIC
   core/architectures/dense/dense.cpp
   core/architectures/adaptive/adaptive.cpp
   core/inference/evaluator.cpp
+  core/inference/dump.cpp
   core/model_io/model_io.cpp
   core/model_io/model_save.cpp
   core/model_io/model_factory.cpp
+  core/model_io/model_error.cpp
 )
 
 target_include_directories(rune_core PUBLIC ${CMAKE_SOURCE_DIR})
@@ -53,6 +57,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_relational.cpp
     tests/cpp/test_dense.cpp
     tests/cpp/test_adaptive.cpp
+    tests/cpp/test_v10.cpp
   )
   target_link_libraries(rune_tests PRIVATE rune_core)
   add_test(NAME rune_cpp_tests COMMAND rune_tests)
@@ -63,6 +68,12 @@ if(RUNE_BUILD_BENCH)
   target_link_libraries(rune_bench PRIVATE rune_core)
   add_executable(rune_stage_bench benchmarks/stage_bench.cpp)
   target_link_libraries(rune_stage_bench PRIVATE rune_core)
+  add_executable(rune_diff tools/diff/rune_diff.cpp)
+  target_link_libraries(rune_diff PRIVATE rune_core)
+  add_executable(rune_bench_v10 tools/bench/rune_bench.cpp)
+  target_link_libraries(rune_bench_v10 PRIVATE rune_core)
+  add_executable(rune_eval tools/eval/rune_eval.cpp)
+  target_link_libraries(rune_eval PRIVATE rune_core)
 endif()
 
 if(RUNE_BUILD_BINDINGS)

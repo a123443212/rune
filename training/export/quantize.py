@@ -7,7 +7,9 @@ def fake_quantize(arr, scale=None, bits=8):
     if scale is None:
         m = float(np.abs(arr).max()) if arr.size else 0.0
         scale = m / bound if m > 0 else 1.0
-    q = np.clip(np.round(arr / scale), -bound, bound)
+    flat = arr / scale
+    r = np.where(flat >= 0, np.floor(flat + 0.5), np.ceil(flat - 0.5))
+    q = np.clip(r, -bound, bound)
     return (q * scale).astype(np.float32), scale
 
 

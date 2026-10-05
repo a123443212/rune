@@ -1,0 +1,92 @@
+name: rune-v10
+on:
+  push:
+  pull_request:
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+      - name: build
+        run: cmake --build build -j4
+      - name: cpp tests
+        run: ./build/rune_tests
+      - name: cpp diff smoke
+        run: ./build/rune_diff --mode tolerant
+      - name: cpp bench smoke
+        run: ./build/rune_bench_v10 --threads 1
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: new workspace
+        run: cargo test --workspace --locked
+      - name: legacy data engine
+        run: cargo test --workspace --manifest-path rust-data/Cargo.toml
+      - name: rust bench smoke
+        run: cargo run --release -p rune-cli -- bench --model spec/test-vectors/models/small-gab-fp32.rune --iters 200
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: parity vectors
+        run: pytest tests/test_v10_parity.py tests/test_v10_debts.py -v
+      - name: regen vectors deterministic
+        run: python3 tools/golden/gen_vectors.py && git diff --exit-code -- spec/test-vectors/v10/
+  triangle:
+    runs-on: ubuntu-latest
+    needs: [cpp, rust, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: build both
+        run: |
+          cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+          cmake --build build -j4 --target rune_eval
+          cargo build --release -p rune-cli
+      - name: three-way diff
+        run: |
+          head -n 5 benchmark/positions/quiet.epd > /tmp/ci_pos.txt
+          python3 tools/diff/cross_check.py --model spec/test-vectors/models/small-gab-fp32.rune --positions /tmp/ci_pos.txt --cpp-bin build/rune_eval --rust-bin target/release/rune --tol 2e-5
+      - name: mixed-path simd triangle
+        run: |
+          head -n 5 benchmark/positions/quiet.epd > /tmp/ci_pos.txt
+          python3 tools/diff/cross_check.py --model spec/test-vectors/models/small-gab-fp32.rune --positions /tmp/ci_pos.txt --cpp-bin build/rune_eval --cpp-path scalar --rust-bin target/release/rune --rust-kernel simd --tol 2e-5
+      - name: dense quant parity
+        run: |
+          cat benchmark/positions/quiet.epd > /tmp/ci_dense_pos.txt
+          python3 tools/diff/dense_check.py --models spec/test-vectors/models/dense-b-fp32.rune spec/test-vectors/models/dense-b-int8.rune --positions /tmp/ci_dense_pos.txt --cpp-bin build/rune_eval
+      - name: adaptive cascade sweep
+        run: |
+          cat benchmark/positions/quiet.epd benchmark/positions/tactical.epd > /tmp/ci_adapt_pos.txt
+          python3 tools/bench/adaptive_sweep.py --model spec/test-vectors/models/adaptive-fp32.rune --positions /tmp/ci_adapt_pos.txt --cpp-bin build/rune_eval --thresholds "0.0,0.06,0.07,0.5"
+  compat:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: deps
+        run: pip install -r requirements.txt
+      - name: format compat
+        run: |
+          cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF
+          cmake --build build -j4 --target rune_eval
+          cargo build --release -p rune-cli
+          for m in spec/test-vectors/models/*.rune; do echo "== $m"; ./build/rune_eval --model "$m" --fen "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"; ./target/release/rune model-info --model "$m" | head -n 3; done

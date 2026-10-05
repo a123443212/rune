@@ -1,0 +1,3 @@
+[workspace]
+members = ["crates/rune-spec", "crates/rune-model", "crates/rune-kernel", "crates/rune-runtime", "crates/rune-data", "crates/rune-cli"]
+resolver = "2"

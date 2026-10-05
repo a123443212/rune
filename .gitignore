@@ -1,14 +1,16 @@
 build/
 rust-data/target/
+target/
 __pycache__/
 *.pyc
 *.pyo
 *.so
 *.egg-info/
 .venv/
-data/
+/data/
 runs/
 reports/
 checkpoints/
 *.rune
+!spec/test-vectors/models/*.rune
 .pytest_cache/
