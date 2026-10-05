@@ -3,6 +3,7 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import tests.conftest as conftest
 from tests.conftest import find_binding
 
 _d = find_binding()
@@ -66,3 +67,12 @@ def test_mobility_matches_pseudo_count():
         mob = [i for g, i in feats if g == 6 and 384 <= i < 448]
         assert len(mob) == 1
         assert mob[0] % 32 == min(n, 31)
+
+
+def test_find_binding_handles_nested_build_dirs(tmp_path, monkeypatch):
+    nested = tmp_path / "build" / "Debug"
+    nested.mkdir(parents=True)
+    lib = nested / "rune_bindings.cpython-314-x86_64-linux-gnu.so"
+    lib.write_bytes(b"")
+    monkeypatch.setattr(conftest, "BUILD_DIRS", [str(tmp_path / "build")])
+    assert conftest.find_binding() == str(nested)

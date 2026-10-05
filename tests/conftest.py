@@ -1,4 +1,3 @@
-import glob
 import os
 import sys
 
@@ -15,7 +14,10 @@ def pytest_addoption(parser):
 
 def find_binding():
     for d in BUILD_DIRS:
-        cands = glob.glob(os.path.join(d, "rune_bindings*.so"))
-        if cands:
-            return os.path.dirname(cands[0])
+        if not os.path.isdir(d):
+            continue
+        for root, _, files in os.walk(d):
+            for name in files:
+                if name.startswith("rune_bindings") and name.endswith((".so", ".pyd", ".dylib")):
+                    return root
     return None
