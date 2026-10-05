@@ -11,6 +11,9 @@ pub struct IncrWeights {
     pub wv: Vec<f32>,
     pub bv: Vec<f32>,
     pub gab: Vec<f32>,
+    pub dyn_u: Vec<f32>,
+    pub dyn_w: Vec<f32>,
+    pub ctx_dim: usize,
     pub gate_hard: bool,
     pub alpha: f32,
 }
@@ -33,6 +36,8 @@ struct Snapshot {
     g: Vec<f32>,
     y: Vec<f32>,
     out: Vec<f32>,
+    du: Vec<f32>,
+    dw: Vec<f32>,
 }
 
 #[derive(Debug, Clone)]
@@ -47,6 +52,8 @@ pub struct RelationalCache {
     g: Vec<f32>,
     y: Vec<f32>,
     out: Vec<f32>,
+    du: Vec<f32>,
+    dw: Vec<f32>,
     stack: Vec<Snapshot>,
     fallbacks: usize,
     incremental_updates: usize,
@@ -64,6 +71,8 @@ impl RelationalCache {
         let td = w.tokens * w.dim;
         let tt = w.tokens * w.tokens;
         RelationalCache {
+            du: vec![0.0; w.tokens],
+            dw: vec![0.0; w.tokens],
             w,
             threshold,
             x: vec![0.0; td],
@@ -116,7 +125,29 @@ impl RelationalCache {
         &self.g
     }
 
-    fn full_into(&self, tokens: &[f32], q: &mut [f32], k: &mut [f32], vv: &mut [f32], s: &mut [f32], g: &mut [f32], y: &mut [f32], out: &mut [f32]) {
+    fn dyn_active(&self, ctx: Option<&[f32]>) -> bool {
+        ctx.is_some() && self.w.ctx_dim > 0 && !self.w.dyn_u.is_empty() && !self.w.dyn_w.is_empty()
+    }
+
+    fn dyn_factors(&self, ctx: &[f32]) -> (Vec<f32>, Vec<f32>) {
+        let t = self.w.tokens;
+        let cd = self.w.ctx_dim;
+        let mut du = vec![0.0; t];
+        let mut dw = vec![0.0; t];
+        for a in 0..t {
+            let mut su = 0.0;
+            let mut sw = 0.0;
+            for c in 0..cd {
+                su += self.w.dyn_u[a * cd + c] * ctx[c];
+                sw += self.w.dyn_w[a * cd + c] * ctx[c];
+            }
+            du[a] = su;
+            dw[a] = sw;
+        }
+        (du, dw)
+    }
+
+    fn full_into(&self, tokens: &[f32], ctx: Option<&[f32]>, q: &mut [f32], k: &mut [f32], vv: &mut [f32], s: &mut [f32], g: &mut [f32], y: &mut [f32], out: &mut [f32], du: &mut [f32], dw: &mut [f32]) {
         let t = self.w.tokens;
         let d = self.w.dim;
         for i in 0..t {
@@ -129,9 +160,18 @@ impl RelationalCache {
             kernel::mat_vec(&self.w.wv, xb, Some(&self.w.bv), vb, d, d);
         }
         kernel::mat_mul_tt(q, k, s, t, t, d);
+        let dyn_on = self.dyn_active(ctx);
+        if dyn_on {
+            let (fdu, fdw) = self.dyn_factors(ctx.unwrap());
+            du.copy_from_slice(&fdu);
+            dw.copy_from_slice(&fdw);
+        }
         for a in 0..t {
             for b in 0..t {
-                let val = s[a * t + b] + self.w.gab[a * t + b];
+                let mut val = s[a * t + b] + self.w.gab[a * t + b];
+                if dyn_on {
+                    val += kernel::clamp_delta(du[a] * dw[b]);
+                }
                 s[a * t + b] = val;
                 g[a * t + b] = gate_fn(self.w.gate_hard, val);
             }
@@ -142,7 +182,7 @@ impl RelationalCache {
         }
     }
 
-    pub fn rebuild(&mut self, tokens: &[f32]) {
+    pub fn rebuild(&mut self, tokens: &[f32], ctx: Option<&[f32]>) {
         self.x.copy_from_slice(tokens);
         let mut q = self.q.clone();
         let mut k = self.k.clone();
@@ -151,7 +191,9 @@ impl RelationalCache {
         let mut g = self.g.clone();
         let mut y = self.y.clone();
         let mut out = self.out.clone();
-        self.full_into(tokens, &mut q, &mut k, &mut vv, &mut s, &mut g, &mut y, &mut out);
+        let mut du = self.du.clone();
+        let mut dw = self.dw.clone();
+        self.full_into(tokens, ctx, &mut q, &mut k, &mut vv, &mut s, &mut g, &mut y, &mut out, &mut du, &mut dw);
         self.q = q;
         self.k = k;
         self.v = vv;
@@ -159,13 +201,15 @@ impl RelationalCache {
         self.g = g;
         self.y = y;
         self.out = out;
+        self.du = du;
+        self.dw = dw;
         self.stack.clear();
     }
 
-    pub fn update(&mut self, tokens_new: &[f32], changed: &[usize]) {
+    pub fn update(&mut self, tokens_new: &[f32], ctx: Option<&[f32]>, changed: &[usize]) {
         if !self.use_incremental(changed) {
             self.fallbacks += 1;
-            self.rebuild(tokens_new);
+            self.rebuild(tokens_new, ctx);
             return;
         }
         self.incremental_updates += 1;
@@ -189,8 +233,16 @@ impl RelationalCache {
             kernel::mat_vec(&self.w.wk, xb, Some(&self.w.bk), kb, d, d);
             kernel::mat_vec(&self.w.wv, xb, Some(&self.w.bv), vb, d, d);
         }
+        let dyn_on = self.dyn_active(ctx);
+        if dyn_on {
+            let (fdu, fdw) = self.dyn_factors(ctx.unwrap());
+            self.du.copy_from_slice(&fdu);
+            self.dw.copy_from_slice(&fdw);
+        }
+        let (du, dw) = (self.du.clone(), self.dw.clone());
+        let (gate_hard, alpha) = (self.w.gate_hard, self.w.alpha);
         let (q, k, s, g, gab) = (&self.q, &self.k, &mut self.s, &mut self.g, &self.w.gab);
-        let (gate_hard, gab_ref) = (self.w.gate_hard, gab);
+        let gab_ref = gab;
         for a in 0..t {
             for b in 0..t {
                 if !mark[a] && !mark[b] {
@@ -200,7 +252,10 @@ impl RelationalCache {
                 for dd in 0..d {
                     dot += q[a * d + dd] * k[b * d + dd];
                 }
-                let val = dot + gab_ref[a * t + b];
+                let mut val = dot + gab_ref[a * t + b];
+                if dyn_on {
+                    val += kernel::clamp_delta(du[a] * dw[b]);
+                }
                 s[a * t + b] = val;
                 g[a * t + b] = gate_fn(gate_hard, val);
             }
@@ -209,7 +264,7 @@ impl RelationalCache {
         kernel::mat_mul(&self.g, &vv, &mut self.y, t, d, t);
         self.x.copy_from_slice(tokens_new);
         for i in 0..t * d {
-            self.out[i] = self.x[i] + self.w.alpha * self.y[i];
+            self.out[i] = self.x[i] + alpha * self.y[i];
         }
     }
 
@@ -223,6 +278,8 @@ impl RelationalCache {
             g: self.g.clone(),
             y: self.y.clone(),
             out: self.out.clone(),
+            du: self.du.clone(),
+            dw: self.dw.clone(),
         });
     }
 
@@ -236,9 +293,11 @@ impl RelationalCache {
         self.g = s.g;
         self.y = s.y;
         self.out = s.out;
+        self.du = s.du;
+        self.dw = s.dw;
     }
 
-    pub fn verify_against_full(&self, tokens_new: &[f32], tol: f32) -> (bool, f32) {
+    pub fn verify_against_full(&self, tokens_new: &[f32], ctx: Option<&[f32]>, tol: f32) -> (bool, f32) {
         let t = self.w.tokens;
         let d = self.w.dim;
         let mut q = vec![0.0; t * d];
@@ -248,7 +307,9 @@ impl RelationalCache {
         let mut g = vec![0.0; t * t];
         let mut y = vec![0.0; t * d];
         let mut out = vec![0.0; t * d];
-        self.full_into(tokens_new, &mut q, &mut k, &mut vv, &mut s, &mut g, &mut y, &mut out);
+        let mut du = vec![0.0; t];
+        let mut dw = vec![0.0; t];
+        self.full_into(tokens_new, ctx, &mut q, &mut k, &mut vv, &mut s, &mut g, &mut y, &mut out, &mut du, &mut dw);
         let pairs: [(&[f32], &[f32]); 7] = [
             (&self.q, &q),
             (&self.k, &k),
@@ -308,6 +369,9 @@ mod cache_tests {
             wv,
             bv: vec![0.01; d],
             gab: vec![0.05; 64],
+            dyn_u: Vec::new(),
+            dyn_w: Vec::new(),
+            ctx_dim: 0,
             gate_hard: false,
             alpha: 1.0,
         }
@@ -320,9 +384,9 @@ mod cache_tests {
         let x0: Vec<f32> = (0..256).map(|i| (i * 37 % 100) as f32 / 100.0).collect();
         let mut x1 = x0.clone();
         for d in 0..32 { x1[3 * 32 + d] += 0.05; }
-        c.rebuild(&x0);
-        c.update(&x1, &[3]);
-        let (ok, _) = c.verify_against_full(&x1, 1e-5);
+        c.rebuild(&x0, None);
+        c.update(&x1, None, &[3]);
+        let (ok, _) = c.verify_against_full(&x1, None, 1e-5);
         assert!(ok);
     }
 
@@ -333,12 +397,12 @@ mod cache_tests {
         let x0 = vec![0.5; 256];
         let mut x1 = vec![0.5; 256];
         x1[100] = 0.7;
-        c.rebuild(&x0);
-        c.update(&x1, &[3]);
+        c.rebuild(&x0, None);
+        c.update(&x1, None, &[3]);
         assert_eq!(c.incremental_updates(), 1);
-        c.update(&x1, &[0, 5]);
+        c.update(&x1, None, &[0, 5]);
         assert_eq!(c.fallbacks(), 1);
-        let (ok, _) = c.verify_against_full(&x1, 1e-5);
+        let (ok, _) = c.verify_against_full(&x1, None, 1e-5);
         assert!(ok);
     }
 
@@ -351,14 +415,14 @@ mod cache_tests {
         let mut xb = vec![0.3; 256];
         xa[10] = 0.9;
         xb[200] = 0.1;
-        c.rebuild(&x0);
+        c.rebuild(&x0, None);
         c.push();
-        c.update(&xa, &[0]);
-        let (ok_a, _) = c.verify_against_full(&xa, 1e-5);
+        c.update(&xa, None, &[0]);
+        let (ok_a, _) = c.verify_against_full(&xa, None, 1e-5);
         assert!(ok_a);
         c.pop();
-        c.update(&xb, &[6]);
-        let (ok_b, _) = c.verify_against_full(&xb, 1e-5);
+        c.update(&xb, None, &[6]);
+        let (ok_b, _) = c.verify_against_full(&xb, None, 1e-5);
         assert!(ok_b);
         assert!((c.tokens()[200] - 0.1).abs() < 1e-6);
     }
@@ -388,15 +452,32 @@ mod cache_tests {
             (nums(1), nums(2), nums(3), nums(4), nums(5), nums(6), nums(7));
         let (x0, x1, exp_full) = (nums(8), nums(9), nums(10));
         let changed: Vec<usize> = lines[12].split_whitespace().map(|x| x.parse().unwrap()).collect();
-        let w = IncrWeights { tokens: t, dim: d, wq, bq, wk, bk, wv, bv, gab, gate_hard: false, alpha };
+        let w = IncrWeights { tokens: t, dim: d, wq, bq, wk, bk, wv, bv, gab, dyn_u: Vec::new(), dyn_w: Vec::new(), ctx_dim: 0, gate_hard: false, alpha };
         let mut c = RelationalCache::configure(w, thr);
-        c.rebuild(&x0);
-        c.update(&x1, &changed);
+        c.rebuild(&x0, None);
+        c.update(&x1, None, &changed);
         assert_eq!(c.out().len(), exp_full.len());
         for (a, b) in c.out().iter().zip(exp_full.iter()) {
             assert!((a - b).abs() <= 1e-5, "{} vs {}", a, b);
         }
-        let (ok, _) = c.verify_against_full(&x1, 1e-5);
+        let (ok, _) = c.verify_against_full(&x1, None, 1e-5);
         assert!(ok);
+    }
+
+    #[test]
+    fn parity_dynamic_bias() {
+        let mut w = weights();
+        w.dyn_u = vec![0.02; 8 * 8];
+        w.dyn_w = vec![0.02; 8 * 8];
+        w.ctx_dim = 8;
+        let mut c = RelationalCache::configure(w, 8);
+        let x0 = vec![0.4; 256];
+        let mut x1 = vec![0.4; 256];
+        x1[35] = 0.9;
+        let ctx = vec![0.5; 8];
+        c.rebuild(&x0, Some(&ctx));
+        c.update(&x1, Some(&ctx), &[1]);
+        let (ok, worst) = c.verify_against_full(&x1, Some(&ctx), 1e-5);
+        assert!(ok, "{}", worst);
     }
 }

@@ -2,7 +2,7 @@ use crate::relational_cache::{IncrWeights, RelationalCache};
 
 pub fn dense_baseline(weights: &IncrWeights, tokens: &[f32]) -> Vec<f32> {
     let mut c = RelationalCache::configure(weights.clone(), usize::MAX);
-    c.rebuild(tokens);
+    c.rebuild(tokens, None);
     c.out().to_vec()
 }
 
