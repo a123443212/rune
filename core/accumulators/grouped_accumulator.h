@@ -37,7 +37,7 @@ class GroupedAccumulator {
 
  private:
   const EmbeddingTables* tables_ = nullptr;
-  float acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
+  alignas(64) float acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
 };
 
 struct QuantScales {
@@ -68,7 +68,7 @@ class GroupedAccumulatorInt {
  private:
   const QuantEmbeddingTables* tables_ = nullptr;
   const QuantScales* scales_ = nullptr;
-  int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
+  alignas(64) int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
 };
 
 class Quant16Tables {
@@ -93,7 +93,7 @@ class GroupedAccumulator16 {
  private:
   const Quant16Tables* tables_ = nullptr;
   const QuantScales* scales_ = nullptr;
-  int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
+  alignas(64) int32_t acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
 };
 
 }

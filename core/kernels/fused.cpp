@@ -2,6 +2,9 @@
 #include <cmath>
 #include "core/kernels/ref_kernels.h"
 #include "core/kernels/smallmat.h"
+#if defined(__AVX2__)
+#include <immintrin.h>
+#endif
 namespace rune {
 namespace fused {
 void qkvFused8x32(const float* wq, const float* bq, const float* wk, const float* bk, const float* wv, const float* bv, const float* x, float* q, float* k, float* v) {
@@ -45,6 +48,39 @@ void wdl3x32(const float* w, const float* b, const float* h2, float* wdl) {
     for (int c = 0; c < 32; ++c) acc += w[r * 32 + c] * h2[c];
     wdl[r] = acc;
   }
+}
+#if defined(__AVX2__)
+void matVecClippedFusedAvx2(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
+  for (int r = 0; r < rows; ++r) {
+    __m256 acc = _mm256_setzero_ps();
+    const float* row = mat + static_cast<size_t>(r) * static_cast<size_t>(cols);
+    int c = 0;
+    for (; c + 8 <= cols; c += 8) {
+      __m256 a = _mm256_loadu_ps(row + c);
+      __m256 b = _mm256_loadu_ps(vec + c);
+      acc = _mm256_fmadd_ps(a, b, acc);
+    }
+    float tmp[8];
+    _mm256_storeu_ps(tmp, acc);
+    float s = tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+    for (; c < cols; ++c) s += row[c] * vec[c];
+    if (bias) s += bias[r];
+    s = s < 0.0f ? 0.0f : (s > 1.0f ? 1.0f : s);
+    out[r] = s;
+  }
+}
+#endif
+void matVecClippedFused(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
+#if defined(__AVX2__)
+  matVecClippedFusedAvx2(mat, vec, bias, out, rows, cols);
+#else
+  for (int r = 0; r < rows; ++r) {
+    float acc = bias ? bias[r] : 0.0f;
+    const float* row = mat + static_cast<size_t>(r) * static_cast<size_t>(cols);
+    for (int c = 0; c < cols; ++c) acc += row[c] * vec[c];
+    out[r] = acc < 0.0f ? 0.0f : (acc > 1.0f ? 1.0f : acc);
+  }
+#endif
 }
 }
 }

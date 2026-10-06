@@ -7,5 +7,6 @@ void mixResidual8x32(const float* g, const float* v, const float* x, float alpha
 void linearBiasClip128(const float* w, const float* b, const float* in, float* out, int rows, int cols);
 float dotTanh(const float* wvo, float bvo, const float* h2, int n);
 void wdl3x32(const float* w, const float* b, const float* h2, float* wdl);
+void matVecClippedFused(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols);
 }
 }

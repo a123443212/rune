@@ -210,7 +210,13 @@ void AdaptiveModel::refineForward(const float* cheapFlat, float& value, float* w
 }
 
 bool AdaptiveModel::route(float difficulty, bool prev, float threshold) const {
-  if (bspec_.hasTLow) return prev ? difficulty >= bspec_.tLow : difficulty >= threshold;
+  if (bspec_.hasTLow) {
+    if (prev) [[likely]] {
+      return difficulty >= bspec_.tLow;
+    } else {
+      return difficulty >= threshold;
+    }
+  }
   return difficulty >= threshold;
 }
 

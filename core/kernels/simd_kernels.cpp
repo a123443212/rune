@@ -3,6 +3,9 @@
 #if defined(__AVX2__)
 #include <immintrin.h>
 #endif
+#if defined(__AVX512F__)
+#include <immintrin.h>
+#endif
 namespace rune {
 namespace kern {
 namespace {
@@ -20,19 +23,52 @@ bool hasAvx2() {
   return false;
 #endif
 }
+bool hasAvx512() {
+#if defined(__AVX512F__)
+#if defined(__GNUC__) || defined(__clang__)
+  return __builtin_cpu_supports("avx512f");
+#else
+  return true;
+#endif
+#else
+  return false;
+#endif
+}
 Path activePath() {
   if (gForce == 1) return gForced;
+  if (hasAvx512()) return Path::Avx512;
   if (hasAvx2()) return Path::Avx2;
   return Path::Scalar;
 }
 const char* activePathName() {
-  return activePath() == Path::Avx2 ? "avx2" : "scalar";
+  Path p = activePath();
+  if (p == Path::Avx512) return "avx512";
+  if (p == Path::Avx2) return "avx2";
+  return "scalar";
 }
 void setPathForTest(Path p) {
   gForce = 1;
   gForced = p;
 }
 void clearPathForTest() { gForce = 0; }
+#if defined(__AVX512F__)
+void matVecAvx512(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
+  for (int r = 0; r < rows; ++r) {
+    __m512 acc = _mm512_setzero_ps();
+    const float* row = mat + static_cast<size_t>(r) * static_cast<size_t>(cols);
+    int c = 0;
+    for (; c + 16 <= cols; c += 16) {
+      __m512 a = _mm512_loadu_ps(row + c);
+      __m512 b = _mm512_loadu_ps(vec + c);
+      acc = _mm512_fmadd_ps(a, b, acc);
+    }
+    float s = _mm512_reduce_add_ps(acc);
+    for (; c < cols; ++c) s += row[c] * vec[c];
+    if (bias) s += bias[r];
+    out[r] = s;
+  }
+}
+#endif
 #if defined(__AVX2__)
 void matVecAvx2(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
   for (int r = 0; r < rows; ++r) {
@@ -54,7 +90,14 @@ void matVecAvx2(const float* mat, const float* vec, const float* bias, float* ou
 }
 #endif
 void matVec(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
-  if (activePath() == Path::Avx2) {
+  Path p = activePath();
+  if (p == Path::Avx512) {
+#if defined(__AVX512F__)
+    matVecAvx512(mat, vec, bias, out, rows, cols);
+    return;
+#endif
+  }
+  if (p == Path::Avx2) {
 #if defined(__AVX2__)
     matVecAvx2(mat, vec, bias, out, rows, cols);
     return;
@@ -66,10 +109,108 @@ void matVecClipped(const float* mat, const float* vec, const float* bias, float*
   matVec(mat, vec, bias, out, rows, cols);
   for (int r = 0; r < rows; ++r) out[r] = ref::clippedRelu(out[r]);
 }
+#if defined(__AVX512F__)
+void matMulTTAvx512(const float* a, const float* b, float* out, int m, int n, int k) {
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < n; ++j) {
+      __m512 acc = _mm512_setzero_ps();
+      int t = 0;
+      for (; t + 16 <= k; t += 16) {
+        __m512 aa = _mm512_loadu_ps(a + i * k + t);
+        __m512 bb = _mm512_loadu_ps(b + j * k + t);
+        acc = _mm512_fmadd_ps(aa, bb, acc);
+      }
+      float s = _mm512_reduce_add_ps(acc);
+      for (; t < k; ++t) s += a[i * k + t] * b[j * k + t];
+      out[i * n + j] = s;
+    }
+  }
+}
+void matMulAvx512(const float* a, const float* b, float* out, int m, int n, int k) {
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < n; ++j) {
+      __m512 acc = _mm512_setzero_ps();
+      int t = 0;
+      for (; t + 16 <= k; t += 16) {
+        __m512 aa = _mm512_loadu_ps(a + i * k + t);
+        __m512 bb = _mm512_loadu_ps(b + t * n + j);
+        acc = _mm512_fmadd_ps(aa, bb, acc);
+      }
+      float s = _mm512_reduce_add_ps(acc);
+      for (; t < k; ++t) s += a[i * k + t] * b[t * n + j];
+      out[i * n + j] = s;
+    }
+  }
+}
+#endif
+#if defined(__AVX2__)
+void matMulTTAvx2(const float* a, const float* b, float* out, int m, int n, int k) {
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < n; ++j) {
+      __m256 acc = _mm256_setzero_ps();
+      int t = 0;
+      for (; t + 8 <= k; t += 8) {
+        __m256 aa = _mm256_loadu_ps(a + i * k + t);
+        __m256 bb = _mm256_loadu_ps(b + j * k + t);
+        acc = _mm256_fmadd_ps(aa, bb, acc);
+      }
+      float tmp[8];
+      _mm256_storeu_ps(tmp, acc);
+      float s = tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+      for (; t < k; ++t) s += a[i * k + t] * b[j * k + t];
+      out[i * n + j] = s;
+    }
+  }
+}
+void matMulAvx2(const float* a, const float* b, float* out, int m, int n, int k) {
+  for (int i = 0; i < m; ++i) {
+    for (int j = 0; j < n; ++j) {
+      __m256 acc = _mm256_setzero_ps();
+      int t = 0;
+      for (; t + 8 <= k; t += 8) {
+        __m256 aa = _mm256_loadu_ps(a + i * k + t);
+        __m256 bb = _mm256_loadu_ps(b + t * n + j);
+        acc = _mm256_fmadd_ps(aa, bb, acc);
+      }
+      float tmp[8];
+      _mm256_storeu_ps(tmp, acc);
+      float s = tmp[0] + tmp[1] + tmp[2] + tmp[3] + tmp[4] + tmp[5] + tmp[6] + tmp[7];
+      for (; t < k; ++t) s += a[i * k + t] * b[t * n + j];
+      out[i * n + j] = s;
+    }
+  }
+}
+#endif
 void matMulTT(const float* a, const float* b, float* out, int m, int n, int k) {
+  Path p = activePath();
+  if (p == Path::Avx512) {
+#if defined(__AVX512F__)
+    matMulTTAvx512(a, b, out, m, n, k);
+    return;
+#endif
+  }
+  if (p == Path::Avx2) {
+#if defined(__AVX2__)
+    matMulTTAvx2(a, b, out, m, n, k);
+    return;
+#endif
+  }
   ref::matMulTT(a, b, out, m, n, k);
 }
 void matMul(const float* a, const float* b, float* out, int m, int n, int k) {
+  Path p = activePath();
+  if (p == Path::Avx512) {
+#if defined(__AVX512F__)
+    matMulAvx512(a, b, out, m, n, k);
+    return;
+#endif
+  }
+  if (p == Path::Avx2) {
+#if defined(__AVX2__)
+    matMulAvx2(a, b, out, m, n, k);
+    return;
+#endif
+  }
   ref::matMul(a, b, out, m, n, k);
 }
 }

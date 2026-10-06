@@ -109,6 +109,7 @@ const char* GroupedFeatureSet::groupName(int group) {
 
 void GroupedFeatureSet::extract(const Board& board, std::vector<ActiveFeature>& out) {
   out.clear();
+  out.reserve(512);
   for (int sq = 0; sq < 64; ++sq) {
     Piece p = board.at(sq);
     if (p.empty()) continue;

@@ -1,6 +1,7 @@
 #include "core/architectures/mlp/mlp.h"
 
 #include <cmath>
+#include "core/kernels/fused.h"
 
 namespace rune {
 
