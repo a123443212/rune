@@ -107,6 +107,7 @@ void RelationalCache::rebuild(const float* tokens, const float* ctx) {
   for (size_t i = 0; i < td; ++i) x_[i] = tokens[i];
   fullForward(tokens, ctx, q_.data(), k_.data(), v_.data(), s_.data(), g_.data(),
               y_.data(), out_.data());
+  hadDyn_ = ctx && w_.ctxDim > 0 && w_.dynU && w_.dynW;
   if (ctx && w_.ctxDim > 0) {
     for (int a = 0; a < w_.tokens; ++a) {
       float su = 0.0f, sw = 0.0f;
@@ -155,11 +156,11 @@ void RelationalCache::update(const float* tokensNew, const float* ctx,
   }
   for (int a = 0; a < t; ++a) {
     for (int b = 0; b < t; ++b) {
-      if (!mark[static_cast<size_t>(a)] && !mark[static_cast<size_t>(b)]) continue;
+      if (!dyn && !hadDyn_ && !mark[static_cast<size_t>(a)] && !mark[static_cast<size_t>(b)]) continue;
       float dot = 0.0f;
       for (int dd = 0; dd < d; ++dd) dot += q_[a * d + dd] * k_[b * d + dd];
       float val = dot + w_.gab[a * t + b];
-      if (dyn || (w_.ctxDim > 0 && w_.dynU)) {
+      if (dyn) {
         float dd = u_[a] * wdyn_[b];
         if (dd < -0.25f) dd = -0.25f;
         if (dd > 0.25f) dd = 0.25f;
@@ -173,6 +174,7 @@ void RelationalCache::update(const float* tokensNew, const float* ctx,
   size_t td = static_cast<size_t>(t) * static_cast<size_t>(d);
   for (size_t i = 0; i < td; ++i) x_[i] = tokensNew[i];
   for (size_t i = 0; i < td; ++i) out_[i] = x_[i] + w_.alpha * y_[i];
+  hadDyn_ = dyn;
 }
 
 void RelationalCache::push() {
@@ -185,10 +187,14 @@ void RelationalCache::push() {
   s.g = g_;
   s.y = y_;
   s.out = out_;
+  s.u = u_;
+  s.wdyn = wdyn_;
+  s.hadDyn = hadDyn_;
   stack_.push_back(std::move(s));
 }
 
-void RelationalCache::pop() {
+bool RelationalCache::pop() {
+  if (stack_.empty()) return false;
   Snapshot s = std::move(stack_.back());
   stack_.pop_back();
   x_ = std::move(s.x);
@@ -199,6 +205,10 @@ void RelationalCache::pop() {
   g_ = std::move(s.g);
   y_ = std::move(s.y);
   out_ = std::move(s.out);
+  u_ = std::move(s.u);
+  wdyn_ = std::move(s.wdyn);
+  hadDyn_ = s.hadDyn;
+  return true;
 }
 
 bool RelationalCache::verifyAgainstFull(const float* tokensNew, const float* ctx,

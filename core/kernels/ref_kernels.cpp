@@ -4,13 +4,13 @@
 namespace rune {
 namespace ref {
 float clippedRelu(float x) {
-  if (!(x >= 0.0f)) return 0.0f;
+  if (x < 0.0f) return 0.0f;
   if (x > 1.0f) return 1.0f;
   return x;
 }
 float hardSigmoid(float s) {
   float t = 0.2f * s + 0.5f;
-  if (!(t >= 0.0f)) return 0.0f;
+  if (t < 0.0f) return 0.0f;
   if (t > 1.0f) return 1.0f;
   return t;
 }

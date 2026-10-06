@@ -1,6 +1,7 @@
 #include "tests/cpp/test_v11.h"
 #include "tests/cpp/test_framework.h"
 #include <cmath>
+#include <stdexcept>
 #include <vector>
 #include "core/compiler/artifact.h"
 #include "core/compiler/ir.h"
@@ -126,6 +127,38 @@ static void testArena() {
   for (int i = 0; i < 8; ++i) p[i] = (float)i;
   CHECK(a.at(0, 8)[3] == 3.0f);
   CHECK(rt::arenaBytesFor(8, 32, 128, 32) > 0);
+  bool thrown = false;
+  try {
+    float* q = a.at(0, 4096);
+    for (int i = 0; i < 4096; ++i) q[i] = 1.0f;
+  } catch (const std::out_of_range&) {
+    thrown = true;
+  }
+  CHECK(thrown);
+}
+static void testClipPropagatesNan() {
+  float nan = std::nanf("");
+  CHECK(!(ref::clippedRelu(nan) == ref::clippedRelu(nan)));
+  CHECK(!(ref::hardSigmoid(nan) == ref::hardSigmoid(nan)));
+  CHECK(ref::clippedRelu(-0.0f) == 0.0f);
+  CHECK(std::signbit(ref::clippedRelu(-0.0f)) != 0);
+}
+static void testAccumSpecWideGroup() {
+  EmbeddingTables t;
+  t.init(11);
+  std::vector<ActiveFeature> f;
+  for (int i = 0; i < 300; ++i) f.push_back({5, static_cast<uint16_t>(i)});
+  GroupedAccumulator ref(&t);
+  ref.refresh(f);
+  float want[256];
+  ref.tokens(want);
+  float got[256];
+  aspec::GroupOffsets g = aspec::offsetsFor(32);
+  aspec::refreshGrouped(got, &t, f, g);
+  for (int i = 0; i < 256; ++i) {
+    float v = got[i] < 0.0f ? 0.0f : (got[i] > 1.0f ? 1.0f : got[i]);
+    CHECK(std::fabs(want[i] - v) < 1e-6);
+  }
 }
 static void testArtifactReject() {
   vart::CompiledInfo info;
@@ -140,6 +173,8 @@ void runV11Tests() {
   testScoreGate();
   testQuantSpec();
   testAccumSpec();
+  testAccumSpecWideGroup();
+  testClipPropagatesNan();
   testIrPlan();
   testArena();
   testArtifactReject();

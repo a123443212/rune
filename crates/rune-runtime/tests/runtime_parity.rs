@@ -1,6 +1,6 @@
 use rune_runtime::board::Board;
 use rune_runtime::evaluator::Evaluator;
-use rune_runtime::features::{diff_features, extract_features};
+use rune_runtime::features::{compute_context, diff_features, extract_features};
 use std::fs;
 use std::path::PathBuf;
 fn vec_file(name: &str) -> serde_json::Value {
@@ -54,7 +54,7 @@ fn accumulator_refresh_equals_incremental() {
     let mut ev_inc = Evaluator::load(&p).expect("load");
     ev_full.refresh(&b1);
     ev_inc.refresh(&b0);
-    ev_inc.update_incremental(&f0, &f1);
+    ev_inc.update_incremental(&f0, &f1, &compute_context(&b1));
     let r1 = ev_full.evaluate();
     let r2 = ev_inc.evaluate();
     assert!((r1.value - r2.value).abs() < 1e-6);
@@ -123,7 +123,7 @@ fn push_pop_roundtrip() {
     ev.refresh(&b0);
     let r0 = ev.evaluate();
     ev.push();
-    ev.update_incremental(&f0, &f1);
+    ev.update_incremental(&f0, &f1, &compute_context(&b1));
     let r1 = ev.evaluate();
     ev.pop();
     assert_eq!(ev.search_depth(), 0);
@@ -161,7 +161,7 @@ fn large_diff_matches_refresh() {
     let mut ev_inc = Evaluator::load(&p).expect("load");
     ev_full.refresh(&b1);
     ev_inc.refresh(&b0);
-    ev_inc.update_incremental(&f0, &f1);
+    ev_inc.update_incremental(&f0, &f1, &compute_context(&b1));
     let r1 = ev_full.evaluate();
     let r2 = ev_inc.evaluate();
     assert!((r1.value - r2.value).abs() < 1e-5, "{} vs {}", r1.value, r2.value);
@@ -175,4 +175,112 @@ fn unsupported_arch_fails_closed() {
         let r = Evaluator::from_model(&m);
         assert!(matches!(r, Err(RuntimeError::UnsupportedArch(_))), "{}", n);
     }
+}
+#[test]
+fn context_matches_reference_startpos() {
+    let b = Board::startpos();
+    let ctx = compute_context(&b);
+    let want = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.625, 1.0];
+    assert_eq!(ctx.len(), 8);
+    for i in 0..8 {
+        assert!((ctx[i] - want[i]).abs() < 1e-6, "{} got {} want {}", i, ctx[i], want[i]);
+    }
+}
+#[test]
+fn token_layout_matches_cpp_rules() {
+    use rune_runtime::accumulator::token_of;
+    for g in 0..8 {
+        assert_eq!(token_of(8, g, 0), Some(g as usize));
+    }
+    assert_eq!(token_of(6, 0, 10), Some(0));
+    assert_eq!(token_of(6, 2, 200), Some(2));
+    assert_eq!(token_of(6, 3, 0), Some(3));
+    assert_eq!(token_of(6, 4, 127), Some(3));
+    assert_eq!(token_of(6, 5, 0), Some(4));
+    assert_eq!(token_of(6, 6, 511), Some(4));
+    assert_eq!(token_of(6, 7, 63), Some(5));
+    assert_eq!(token_of(10, 0, 5), Some(0));
+    assert_eq!(token_of(10, 1, 5), Some(1));
+    assert_eq!(token_of(10, 2, 0), Some(2));
+    assert_eq!(token_of(10, 2, 127), Some(2));
+    assert_eq!(token_of(10, 2, 128), Some(3));
+    assert_eq!(token_of(10, 2, 255), Some(3));
+    assert_eq!(token_of(10, 3, 9), Some(4));
+    assert_eq!(token_of(10, 4, 9), Some(5));
+    assert_eq!(token_of(10, 5, 0), Some(6));
+    assert_eq!(token_of(10, 5, 383), Some(6));
+    assert_eq!(token_of(10, 5, 384), Some(7));
+    assert_eq!(token_of(10, 5, 511), Some(7));
+    assert_eq!(token_of(10, 6, 9), Some(8));
+    assert_eq!(token_of(10, 7, 9), Some(9));
+    assert_eq!(token_of(7, 0, 0), None);
+    assert_eq!(token_of(6, 9, 0), None);
+}
+#[test]
+fn six_token_accumulator_merges_groups() {
+    use rune_runtime::accumulator::{Accumulator, Tables};
+    use rune_spec::VOCAB_SIZES;
+    let mut tables = Tables::zeros(4, VOCAB_SIZES);
+    tables.data[3][0] = 1.0;
+    tables.data[4][4] = 2.0;
+    tables.data[4][5] = 4.0;
+    tables.data[5][0] = 8.0;
+    let mut acc = Accumulator::new(6, 4);
+    acc.refresh(&tables, &[(3, 0), (4, 1), (5, 0)]);
+    let raw = acc.raw();
+    assert_eq!(raw.len(), 24);
+    assert!((raw[12] - 3.0).abs() < 1e-6);
+    assert!((raw[13] - 4.0).abs() < 1e-6);
+    assert!((raw[16] - 8.0).abs() < 1e-6);
+}
+#[test]
+fn dynamic_bias_matches_cache() {
+    use rune_runtime::relational_cache::{IncrWeights, RelationalCache};
+    let p = PathBuf::from("../../spec/test-vectors/models/rel-08x32-fp32.rune");
+    let mut m = rune_model::load(&p).expect("load");
+    let t = m.header.tokens;
+    let d = m.header.token_dim;
+    let cd = 8;
+    m.arrays.insert("dynU".to_string(), vec![0.02; t * cd]);
+    m.arrays.insert("dynW".to_string(), vec![0.03; t * cd]);
+    m.header.raw["context_dim"] = serde_json::json!(8);
+    let mut ev = Evaluator::from_model(&m).expect("dyn model loads");
+    let gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
+    let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
+    let pick = |base: &str, alt: &str| m.arrays.get(base).or_else(|| m.arrays.get(alt)).unwrap().clone();
+    let gab = m.arrays.get("gabS").or_else(|| m.arrays.get("gab")).unwrap().clone();
+    let w = IncrWeights {
+        tokens: t,
+        dim: d,
+        wq: pick("wq", "wq"),
+        bq: pick("bq", "bq"),
+        wk: pick("wk", "wk"),
+        bk: pick("bk", "bk"),
+        wv: pick("wvv", "wv"),
+        bv: pick("bvv", "bv"),
+        gab,
+        dyn_u: m.arrays.get("dynU").unwrap().clone(),
+        dyn_w: m.arrays.get("dynW").unwrap().clone(),
+        ctx_dim: cd,
+        gate_hard,
+        alpha,
+    };
+    let b = Board::parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
+    ev.refresh(&b);
+    let tr = ev.trace();
+    let ctx = compute_context(&b);
+    let mut cache = RelationalCache::configure(w, 8);
+    cache.rebuild(&tr.tokens, Some(&ctx));
+    let out = cache.out().to_vec();
+    assert_eq!(out.len(), tr.mixer.mixed.len());
+    let mut worst = 0.0;
+    for i in 0..out.len() {
+        let dd = (out[i] - tr.mixer.mixed[i]).abs();
+        if dd > worst {
+            worst = dd;
+        }
+    }
+    assert!(worst < 1e-5, "worst {}", worst);
+    let r = ev.evaluate();
+    assert!((r.value - tr.value).abs() < 1e-7);
 }

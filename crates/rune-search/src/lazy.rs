@@ -37,7 +37,7 @@ pub fn should_refine(cheap: f32, alpha: f32, beta: f32, uncertainty: f32, thresh
             if uncertainty >= 0.5 {
                 return true;
             }
-            true
+            cheap >= threshold
         }
     }
 }

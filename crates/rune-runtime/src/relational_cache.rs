@@ -38,6 +38,7 @@ struct Snapshot {
     out: Vec<f32>,
     du: Vec<f32>,
     dw: Vec<f32>,
+    had_dyn: bool,
 }
 
 #[derive(Debug, Clone)]
@@ -54,6 +55,7 @@ pub struct RelationalCache {
     out: Vec<f32>,
     du: Vec<f32>,
     dw: Vec<f32>,
+    had_dyn: bool,
     stack: Vec<Snapshot>,
     fallbacks: usize,
     incremental_updates: usize,
@@ -84,6 +86,7 @@ impl RelationalCache {
             y: vec![0.0; td],
             out: vec![0.0; td],
             stack: Vec::new(),
+            had_dyn: false,
             fallbacks: 0,
             incremental_updates: 0,
         }
@@ -203,6 +206,7 @@ impl RelationalCache {
         self.out = out;
         self.du = du;
         self.dw = dw;
+        self.had_dyn = self.dyn_active(ctx);
         self.stack.clear();
     }
 
@@ -245,7 +249,7 @@ impl RelationalCache {
         let gab_ref = gab;
         for a in 0..t {
             for b in 0..t {
-                if !mark[a] && !mark[b] {
+                if !dyn_on && !self.had_dyn && !mark[a] && !mark[b] {
                     continue;
                 }
                 let mut dot = 0.0;
@@ -266,6 +270,7 @@ impl RelationalCache {
         for i in 0..t * d {
             self.out[i] = self.x[i] + alpha * self.y[i];
         }
+        self.had_dyn = dyn_on;
     }
 
     pub fn push(&mut self) {
@@ -280,6 +285,7 @@ impl RelationalCache {
             out: self.out.clone(),
             du: self.du.clone(),
             dw: self.dw.clone(),
+            had_dyn: self.had_dyn,
         });
     }
 
@@ -295,6 +301,7 @@ impl RelationalCache {
         self.out = s.out;
         self.du = s.du;
         self.dw = s.dw;
+        self.had_dyn = s.had_dyn;
     }
 
     pub fn verify_against_full(&self, tokens_new: &[f32], ctx: Option<&[f32]>, tol: f32) -> (bool, f32) {
@@ -478,6 +485,25 @@ mod cache_tests {
         c.rebuild(&x0, Some(&ctx));
         c.update(&x1, Some(&ctx), &[1]);
         let (ok, worst) = c.verify_against_full(&x1, Some(&ctx), 1e-5);
+        assert!(ok, "{}", worst);
+    }
+
+    #[test]
+    fn ctx_change_recomputes_all_cells() {
+        let mut w = weights();
+        w.dyn_u = vec![0.02; 8 * 8];
+        w.dyn_w = vec![0.03; 8 * 8];
+        w.ctx_dim = 8;
+        let mut c = RelationalCache::configure(w, 8);
+        let x0 = vec![0.4; 256];
+        let ctx0 = vec![0.5; 8];
+        let ctx1 = vec![0.9; 8];
+        c.rebuild(&x0, Some(&ctx0));
+        c.update(&x0, Some(&ctx1), &[]);
+        let (ok, worst) = c.verify_against_full(&x0, Some(&ctx1), 1e-5);
+        assert!(ok, "{}", worst);
+        c.update(&x0, None, &[]);
+        let (ok, worst) = c.verify_against_full(&x0, None, 1e-5);
         assert!(ok, "{}", worst);
     }
 }

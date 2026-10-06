@@ -25,13 +25,16 @@ fn mixer_composition_matches_golden_with_live_gates() {
         wv: f32s(&v["wvv"]),
         bv: f32s(&v["bvv"]),
         gab: f32s(&v["gab"]),
+        dyn_u: Vec::new(),
+        dyn_w: Vec::new(),
+        ctx_dim: 0,
         gate_hard: false,
         alpha: 1.0,
     };
     let input = f32s(&v["input"]);
     let mut out = vec![0.0_f32; t * d];
     let mut tr = MixerTrace::default();
-    w.forward(&input, &mut out, Some(&mut tr));
+    w.forward(&input, None, &mut out, Some(&mut tr));
     let gates = f32s(&v["gates"]);
     assert!(gates.iter().any(|x| *x > 0.0));
     assert_eq!(tr.q.len(), t * d);

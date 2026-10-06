@@ -15,7 +15,7 @@ void Board::applyMove(const Move& m, Piece& captured) {
     captured = squares_[capSq];
     squares_[capSq] = Piece{};
   }
-  bool isCastle = (moving.type == PieceType::King &&
+  bool isCastle = (moving.type == PieceType::King && rankOf(m.from) == rankOf(m.to) &&
                    (m.to == m.from + 2 || (m.to + 2 == m.from)));
   if (isCastle) moveRookForCastle(m.to);
   dropCastlingRight(moving, m, captured);

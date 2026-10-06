@@ -3,7 +3,7 @@ use std::time::Instant;
 use rune_runtime::board::Board;
 use rune_runtime::compiled::CompiledEvaluator;
 use rune_runtime::evaluator::Evaluator;
-use rune_runtime::features::extract_features;
+use rune_runtime::features::{compute_context, extract_features};
 
 pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     let mp = PathBuf::from(model);
@@ -47,10 +47,11 @@ pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     let _ = b1.apply_uci("e2e4");
     let f0 = extract_features(&b);
     let f1 = extract_features(&b1);
+    let c1 = compute_context(&b1);
     let t2 = Instant::now();
     for _ in 0..iters {
         ev_g.refresh(&b);
-        ev_g.update_incremental(&f0, &f1);
+        ev_g.update_incremental(&f0, &f1, &c1);
         let _ = ev_g.evaluate();
     }
     let i_us = t2.elapsed().as_secs_f64() * 1000000.0 / iters as f64;

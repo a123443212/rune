@@ -42,7 +42,7 @@ class RelationalCache {
   bool useIncremental(const std::vector<int>& changed) const { return static_cast<int>(changed.size()) <= threshold_; }
 
   void push();
-  void pop();
+  bool pop();
 
   bool verifyAgainstFull(const float* tokensNew, const float* ctx, float tol,
                          float* maxDiff) const;
@@ -69,8 +69,10 @@ class RelationalCache {
   IncrWeights w_;
   int threshold_ = 2;
   std::vector<float> x_, q_, k_, v_, s_, g_, y_, out_, u_, wdyn_;
+  bool hadDyn_ = false;
   struct Snapshot {
-    std::vector<float> x, q, k, v, s, g, y, out;
+    std::vector<float> x, q, k, v, s, g, y, out, u, wdyn;
+    bool hadDyn = false;
   };
   std::vector<Snapshot> stack_;
   int fallbacks_ = 0;

@@ -45,10 +45,14 @@ fn clip_and_gate_exact() {
     assert_eq!(kernel::clipped_relu(-0.5), 0.0);
     assert_eq!(kernel::clipped_relu(0.5), 0.5);
     assert_eq!(kernel::clipped_relu(1.5), 1.0);
+    assert!(kernel::clipped_relu(f32::NAN).is_nan());
+    assert_eq!(kernel::clipped_relu(-0.0).to_bits(), (-0.0f32).to_bits());
     let h = kernel::hard_sigmoid(0.0);
     assert!((h - 0.5).abs() < 1e-6);
     assert_eq!(kernel::hard_sigmoid(-100.0), 0.0);
     assert_eq!(kernel::hard_sigmoid(100.0), 1.0);
+    assert!(kernel::hard_sigmoid(f32::NAN).is_nan());
+    assert!((kernel::hard_sigmoid(2.5) - 1.0).abs() < 1e-6);
 }
 #[test]
 fn routing_nan_refines() {

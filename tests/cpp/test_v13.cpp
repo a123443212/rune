@@ -259,10 +259,62 @@ static void testDynamicBiasParity() {
   CHECK(c.verifyAgainstFull(x1.data(), ctx.data(), 1e-5f, &md));
 }
 
+static void testDynCtxChange() {
+  const int T = 8, D = 32, C = 8;
+  std::vector<float> wq, bq, wk, bk, wv, bv, gab;
+  fillWeights(T, D, wq, bq, wk, bk, wv, bv, gab);
+  std::vector<float> dynU(T * C, 0.02f), dynW(T * C, 0.03f);
+  v13::IncrWeights w;
+  w.wq = wq.data(); w.bq = bq.data(); w.wk = wk.data(); w.bk = bk.data();
+  w.wv = wv.data(); w.bv = bv.data(); w.gab = gab.data();
+  w.dynU = dynU.data(); w.dynW = dynW.data();
+  w.tokens = T; w.dim = D; w.ctxDim = C;
+  v13::RelationalCache c;
+  std::string err;
+  CHECK(c.configure(w, 8, err));
+  std::vector<float> x0(256, 0.4f), x1(256, 0.4f), ctx0(C, 0.5f), ctx1(C, 0.9f);
+  x1[35] = 0.9f;
+  c.rebuild(x0.data(), ctx0.data());
+  c.update(x0.data(), ctx1.data(), {});
+  float md = 0;
+  CHECK(c.verifyAgainstFull(x0.data(), ctx1.data(), 1e-5f, &md));
+  c.update(x0.data(), nullptr, {});
+  CHECK(c.verifyAgainstFull(x0.data(), nullptr, 1e-5f, &md));
+  c.update(x1.data(), nullptr, {1});
+  CHECK(c.verifyAgainstFull(x1.data(), nullptr, 1e-5f, &md));
+}
+
+static void testPopEmptyAndDynRestore() {
+  const int T = 8, D = 32, C = 8;
+  std::vector<float> wq, bq, wk, bk, wv, bv, gab;
+  fillWeights(T, D, wq, bq, wk, bk, wv, bv, gab);
+  std::vector<float> dynU(T * C, 0.02f), dynW(T * C, 0.03f);
+  v13::IncrWeights w;
+  w.wq = wq.data(); w.bq = bq.data(); w.wk = wk.data(); w.bk = bk.data();
+  w.wv = wv.data(); w.bv = bv.data(); w.gab = gab.data();
+  w.dynU = dynU.data(); w.dynW = dynW.data();
+  w.tokens = T; w.dim = D; w.ctxDim = C;
+  v13::RelationalCache c;
+  std::string err;
+  CHECK(c.configure(w, 8, err));
+  CHECK(!c.pop());
+  std::vector<float> x0(256, 0.4f), x1(256, 0.4f), ctx0(C, 0.5f), ctx1(C, 0.9f);
+  x1[35] = 0.9f;
+  c.rebuild(x0.data(), ctx0.data());
+  c.push();
+  c.update(x1.data(), ctx1.data(), {1});
+  CHECK(c.pop());
+  float md = 0;
+  CHECK(c.verifyAgainstFull(x0.data(), ctx0.data(), 1e-5f, &md));
+  CHECK(!c.pop());
+}
+
 void runV13Tests() {
   testGraphDense();
   testSharedVectors();
   testDynamicBiasParity();
+  testDynCtxChange();
+  testPopEmptyAndDynRestore();
   testIncrParity();
   testFallbackThreshold();
   testStackIsolation();

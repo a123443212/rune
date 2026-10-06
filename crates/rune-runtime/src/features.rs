@@ -1,5 +1,6 @@
 use crate::board::{self, Board, BISHOP, BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE};
 use rune_spec as spec;
+pub const CONTEXT_DIM: usize = 8;
 pub fn vocab_size(group: usize) -> usize {
     spec::VOCAB_SIZES[group]
 }
@@ -293,4 +294,64 @@ pub fn diff_features(before: &[(u8, u16)], after: &[(u8, u16)]) -> (Vec<(u8, u16
         i += 1;
     }
     (added, removed)
+}
+pub fn compute_context(board: &Board) -> Vec<f32> {
+    let us = if board.stm == 0 { WHITE } else { BLACK };
+    let mut pawns = 0;
+    let mut minors = 0;
+    let mut rooks = 0;
+    let mut queens = 0;
+    let mut total = 0;
+    let mut king = 64;
+    for sq in 0..64 {
+        let cell = match board.sq[sq] {
+            Some(c) => c,
+            None => continue,
+        };
+        total += 1;
+        if cell.kind == PAWN {
+            pawns += 1;
+        }
+        if cell.kind == KNIGHT || cell.kind == BISHOP {
+            minors += 1;
+        }
+        if cell.kind == ROOK {
+            rooks += 1;
+        }
+        if cell.kind == QUEEN {
+            queens += 1;
+        }
+        if cell.kind == KING && cell.color == us {
+            king = sq;
+        }
+    }
+    let mut shield = 0;
+    if king < 64 {
+        for df in -1..=1 {
+            for dr in -1..=1 {
+                if df == 0 && dr == 0 {
+                    continue;
+                }
+                let f = board::sq_file(king) + df;
+                let r = board::sq_rank(king) + dr;
+                if !board::on_board(f, r) {
+                    continue;
+                }
+                match board.sq[board::make_sq(f, r)] {
+                    Some(c) if c.color == us && c.kind != KING => shield += 1,
+                    _ => {}
+                }
+            }
+        }
+    }
+    vec![
+        board.stm as f32,
+        board.game_phase() as f32 / 2.0,
+        pawns as f32 / 16.0,
+        minors as f32 / 8.0,
+        rooks as f32 / 4.0,
+        queens as f32 / 2.0,
+        shield as f32 / 8.0,
+        total as f32 / 32.0,
+    ]
 }

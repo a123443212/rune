@@ -22,6 +22,7 @@ void runeTestFailClose(const char* file, int line, double a, double b, double to
 
 void testBoard();
 void testMakeUnmakeConsistency();
+void testKingTwoSquareOffRank();
 void testFeatures();
 void testAccumulatorIncremental();
 void testAttentionMath();

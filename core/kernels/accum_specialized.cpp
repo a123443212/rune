@@ -12,15 +12,15 @@ void refreshGrouped(float* acc, const EmbeddingTables* t, const std::vector<Acti
   applyGrouped(acc, t, feats, std::vector<ActiveFeature>{}, g);
 }
 void applyGrouped(float* acc, const EmbeddingTables* t, const std::vector<ActiveFeature>& added, const std::vector<ActiveFeature>& removed, const GroupOffsets& g) {
-  uint16_t addIdx[8][256];
-  uint16_t rmIdx[8][256];
+  uint16_t addIdx[8][512];
+  uint16_t rmIdx[8][512];
   int addN[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   int rmN[8] = {0, 0, 0, 0, 0, 0, 0, 0};
   for (const ActiveFeature& f : added) {
-    if (addN[f.group] < 256) addIdx[f.group][addN[f.group]++] = (uint16_t)f.index;
+    if (addN[f.group] < 512) addIdx[f.group][addN[f.group]++] = (uint16_t)f.index;
   }
   for (const ActiveFeature& f : removed) {
-    if (rmN[f.group] < 256) rmIdx[f.group][rmN[f.group]++] = (uint16_t)f.index;
+    if (rmN[f.group] < 512) rmIdx[f.group][rmN[f.group]++] = (uint16_t)f.index;
   }
   for (int grp = 0; grp < 8; ++grp) {
     if (addN[grp] == 0 && rmN[grp] == 0) continue;

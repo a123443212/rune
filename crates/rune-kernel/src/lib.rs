@@ -6,7 +6,7 @@ pub mod simd;
 pub mod specialized;
 pub use simd::{active_path, active_path_name, clear_path_for_test, set_path_for_test, uses_simd, KernelPath};
 pub fn clipped_relu(x: f32) -> f32 {
-    if !(x >= 0.0) {
+    if x < 0.0 {
         return 0.0;
     }
     if x > 1.0 {
@@ -16,7 +16,7 @@ pub fn clipped_relu(x: f32) -> f32 {
 }
 pub fn hard_sigmoid(s: f32) -> f32 {
     let t = 0.2_f32 * s + 0.5_f32;
-    if !(t >= 0.0) {
+    if t < 0.0 {
         return 0.0;
     }
     if t > 1.0 {

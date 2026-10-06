@@ -40,6 +40,7 @@ impl InteractionGraph {
     }
 
     pub fn score_cells_for_changed(tokens: usize, changed_len: usize) -> usize {
-        2 * changed_len * tokens - changed_len * changed_len
+        let changed = changed_len.min(tokens);
+        2 * changed * tokens - changed * changed
     }
 }

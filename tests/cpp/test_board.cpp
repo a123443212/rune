@@ -67,3 +67,14 @@ void testMakeUnmakeConsistency() {
     }
   }
 }
+
+void testKingTwoSquareOffRank() {
+  Board b("7k/8/8/8/8/8/K7/7R w - - 0 1");
+  std::string before = b.toFen();
+  Move m;
+  m.from = 8;
+  m.to = 6;
+  CHECK(b.makeMove(m));
+  b.unmakeMove();
+  CHECK(b.toFen() == before);
+}

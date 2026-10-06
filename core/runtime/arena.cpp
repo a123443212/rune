@@ -1,4 +1,5 @@
 #include "core/runtime/arena.h"
+#include <stdexcept>
 namespace rune {
 namespace rt {
 Arena::Arena(size_t bytes) {
@@ -8,10 +9,12 @@ Arena::Arena(size_t bytes) {
 }
 float* Arena::at(size_t offBytes, size_t elems) {
   size_t o = offBytes / 4;
+  if (o + elems > buf_.size()) throw std::out_of_range("arena out of range");
   return buf_.data() + o;
 }
 const float* Arena::at(size_t offBytes, size_t elems) const {
   size_t o = offBytes / 4;
+  if (o + elems > buf_.size()) throw std::out_of_range("arena out of range");
   return buf_.data() + o;
 }
 size_t Arena::bytes() const {

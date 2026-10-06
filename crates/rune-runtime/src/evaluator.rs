@@ -6,7 +6,7 @@ use rune_spec as spec;
 use crate::accumulator::{Accumulator, Tables};
 use crate::board::Board;
 use crate::error::{Result, RuntimeError};
-use crate::features::{diff_features, extract_features};
+use crate::features::{compute_context, diff_features, extract_features, CONTEXT_DIM};
 use crate::mixer::{HeadTrace, HeadWeights, MixerTrace, MixerWeights};
 
 pub(crate) const FULL_REFRESH_LIMIT: usize = 64;
@@ -36,7 +36,8 @@ pub struct Evaluator {
     dim: usize,
     acc: Accumulator,
     feats: Vec<(u8, u16)>,
-    stack: Vec<(Vec<f32>, Vec<(u8, u16)>)>,
+    ctx: Vec<f32>,
+    stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>)>,
 }
 fn need_vec(arrays: &HashMap<String, Vec<f32>>, name: &str) -> Result<Vec<f32>> {
     arrays.get(name).cloned().ok_or_else(|| RuntimeError::TensorMissing(name.to_string()))
@@ -68,6 +69,17 @@ impl Evaluator {
         }
         let tokens = m.header.tokens;
         let dim = m.header.token_dim;
+        let flex = arch == "RUNE-REL-02";
+        if flex {
+            if tokens != 6 && tokens != 8 && tokens != 10 {
+                return Err(RuntimeError::Shape("tokens".to_string()));
+            }
+            if dim != 24 && dim != 32 && dim != 40 {
+                return Err(RuntimeError::Shape("token dim".to_string()));
+            }
+        } else if tokens != 8 || dim != 32 {
+            return Err(RuntimeError::Shape("tokens".to_string()));
+        }
         let vocabs = spec::VOCAB_SIZES;
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..8 {
@@ -86,11 +98,40 @@ impl Evaluator {
             let bk = need_vec(&m.arrays, "bk")?;
             let wv = need_vec(&m.arrays, "wvv").or_else(|_| need_vec(&m.arrays, "wv"))?;
             let bv = need_vec(&m.arrays, "bvv").or_else(|_| need_vec(&m.arrays, "bv"))?;
+            if wq.len() != dim * dim || wk.len() != dim * dim || wv.len() != dim * dim {
+                return Err(RuntimeError::Shape("mixer mat".to_string()));
+            }
+            if bq.len() != dim || bk.len() != dim || bv.len() != dim {
+                return Err(RuntimeError::Shape("mixer bias".to_string()));
+            }
             let gab_key = if m.arrays.contains_key("gabS") { "gabS" } else { "gab" };
-            let gab = need_vec(&m.arrays, gab_key)?;
+            let gab = match m.arrays.get(gab_key) {
+                Some(v) => v.clone(),
+                None if arch == "RUNE-ATTN" => vec![0.0; tokens * tokens],
+                None => return Err(RuntimeError::TensorMissing(gab_key.to_string())),
+            };
+            if gab.len() != tokens * tokens {
+                return Err(RuntimeError::Shape("gab".to_string()));
+            }
             let gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
             let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
-            Some(MixerWeights { tokens, dim, wq, bq, wk, bk, wv, bv, gab, gate_hard, alpha })
+            let (dyn_u, dyn_w, ctx_dim) = if arch == "RUNE-REL-02" {
+                let cd = m.header.raw.get("context_dim").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+                let pair = (m.arrays.get("dynU"), m.arrays.get("dynW"));
+                match pair {
+                    (Some(u), Some(w)) => {
+                        if cd == 0 || cd != CONTEXT_DIM || u.len() != tokens * cd || w.len() != tokens * cd {
+                            return Err(RuntimeError::Shape("dyn".to_string()));
+                        }
+                        (u.clone(), w.clone(), cd)
+                    }
+                    (None, None) => (Vec::new(), Vec::new(), 0),
+                    _ => return Err(RuntimeError::Shape("dyn pair".to_string())),
+                }
+            } else {
+                (Vec::new(), Vec::new(), 0)
+            };
+            Some(MixerWeights { tokens, dim, wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate_hard, alpha })
         } else {
             None
         };
@@ -114,37 +155,56 @@ impl Evaluator {
         if w1.len() != h1 * input || w2.len() != h2 * h1 {
             return Err(RuntimeError::Shape("head mat".to_string()));
         }
+        if wvo.len() != h2 {
+            return Err(RuntimeError::Shape("wvo".to_string()));
+        }
+        if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
+            return Err(RuntimeError::Shape("wdl".to_string()));
+        }
         let _ = w1n;
         let _ = h2n;
         let head = HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl };
-        let acc = Accumulator::new(dim);
-        Ok(Evaluator { tables, mixer, head, arch_id: arch, tokens, dim, acc, feats: Vec::new(), stack: Vec::new() })
+        let acc = Accumulator::new(tokens, dim);
+        Ok(Evaluator { tables, mixer, head, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
+    }
+    pub fn ctx_of(&self) -> &[f32] {
+        &self.ctx
+    }
+    fn active_ctx(&self) -> Option<&[f32]> {
+        if self.ctx.is_empty() {
+            return None;
+        }
+        Some(&self.ctx)
     }
     pub fn refresh(&mut self, board: &Board) {
         let f = extract_features(board);
         self.acc.refresh(&self.tables, &f);
         self.feats = f;
+        self.ctx = compute_context(board);
     }
-    pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)]) {
+    pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)], ctx: &[f32]) {
         let (added, removed) = diff_features(before, after);
         if added.len() + removed.len() > FULL_REFRESH_LIMIT {
             self.acc.refresh(&self.tables, after);
             self.feats = after.to_vec();
+            self.ctx = ctx.to_vec();
             return;
         }
         self.acc.apply_diff(&self.tables, &added, &removed);
         self.feats = after.to_vec();
+        self.ctx = ctx.to_vec();
     }
     pub fn push(&mut self) {
-        self.stack.push((self.acc.snapshot(), self.feats.clone()));
+        self.stack.push((self.acc.snapshot(), self.feats.clone(), self.ctx.clone()));
     }
     pub fn pop(&mut self) {
-        let (snap, feats) = self.stack.pop().expect("pop without push");
+        let (snap, feats, ctx) = self.stack.pop().expect("pop without push");
         self.acc.restore(&snap);
         self.feats = feats;
+        self.ctx = ctx;
     }
     pub fn search_depth(&self) -> usize {
         self.stack.len()
@@ -162,7 +222,7 @@ impl Evaluator {
         let mut mixed = tok.to_vec();
         if let Some(mx) = &self.mixer {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
-            mx.forward(tok, &mut out, None);
+            mx.forward(tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
         let (value, wdl, _) = self.head.forward(&mixed);
@@ -174,7 +234,7 @@ impl Evaluator {
         let mut mixed = tok.to_vec();
         if let Some(mx) = &self.mixer {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
-            mx.forward(&tok, &mut out, None);
+            mx.forward(&tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
         self.head.forward_value_only(&mixed)
@@ -192,7 +252,7 @@ impl Evaluator {
         if let Some(mx) = &self.mixer {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
             let mut mtr = MixerTrace::default();
-            mx.forward(&tok, &mut out, Some(&mut mtr));
+            mx.forward(&tok, self.active_ctx(), &mut out, Some(&mut mtr));
             mixed = out;
             tr.mixer = mtr;
         }
