@@ -3,6 +3,7 @@ use std::time::Instant;
 use rune_runtime::board::Board;
 use rune_runtime::compiled::CompiledEvaluator;
 use rune_runtime::evaluator::Evaluator;
+use rune_runtime::features::extract_features;
 
 pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     let mp = PathBuf::from(model);
@@ -42,5 +43,26 @@ pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     println!("speedup {:.2}x", g_us / c_us);
     println!("compiled_isa {}", ev_c.target_isa());
     println!("arena_bytes {}", ev_c.arena_bytes());
+    let mut b1 = Board::startpos();
+    let _ = b1.apply_uci("e2e4");
+    let f0 = extract_features(&b);
+    let f1 = extract_features(&b1);
+    let t2 = Instant::now();
+    for _ in 0..iters {
+        ev_g.refresh(&b);
+        ev_g.update_incremental(&f0, &f1);
+        let _ = ev_g.evaluate();
+    }
+    let i_us = t2.elapsed().as_secs_f64() * 1000000.0 / iters as f64;
+    println!("incremental_us_per_eval {:.3}", i_us);
+    println!("incremental_eval_per_sec {:.0}", 1000000.0 / i_us);
+    ev_g.refresh(&b);
+    let t3 = Instant::now();
+    for _ in 0..iters {
+        let _ = ev_g.evaluate_value_only();
+    }
+    let v_us = t3.elapsed().as_secs_f64() * 1000000.0 / iters as f64;
+    println!("value_only_us_per_eval {:.3}", v_us);
+    println!("value_only_eval_per_sec {:.0}", 1000000.0 / v_us);
     0
 }

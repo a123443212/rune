@@ -96,4 +96,15 @@ impl HeadWeights {
         kernel::mat_vec(&self.wwdl, &h2, Some(&self.bwdl), &mut wdl, 3, self.h2);
         (value, wdl, HeadTrace { h1, h2 })
     }
+    pub fn forward_value_only(&self, flat: &[f32]) -> f32 {
+        let mut h1 = vec![0.0_f32; self.h1];
+        let mut h2 = vec![0.0_f32; self.h2];
+        kernel::mat_vec_clipped(&self.w1, flat, Some(&self.b1), &mut h1, self.h1, self.input);
+        kernel::mat_vec_clipped(&self.w2, &h1, Some(&self.b2), &mut h2, self.h2, self.h1);
+        let mut vv = self.bvo;
+        for i in 0..self.h2 {
+            vv += self.wvo[i] * h2[i];
+        }
+        vv.tanh()
+    }
 }

@@ -27,10 +27,11 @@ impl Tables {
 pub struct Accumulator {
     pub dim: usize,
     acc: Vec<f32>,
+    stack: Vec<Vec<f32>>,
 }
 impl Accumulator {
     pub fn new(dim: usize) -> Accumulator {
-        Accumulator { dim, acc: vec![0.0; 8 * dim] }
+        Accumulator { dim, acc: vec![0.0; 8 * dim], stack: Vec::new() }
     }
     pub fn refresh(&mut self, tables: &Tables, feats: &[(u8, u16)]) {
         for v in self.acc.iter_mut() {
@@ -57,6 +58,22 @@ impl Accumulator {
     }
     pub fn tokens(&self, out: &mut [f32]) {
         kernel::tokens_clip(&self.acc, out);
+    }
+    pub fn push(&mut self) {
+        self.stack.push(self.acc.clone());
+    }
+    pub fn pop(&mut self) {
+        let prev = self.stack.pop().expect("pop without push");
+        self.acc = prev;
+    }
+    pub fn depth(&self) -> usize {
+        self.stack.len()
+    }
+    pub fn snapshot(&self) -> Vec<f32> {
+        self.acc.clone()
+    }
+    pub fn restore(&mut self, snap: &[f32]) {
+        self.acc.copy_from_slice(snap);
     }
     pub fn raw(&self) -> &[f32] {
         &self.acc

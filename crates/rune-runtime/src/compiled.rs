@@ -24,6 +24,7 @@ pub struct CompiledEvaluator {
     dim: usize,
     acc: Vec<f32>,
     feats: Vec<(u8, u16)>,
+    stack: Vec<(Vec<f32>, Vec<(u8, u16)>)>,
     arena: Arena,
     header: CompiledHeader,
     arch_id: String,
@@ -110,6 +111,7 @@ impl CompiledEvaluator {
             dim,
             acc: vec![0.0; tokens * dim],
             feats: Vec::new(),
+            stack: Vec::new(),
             arena,
             header,
             arch_id: arch,
@@ -163,6 +165,10 @@ impl CompiledEvaluator {
 
     pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)]) {
         let (added, removed) = crate::features::diff_features(before, after);
+        if added.len() + removed.len() > crate::evaluator::FULL_REFRESH_LIMIT {
+            self.refresh_features(after);
+            return;
+        }
         let dim = self.dim;
         for (g, idx) in &added {
             let row = self.tables.row(*g as usize, *idx as usize).to_vec();
@@ -200,6 +206,55 @@ impl CompiledEvaluator {
     pub fn evaluate_board(&mut self, board: &Board) -> crate::evaluator::EvalResult {
         self.refresh(board);
         self.evaluate()
+    }
+    pub fn push(&mut self) {
+        self.stack.push((self.acc.clone(), self.feats.clone()));
+    }
+    pub fn pop(&mut self) {
+        let (snap, feats) = self.stack.pop().expect("pop without push");
+        self.acc = snap;
+        self.feats = feats;
+    }
+    pub fn search_depth(&self) -> usize {
+        self.stack.len()
+    }
+    pub fn evaluate_value_only(&self) -> f32 {
+        let flat_n = self.tokens * self.dim;
+        let mut tok = vec![0.0f32; flat_n];
+        self.tokens_into(&mut tok);
+        let t = self.tokens;
+        let d = self.dim;
+        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02";
+        let mut mixed = tok.to_vec();
+        if has_mixer {
+            let mut q = vec![0.0f32; t * d];
+            let mut k = vec![0.0f32; t * d];
+            let mut vv = vec![0.0f32; t * d];
+            for i in 0..t {
+                let xb = &tok[i * d..(i + 1) * d];
+                let qb = &mut q[i * d..(i + 1) * d];
+                let kb = &mut k[i * d..(i + 1) * d];
+                let vb = &mut vv[i * d..(i + 1) * d];
+                rune_kernel::mat_vec(&self.wq, xb, Some(&self.bq), qb, d, d);
+                rune_kernel::mat_vec(&self.wk, xb, Some(&self.bk), kb, d, d);
+                rune_kernel::mat_vec(&self.wv, xb, Some(&self.bv), vb, d, d);
+            }
+            let mut s = vec![0.0f32; t * t];
+            rune_kernel::mat_mul_tt(&q, &k, &mut s, t, t, d);
+            let mut g = vec![0.0f32; t * t];
+            for a in 0..t {
+                for b in 0..t {
+                    let v = s[a * t + b] + self.gab[a * t + b];
+                    g[a * t + b] = if self.gate_hard { rune_kernel::hard_sigmoid(v) } else { rune_kernel::clipped_relu(v) };
+                }
+            }
+            let mut y = vec![0.0f32; t * d];
+            rune_kernel::mat_mul(&g, &vv, &mut y, t, d, t);
+            for i in 0..flat_n {
+                mixed[i] = tok[i] + self.alpha * y[i];
+            }
+        }
+        self.head.forward_value_only(&mixed)
     }
 
     pub fn forward_tokens_compiled(&mut self, tok: &[f32]) -> crate::evaluator::EvalResult {

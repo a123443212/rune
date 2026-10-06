@@ -112,6 +112,61 @@ fn quant_model_close_to_fp32() {
     assert!((rf.value - ri.value).abs() < 0.01, "fp32 {} int8 {}", rf.value, ri.value);
 }
 #[test]
+fn push_pop_roundtrip() {
+    let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
+    let mut ev = Evaluator::load(&p).expect("load");
+    let b0 = Board::startpos();
+    let mut b1 = b0.clone();
+    b1.apply_uci("e2e4").unwrap();
+    let f0 = extract_features(&b0);
+    let f1 = extract_features(&b1);
+    ev.refresh(&b0);
+    let r0 = ev.evaluate();
+    ev.push();
+    ev.update_incremental(&f0, &f1);
+    let r1 = ev.evaluate();
+    ev.pop();
+    assert_eq!(ev.search_depth(), 0);
+    let r2 = ev.evaluate();
+    assert!((r0.value - r2.value).abs() < 1e-6);
+    assert!((r0.wdl[0] - r2.wdl[0]).abs() < 1e-6);
+    let _ = r1;
+}
+#[test]
+fn value_only_matches_full() {
+    let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
+    let mut ev = Evaluator::load(&p).expect("load");
+    for fen in [
+        "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1",
+        "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1",
+        "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
+    ] {
+        let b = Board::parse_fen(fen).unwrap();
+        ev.refresh(&b);
+        let r = ev.evaluate();
+        let v = ev.evaluate_value_only();
+        assert!((r.value - v).abs() < 1e-6, "{} got {} vs {}", fen, r.value, v);
+    }
+}
+#[test]
+fn large_diff_matches_refresh() {
+    let b0 = Board::startpos();
+    let b1 = Board::parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
+    let f0 = extract_features(&b0);
+    let f1 = extract_features(&b1);
+    let (added, removed) = diff_features(&f0, &f1);
+    assert!(added.len() + removed.len() > 64);
+    let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
+    let mut ev_full = Evaluator::load(&p).expect("load");
+    let mut ev_inc = Evaluator::load(&p).expect("load");
+    ev_full.refresh(&b1);
+    ev_inc.refresh(&b0);
+    ev_inc.update_incremental(&f0, &f1);
+    let r1 = ev_full.evaluate();
+    let r2 = ev_inc.evaluate();
+    assert!((r1.value - r2.value).abs() < 1e-5, "{} vs {}", r1.value, r2.value);
+}
+#[test]
 fn unsupported_arch_fails_closed() {
     use rune_runtime::RuntimeError;
     for n in ["dense-b-fp32.rune", "dense-b-int8.rune", "dense-b-int16.rune", "adaptive-fp32.rune"] {

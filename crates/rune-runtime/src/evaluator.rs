@@ -8,6 +8,8 @@ use crate::board::Board;
 use crate::error::{Result, RuntimeError};
 use crate::features::{diff_features, extract_features};
 use crate::mixer::{HeadTrace, HeadWeights, MixerTrace, MixerWeights};
+
+pub(crate) const FULL_REFRESH_LIMIT: usize = 64;
 #[derive(Debug, Clone)]
 pub struct EvalResult {
     pub value: f32,
@@ -34,6 +36,7 @@ pub struct Evaluator {
     dim: usize,
     acc: Accumulator,
     feats: Vec<(u8, u16)>,
+    stack: Vec<(Vec<f32>, Vec<(u8, u16)>)>,
 }
 fn need_vec(arrays: &HashMap<String, Vec<f32>>, name: &str) -> Result<Vec<f32>> {
     arrays.get(name).cloned().ok_or_else(|| RuntimeError::TensorMissing(name.to_string()))
@@ -115,7 +118,7 @@ impl Evaluator {
         let _ = h2n;
         let head = HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl };
         let acc = Accumulator::new(dim);
-        Ok(Evaluator { tables, mixer, head, arch_id: arch, tokens, dim, acc, feats: Vec::new() })
+        Ok(Evaluator { tables, mixer, head, arch_id: arch, tokens, dim, acc, feats: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
@@ -127,8 +130,24 @@ impl Evaluator {
     }
     pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)]) {
         let (added, removed) = diff_features(before, after);
+        if added.len() + removed.len() > FULL_REFRESH_LIMIT {
+            self.acc.refresh(&self.tables, after);
+            self.feats = after.to_vec();
+            return;
+        }
         self.acc.apply_diff(&self.tables, &added, &removed);
         self.feats = after.to_vec();
+    }
+    pub fn push(&mut self) {
+        self.stack.push((self.acc.snapshot(), self.feats.clone()));
+    }
+    pub fn pop(&mut self) {
+        let (snap, feats) = self.stack.pop().expect("pop without push");
+        self.acc.restore(&snap);
+        self.feats = feats;
+    }
+    pub fn search_depth(&self) -> usize {
+        self.stack.len()
     }
     pub fn evaluate(&self) -> EvalResult {
         let mut tok = vec![0.0_f32; self.tokens * self.dim];
@@ -148,6 +167,17 @@ impl Evaluator {
         }
         let (value, wdl, _) = self.head.forward(&mixed);
         EvalResult { value, wdl, refine: false, difficulty: 0.0 }
+    }
+    pub fn evaluate_value_only(&self) -> f32 {
+        let mut tok = vec![0.0_f32; self.tokens * self.dim];
+        self.acc.tokens(&mut tok);
+        let mut mixed = tok.to_vec();
+        if let Some(mx) = &self.mixer {
+            let mut out = vec![0.0_f32; self.tokens * self.dim];
+            mx.forward(&tok, &mut out, None);
+            mixed = out;
+        }
+        self.head.forward_value_only(&mixed)
     }
     pub fn trace(&self) -> FullTrace {
         let mut tok = vec![0.0_f32; self.tokens * self.dim];
