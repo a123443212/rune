@@ -35,6 +35,14 @@ def test_ir_rejects_bad_quant():
     assert any("quantization" in e for e in errs)
 
 
+def test_ir_requires_bias():
+    spec = {"arch": "RUNE-ATTN-GAB", "tokens": 8, "token_dim": 32, "quantization": "fp32"}
+    ir = build_ir(spec, [], {"cpu": "x", "isa": "portable", "vector_width": 1})
+    ir["ops"] = [o for o in ir["ops"] if o.get("kind") != "Bias"]
+    errs = verify_ir(ir)
+    assert any("Bias" in e for e in errs)
+
+
 def test_ir_version_independent():
     from training.compiler.ir import SPEC_VERSION
     assert IR_VERSION == "1.0"

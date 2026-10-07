@@ -20,7 +20,7 @@ pub fn run(model_a: &str, model_b: &str, fen: &str, depth: usize, tol: f32) -> i
             return 1;
         }
     };
-    let cfg = LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1 };
+    let cfg = LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1, threshold: 0.5 };
     let ca = Rc::new(Cell::new(0usize));
     let cb = Rc::new(Cell::new(0usize));
     let (sa, ma, na, apa) = {

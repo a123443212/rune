@@ -62,8 +62,15 @@ class AlphaBeta:
             return v, None
         moves = board.legal_moves()
         if not moves:
-            v = self._eval_leaf(board, alpha, beta, ntype)
-            return v, None
+            checkmate = board.is_checkmate() if hasattr(board, "is_checkmate") else None
+            if checkmate is None:
+                v = self._eval_leaf(board, alpha, beta, ntype)
+                return v, None
+            if checkmate:
+                self.stats.note_node(ntype)
+                return -10000.0 + ply, None
+            self.stats.note_node(ntype)
+            return 0.0, None
         ordered = self.ev.order_moves(board, moves)
         best = None
         best_v = None

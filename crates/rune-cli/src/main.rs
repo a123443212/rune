@@ -293,11 +293,12 @@ fn main() {
         let f = arg_val(&rest, "--fen").unwrap_or_else(|| "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1".to_string());
         let d = arg_val(&rest, "--depth").and_then(|x| x.parse::<usize>().ok()).unwrap_or(2);
         let l = arg_val(&rest, "--lazy").unwrap_or_else(|| "L0".to_string());
+        let t = arg_val(&rest, "--threshold").and_then(|x| x.parse::<f32>().ok()).unwrap_or(0.5);
         if m.is_empty() {
             usage();
             1
         } else {
-            search_cmd::run(&m, &f, d, &l)
+            search_cmd::run(&m, &f, d, &l, t)
         }
     } else if cmd == "search-diff" {
         let a = arg_val(&rest, "--model-a").unwrap_or_default();

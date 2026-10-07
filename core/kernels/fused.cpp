@@ -1,8 +1,9 @@
 #include "core/kernels/fused.h"
 #include <cmath>
 #include "core/kernels/ref_kernels.h"
+#include "core/kernels/simd_kernels.h"
 #include "core/kernels/smallmat.h"
-#if defined(__AVX2__)
+#if defined(__AVX2__) || defined(RUNE_X86_INTRIN)
 #include <immintrin.h>
 #endif
 namespace rune {
@@ -49,8 +50,8 @@ void wdl3x32(const float* w, const float* b, const float* h2, float* wdl) {
     wdl[r] = acc;
   }
 }
-#if defined(__AVX2__)
-void matVecClippedFusedAvx2(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
+#if defined(__AVX2__) || defined(RUNE_X86_INTRIN)
+RUNE_TARGET_AVX2 void matVecClippedFusedAvx2(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
   for (int r = 0; r < rows; ++r) {
     __m256 acc = _mm256_setzero_ps();
     const float* row = mat + static_cast<size_t>(r) * static_cast<size_t>(cols);
@@ -71,16 +72,18 @@ void matVecClippedFusedAvx2(const float* mat, const float* vec, const float* bia
 }
 #endif
 void matVecClippedFused(const float* mat, const float* vec, const float* bias, float* out, int rows, int cols) {
-#if defined(__AVX2__)
-  matVecClippedFusedAvx2(mat, vec, bias, out, rows, cols);
-#else
+#if defined(__AVX2__) || defined(RUNE_X86_INTRIN)
+  if (kern::hasAvx2()) {
+    matVecClippedFusedAvx2(mat, vec, bias, out, rows, cols);
+    return;
+  }
+#endif
   for (int r = 0; r < rows; ++r) {
     float acc = bias ? bias[r] : 0.0f;
     const float* row = mat + static_cast<size_t>(r) * static_cast<size_t>(cols);
     for (int c = 0; c < cols; ++c) acc += row[c] * vec[c];
     out[r] = acc < 0.0f ? 0.0f : (acc > 1.0f ? 1.0f : acc);
   }
-#endif
 }
 }
 }

@@ -164,7 +164,7 @@ def verify_ir(ir):
     if ir.get("ir_version") != IR_VERSION:
         errors.append("bad ir_version %s" % str(ir.get("ir_version")))
     kinds = [o.get("kind") for o in ir.get("ops", [])]
-    for need in ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"]:
+    for need in ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Bias", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"]:
         if need not in kinds:
             errors.append("missing op %s" % need)
     tgt = ir.get("target", {})

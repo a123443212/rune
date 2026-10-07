@@ -218,8 +218,8 @@ impl CompiledEvaluator {
                 Some(v) => v,
                 None => continue,
             };
-            let row = self.tables.row(*g as usize, *idx as usize).to_vec();
             let base = t * dim;
+            let row = self.tables.row(*g as usize, *idx as usize);
             for d in 0..dim {
                 self.acc[base + d] += row[d];
             }
@@ -234,8 +234,8 @@ impl CompiledEvaluator {
                 Some(v) => v,
                 None => continue,
             };
-            let row = self.tables.row(*g as usize, *idx as usize).to_vec();
             let base = t * dim;
+            let row = self.tables.row(*g as usize, *idx as usize);
             for d in 0..dim {
                 self.acc[base + d] -= row[d];
             }

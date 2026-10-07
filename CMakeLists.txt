@@ -8,7 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(RUNE_BUILD_TESTS "Build C++ tests" ON)
 option(RUNE_BUILD_BENCH "Build C++ benchmarks" ON)
 option(RUNE_BUILD_BINDINGS "Build pybind11 module" ON)
-option(RUNE_ENABLE_AVX2 "Enable AVX2 paths where available" OFF)
 
 add_compile_options(-O2 -Wall -Wextra)
 

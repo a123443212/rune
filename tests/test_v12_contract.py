@@ -57,5 +57,41 @@ def test_lazy_modes():
     assert should_refine(0.9, 0.0, 0.3, 0.0, 0.5, l1) is True
     assert should_refine(0.9, 0.0, 0.3, 0.0, 0.5, l2) is False
     assert should_refine(0.15, 0.0, 0.3, 0.9, 0.5, l2) is True
+    assert should_refine(0.2, 0.0, 0.3, 0.0, 0.5, l2) is False
+    assert should_refine(0.3, 0.0, 0.3, 0.0, 0.2, l2) is True
     assert bounded_refine(0, l2) is True
     assert bounded_refine(5, l2) is False
+
+
+def test_search_mate_and_draw():
+    from training.engine.search import AlphaBeta
+
+    class MatedBoard:
+        def legal_moves(self):
+            return []
+
+        def is_checkmate(self):
+            return True
+
+    class StaleBoard:
+        def legal_moves(self):
+            return []
+
+        def is_checkmate(self):
+            return False
+
+    class NoEval:
+        def evaluate(self, board):
+            raise AssertionError("eval must not run on terminal nodes")
+
+        def order_moves(self, board, moves):
+            return moves
+
+    ab = AlphaBeta(NoEval())
+    s, m, _ = ab.search(MatedBoard(), 2)
+    assert m is None
+    assert abs(s - (-10000.0)) < 1e-6
+    ab = AlphaBeta(NoEval())
+    s, m, _ = ab.search(StaleBoard(), 2)
+    assert m is None
+    assert abs(s - 0.0) < 1e-9

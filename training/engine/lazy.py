@@ -22,7 +22,7 @@ def should_refine(cheap_value, alpha, beta, uncertainty, threshold, cfg):
         return False
     if uncertainty >= 0.5:
         return True
-    return True
+    return cheap_value >= threshold
 
 
 def bounded_refine(n_refined, cfg):

@@ -62,6 +62,70 @@ static void testSearchRuns() {
   CHECK(st.hasMove);
   CHECK(s > -2.0f && s < 2.0f);
 }
+static float testMaterial(Board& b) {
+  int us = static_cast<int>(b.sideToMove());
+  int score = 0;
+  for (int sq = 0; sq < 64; ++sq) {
+    Piece p = b.at(sq);
+    if (p.empty()) continue;
+    int v = 0;
+    if (p.type == PieceType::Pawn) v = 100;
+    else if (p.type == PieceType::Knight) v = 320;
+    else if (p.type == PieceType::Bishop) v = 330;
+    else if (p.type == PieceType::Rook) v = 500;
+    else if (p.type == PieceType::Queen) v = 900;
+    score += (static_cast<int>(p.color) == us) ? v : -v;
+  }
+  return static_cast<float>(score) / 1000.0f;
+}
+static void testSearchQuiescence() {
+  Board b("r3k3/8/8/8/8/8/8/R3K3 w - - 0 1");
+  eng::LazyConfig cfg;
+  eng::EvalFn ev = [](Board& x) -> float { return testMaterial(x); };
+  eng::SearchStats st;
+  float s = eng::searchRoot(b, 0, ev, cfg, st, -1e9f, 1e9f);
+  CHECK(st.hasMove);
+  CHECK(st.qnodes > 0);
+  CHECK(s > 0.4f);
+}
+static void testSearchLazy() {
+  Board b;
+  eng::LazyConfig cfg;
+  cfg.mode = eng::LazyMode::L1;
+  cfg.threshold = 0.5f;
+  int fullCalls = 0;
+  eng::EvalFn cheap = [](Board&) -> float { return 0.0f; };
+  eng::EvalFn full = [&fullCalls](Board& x) -> float {
+    ++fullCalls;
+    std::vector<Move> lm;
+    x.generateLegalMoves(lm);
+    return 0.05f;
+  };
+  eng::SearchStats st;
+  float s = eng::searchRootLazy(b, 2, cheap, full, cfg, st, -1e9f, 1e9f);
+  CHECK(st.hasMove);
+  CHECK(fullCalls == 0);
+  CHECK(st.refined == 0);
+  CHECK(s > -2.0f && s < 2.0f);
+  eng::SearchStats st2;
+  eng::EvalFn cheapHigh = [](Board&) -> float { return 0.9f; };
+  float s2 = eng::searchRootLazy(b, 1, cheapHigh, full, cfg, st2, -1e9f, 1e9f);
+  CHECK(st2.refined > 0);
+  CHECK(fullCalls > 0);
+  CHECK(s2 > -2.0f && s2 < 2.0f);
+}
+static void testSearchTt() {
+  Board b;
+  eng::LazyConfig cfg;
+  eng::EvalFn ev = [](Board& x) -> float {
+    std::vector<Move> lm;
+    x.generateLegalMoves(lm);
+    return 0.05f;
+  };
+  eng::SearchStats st;
+  eng::searchRoot(b, 3, ev, cfg, st, -1e9f, 1e9f);
+  CHECK(st.ttHits > 0);
+}
 static void testSearchMate() {
   eng::LazyConfig cfg;
   eng::EvalFn ev = [](Board&) -> float { return 0.5f; };
@@ -80,6 +144,14 @@ static void testSearchMate() {
   float s3 = eng::searchRoot(fifty, 2, ev, cfg, st3, -1e9f, 1e9f);
   CHECK(st3.hasMove);
   CHECK(std::fabs(s3) < 1e-6f);
+}
+static void testMoveOrdering() {
+  Board b("r1bqkbnr/pppp1ppp/2n5/4p3/4P3/5N2/PPPP1PPP/RNBQKB1R w KQkq - 2 3");
+  std::vector<Move> moves;
+  b.generateLegalMoves(moves);
+  CHECK(!moves.empty());
+  eng::orderMoves(b, moves);
+  CHECK(!b.at(moves.front().to).empty());
 }
 static void testIncrementalStress() {
   Board b;
@@ -140,6 +212,10 @@ void runV12Tests() {
   testCache();
   testSearchRuns();
   testSearchMate();
+  testMoveOrdering();
+  testSearchQuiescence();
+  testSearchLazy();
+  testSearchTt();
   testIncrementalStress();
   testThreadStates();
 }

@@ -10,11 +10,12 @@ pub struct LazyConfig {
     pub mode: LazyMode,
     pub margin: f32,
     pub max_refine: usize,
+    pub threshold: f32,
 }
 
 impl Default for LazyConfig {
     fn default() -> Self {
-        LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1 }
+        LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1, threshold: 0.5 }
     }
 }
 

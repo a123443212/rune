@@ -1,5 +1,13 @@
 #pragma once
 #include <cstddef>
+#if (defined(__GNUC__) || defined(__clang__)) && (defined(__x86_64__) || defined(__i386__))
+#define RUNE_X86_INTRIN 1
+#define RUNE_TARGET_AVX2 __attribute__((target("avx2,fma")))
+#define RUNE_TARGET_AVX512 __attribute__((target("avx512f")))
+#else
+#define RUNE_TARGET_AVX2
+#define RUNE_TARGET_AVX512
+#endif
 namespace rune {
 namespace kern {
 enum class Path { Scalar, Avx2, Avx512 };
