@@ -114,9 +114,28 @@ pub fn verify(ir: &RuneIr) -> Vec<String> {
         errs.push(format!("bad ir_version {}", ir.ir_version));
     }
     let kinds: Vec<&str> = ir.ops.iter().map(|o| o.kind.as_str()).collect();
-    for need in ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"] {
+    for need in ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Bias", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"] {
         if !kinds.contains(&need) {
             errs.push(format!("missing op {}", need));
+        }
+    }
+    let ids: Vec<&str> = ir.ops.iter().map(|o| o.id.as_str()).collect();
+    for f in &ir.fusion {
+        for op in &f.ops {
+            if !kinds.contains(&op.as_str()) {
+                errs.push(format!("fusion {} references missing op {}", f.id, op));
+            }
+        }
+        if f.kernel.is_empty() {
+            errs.push(format!("fusion {} missing kernel", f.id));
+        }
+    }
+    for k in &ir.kernel_plan {
+        if k.kernel_id.is_empty() {
+            errs.push(format!("kernel entry {} missing kernel", k.op));
+        }
+        if !ids.contains(&k.op.as_str()) {
+            errs.push(format!("kernel entry {} references missing op {}", k.kernel_id, k.op));
         }
     }
     if !valid_isa(&ir.target.isa) {

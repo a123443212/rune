@@ -21,6 +21,8 @@ struct Undo {
     cap_sq: usize,
     prev_castle: u8,
     prev_ep: i16,
+    prev_halfmove: u16,
+    prev_fullmove: u16,
     promo: u8,
     was_castle: bool,
     was_ep: bool,
@@ -31,6 +33,8 @@ pub struct Board {
     pub stm: u8,
     pub castle_mask: u8,
     pub ep_sq: i16,
+    pub halfmove_clock: u16,
+    pub fullmove_number: u16,
     stack: Vec<Undo>,
 }
 pub fn sq_file(sq: usize) -> i32 {
@@ -83,6 +87,8 @@ impl Board {
             stm: WHITE,
             castle_mask: 0,
             ep_sq: -1,
+            halfmove_clock: 0,
+            fullmove_number: 1,
             stack: Vec::new(),
         })
     }
@@ -144,7 +150,18 @@ impl Board {
         } else {
             parse_sq(parts[3])? as i16
         };
-        Ok(Board { sq, stm, castle_mask: mask, ep_sq, stack: Vec::new() })
+        let halfmove_clock: u16 = match parts.get(4) {
+            None => 0,
+            Some(s) => s.parse().map_err(|_| RuntimeError::BadFen("bad halfmove".to_string()))?,
+        };
+        let fullmove_number: u16 = match parts.get(5) {
+            None => 1,
+            Some(s) => s.parse().map_err(|_| RuntimeError::BadFen("bad fullmove".to_string()))?,
+        };
+        if fullmove_number == 0 {
+            return Err(RuntimeError::BadFen("bad fullmove".to_string()));
+        }
+        Ok(Board { sq, stm, castle_mask: mask, ep_sq, halfmove_clock, fullmove_number, stack: Vec::new() })
     }
     pub fn piece_count(&self) -> usize {
         self.sq.iter().filter(|c| c.is_some()).count()
@@ -218,7 +235,10 @@ impl Board {
         } else {
             s.push_str(&sq_name(self.ep_sq as usize));
         }
-        s.push_str(" 0 1");
+        s.push(' ');
+        s.push_str(&self.halfmove_clock.to_string());
+        s.push(' ');
+        s.push_str(&self.fullmove_number.to_string());
         s
     }
     pub fn apply_uci(&mut self, uci: &str) -> Result<()> {
@@ -265,6 +285,8 @@ impl Board {
             cap_sq,
             prev_castle: self.castle_mask,
             prev_ep: self.ep_sq,
+            prev_halfmove: self.halfmove_clock,
+            prev_fullmove: self.fullmove_number,
             promo,
             was_castle,
             was_ep,
@@ -339,6 +361,14 @@ impl Board {
             }
         }
         let _ = undo.was_ep;
+        if moved.kind == PAWN || captured.is_some() {
+            self.halfmove_clock = 0;
+        } else {
+            self.halfmove_clock = self.halfmove_clock.saturating_add(1);
+        }
+        if moved.color == BLACK {
+            self.fullmove_number = self.fullmove_number.saturating_add(1);
+        }
         self.stack.push(undo);
         self.stm = 1 - self.stm;
         Ok(())
@@ -348,6 +378,8 @@ impl Board {
         self.stm = 1 - self.stm;
         self.castle_mask = u.prev_castle;
         self.ep_sq = u.prev_ep;
+        self.halfmove_clock = u.prev_halfmove;
+        self.fullmove_number = u.prev_fullmove;
         if u.was_castle {
             let r = sq_rank(u.from);
             if sq_file(u.to) == 6 {

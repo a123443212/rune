@@ -24,6 +24,7 @@ void testBoard();
 void testMakeUnmakeConsistency();
 void testKingTwoSquareOffRank();
 void testEnPassantUnmake();
+void testHashKeyEp();
 void testFeatures();
 void testAccumulatorIncremental();
 void testAttentionMath();

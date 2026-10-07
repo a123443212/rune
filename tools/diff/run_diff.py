@@ -66,11 +66,26 @@ def compare_stage(name, a, b, tol):
     m = float(d.max())
     i = int(d.argmax())
     return (m, i, m <= tol)
+def rust_eval(rune_bin, model_path, fen):
+    out = subprocess.run([rune_bin, "eval", "--model", model_path, "--fen", fen],
+                         capture_output=True, text=True, timeout=120)
+    value = None
+    wdl = None
+    for line in out.stdout.splitlines():
+        parts = line.split()
+        if len(parts) == 2 and parts[0] == "value":
+            value = float(parts[1])
+        if len(parts) == 4 and parts[0] == "wdl":
+            wdl = [float(parts[1]), float(parts[2]), float(parts[3])]
+    if value is None or wdl is None:
+        raise RuntimeError("bad rune eval output: " + out.stdout + out.stderr)
+    return value, wdl
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--model", required=True)
     ap.add_argument("--positions", required=True)
     ap.add_argument("--out", default="")
+    ap.add_argument("--rust-eval", default="")
     args = ap.parse_args()
     with open(args.positions) as f:
         fens = [l.strip() for l in f if l.strip()]
@@ -84,16 +99,29 @@ def main():
             v = py.get(stage)
             if isinstance(v, list) and v and isinstance(v[0], tuple):
                 v = [list(x) for x in v]
-            entry["stage"][stage] = {"max_abs": 0.0, "pass": True, "tol": tol}
+            if args.rust_eval and stage in ("value", "wdl"):
+                rv, rw = rust_eval(args.rust_eval, args.model, fen)
+                other = rv if stage == "value" else rw
+                m, i, ok = compare_stage(stage, v, other, tol)
+                entry["stage"][stage] = {"max_abs": m, "idx": i, "pass": bool(ok), "tol": tol}
+                worst[stage] = max(worst.get(stage, 0.0), m)
+                ok_all = ok_all and bool(ok)
+            else:
+                entry["stage"][stage] = {"max_abs": 0.0, "pass": True, "tol": tol}
         report["positions"].append(entry)
     for stage, tol in TOLS.items():
-        worst[stage] = 0.0
-    report["stages"] = {k: {"max_abs": 0.0, "tol": v, "pass": True} for k, v in TOLS.items()}
-    report["summary"] = "python-reference dump ready, feed cpp and rust dumps to compare"
+        report["stages"][stage] = {"max_abs": worst.get(stage, 0.0), "tol": tol, "pass": bool(worst.get(stage, 0.0) <= tol)}
+    if args.rust_eval:
+        report["summary"] = "compared python reference against rust eval on value and wdl"
+        ok_all = ok_all and all(s["pass"] for s in report["stages"].values())
+    else:
+        report["summary"] = "python-reference dump ready, feed cpp and rust dumps to compare"
     report["python_values"] = [py_forward(args.model, fen)["value"] for fen in fens]
     if args.out:
         with open(args.out, "w") as f:
             json.dump(report, f, indent=2)
-    print(json.dumps({"positions": len(fens), "values": report["python_values"]}, indent=2))
+    print(json.dumps({"positions": len(fens), "values": report["python_values"], "pass": ok_all}, indent=2))
+    if args.rust_eval and not ok_all:
+        raise SystemExit(2)
 if __name__ == "__main__":
     main()

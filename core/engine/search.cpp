@@ -13,40 +13,61 @@ float terminalScore(Board& b, int ply) {
   }
   return 0.0f;
 }
-float negamax(Board& b, int depth, int ply, float alpha, float beta, bool root, EvalFn& ev, const LazyConfig& cfg, SearchStats& stats) {
+bool isDrawn(const Board& b, const std::vector<uint64_t>& hist, uint64_t key) {
+  if (b.halfmoveClock() >= 100) {
+    return true;
+  }
+  int reps = 0;
+  for (uint64_t h : hist) {
+    if (h == key) ++reps;
+  }
+  return reps >= 2;
+}
+float negamax(Board& b, int depth, int ply, float alpha, float beta, bool root, EvalFn& ev, const LazyConfig& cfg, SearchStats& stats, std::vector<uint64_t>& hist) {
   (void)cfg;
+  uint64_t key = b.hashKey();
+  if (isDrawn(b, hist, key)) {
+    ++stats.nodes;
+    return 0.0f;
+  }
+  hist.push_back(key);
+  float out;
   if (depth <= 0) {
     ++stats.nodes;
     ++stats.evals;
     ++stats.leafCount;
-    return ev(b);
-  }
-  std::vector<Move> moves;
-  b.generateLegalMoves(moves);
-  if (moves.empty()) {
-    ++stats.nodes;
-    ++stats.evals;
-    ++stats.leafCount;
-    return terminalScore(b, ply);
-  }
-  float best = -1e9f;
-  for (const Move& m : moves) {
-    if (!b.makeMove(m)) continue;
-    float v = -negamax(b, depth - 1, ply + 1, -beta, -alpha, false, ev, cfg, stats);
-    b.unmakeMove();
-    ++stats.nodes;
-    if (root) ++stats.rootCount;
-    else if (beta - alpha > 1.0f) ++stats.pvCount;
-    else if (ply % 2 == 0) ++stats.cutCount;
-    else ++stats.leafCount;
-    if (v > best) best = v;
-    if (v > alpha) alpha = v;
-    if (alpha >= beta) {
-      ++stats.cutoffs;
-      break;
+    out = ev(b);
+  } else {
+    std::vector<Move> moves;
+    b.generateLegalMoves(moves);
+    if (moves.empty()) {
+      ++stats.nodes;
+      ++stats.evals;
+      ++stats.leafCount;
+      out = terminalScore(b, ply);
+    } else {
+      float best = -1e9f;
+      for (const Move& m : moves) {
+        if (!b.makeMove(m)) continue;
+        float v = -negamax(b, depth - 1, ply + 1, -beta, -alpha, false, ev, cfg, stats, hist);
+        b.unmakeMove();
+        ++stats.nodes;
+        if (root) ++stats.rootCount;
+        else if (beta - alpha > 1.0f) ++stats.pvCount;
+        else if (ply % 2 == 0) ++stats.cutCount;
+        else ++stats.leafCount;
+        if (v > best) best = v;
+        if (v > alpha) alpha = v;
+        if (alpha >= beta) {
+          ++stats.cutoffs;
+          break;
+        }
+      }
+      out = best;
     }
   }
-  return best;
+  hist.pop_back();
+  return out;
 }
 }
 float searchRoot(Board& board, int depth, EvalFn ev, const LazyConfig& cfg, SearchStats& stats, float alpha, float beta) {
@@ -63,9 +84,11 @@ float searchRoot(Board& board, int depth, EvalFn ev, const LazyConfig& cfg, Sear
     stats.rootScore = terminalScore(board, 0);
     return stats.rootScore;
   }
+  std::vector<uint64_t> hist;
+  hist.push_back(board.hashKey());
   for (const Move& m : moves) {
     if (!board.makeMove(m)) continue;
-    float v = -negamax(board, depth - 1, 1, -beta, -alpha, false, ev, cfg, stats);
+    float v = -negamax(board, depth - 1, 1, -beta, -alpha, false, ev, cfg, stats, hist);
     board.unmakeMove();
     ++stats.nodes;
     ++stats.rootCount;

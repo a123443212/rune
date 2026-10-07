@@ -75,6 +75,11 @@ static void testSearchMate() {
   float s2 = eng::searchRoot(stale, 2, ev, cfg, st2, -1e9f, 1e9f);
   CHECK(!st2.hasMove);
   CHECK(std::fabs(s2) < 1e-6f);
+  Board fifty("6k1/8/8/8/8/8/8/K6R w - - 100 45");
+  eng::SearchStats st3;
+  float s3 = eng::searchRoot(fifty, 2, ev, cfg, st3, -1e9f, 1e9f);
+  CHECK(st3.hasMove);
+  CHECK(std::fabs(s3) < 1e-6f);
 }
 static void testIncrementalStress() {
   Board b;

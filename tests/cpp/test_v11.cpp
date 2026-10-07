@@ -102,8 +102,8 @@ static void testIrPlan() {
   ir.model.quantization = "fp32";
   ir.model.dtype = "fp32";
   ir.target.isa = "avx2";
-  const char* kinds[14] = {"FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"};
-  for (int i = 0; i < 14; ++i) {
+  const char* kinds[15] = {"FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Bias", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"};
+  for (int i = 0; i < 15; ++i) {
     vir::IrOp o;
     o.id = "op" + std::to_string(i);
     o.kind = kinds[i];
@@ -112,7 +112,7 @@ static void testIrPlan() {
   std::string err;
   CHECK(vir::verifyIr(ir, err));
   vplan::selectKernels(ir);
-  CHECK(ir.kernels.size() == 14);
+  CHECK(ir.kernels.size() == 15);
   CHECK(ir.arenaBytes > 0);
   bool found = false;
   for (auto& k : ir.kernels) {

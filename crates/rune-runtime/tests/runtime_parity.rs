@@ -60,6 +60,24 @@ fn accumulator_refresh_equals_incremental() {
     assert!((r1.value - r2.value).abs() < 1e-6);
 }
 #[test]
+fn clocks_roundtrip_and_update() {
+    let mut b = Board::parse_fen("6k1/8/8/8/8/8/8/K6R w - - 100 45").unwrap();
+    assert_eq!(b.halfmove_clock, 100);
+    assert_eq!(b.fullmove_number, 45);
+    assert_eq!(b.to_fen(), "6k1/8/8/8/8/8/8/K6R w - - 100 45");
+    b.apply_uci("h1h2").unwrap();
+    assert_eq!(b.halfmove_clock, 101);
+    assert_eq!(b.fullmove_number, 45);
+    b.unmake().unwrap();
+    assert_eq!(b.to_fen(), "6k1/8/8/8/8/8/8/K6R w - - 100 45");
+    let mut c = Board::startpos();
+    c.apply_uci("e2e4").unwrap();
+    assert_eq!(c.halfmove_clock, 0);
+    assert_eq!(c.fullmove_number, 1);
+    c.apply_uci("e7e5").unwrap();
+    assert_eq!(c.fullmove_number, 2);
+}
+#[test]
 fn make_unmake_roundtrip() {
     let mut b = Board::startpos();
     let k0 = b.to_fen();

@@ -29,7 +29,8 @@ std::string ModelSpec::canonicalString() const {
   return arch + "|" + archVersion + "|" + featureSet + "|t" + std::to_string(tokens) + "x" +
          std::to_string(tokenDim) + "|" + attention + "|" + geometricBias + "|" + head + "|" +
          quantization + "|" + variant + "|[" + dims + "]|" + pooling + "|" +
-         (gateOn ? "gate" : "nogate") + "|" + (poolClip ? "clip" : "noclip");
+         (gateOn ? "gate" : "nogate") + "|" + (poolClip ? "clip" : "noclip") +
+         "|sw" + std::to_string(sharedWidth);
 }
 
 uint64_t ModelSpec::configHash() const { return fnv1aHash(canonicalString()); }

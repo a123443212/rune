@@ -47,6 +47,9 @@ def main():
             wq = material.count("Q")
             bq = material.count("q")
             score = (wq - bq) * 0.1 + rng.uniform(-0.2, 0.2)
+            stm = fen.split()[1]
+            if stm == "b":
+                score = -score
             value = max(-1.0, min(1.0, score))
             wdl = 1 if abs(value) < 0.15 else (0 if value > 0 else 2)
             records.append(
@@ -59,6 +62,7 @@ def main():
                     "teacher_value": value,
                     "student_value": 0.0,
                     "teacher_version": "synthetic_v01",
+                    "value_perspective": "side_to_move",
                 }
             )
     kept, stats = P.clean_pipeline(records)

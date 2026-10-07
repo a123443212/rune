@@ -51,14 +51,7 @@ class DenseBindingModel {
     for (int t = 0; t < 8; ++t) n += embeddings_.groupWidth(t);
     std::vector<float> raw(n);
     eval_.currentTokens(raw.data());
-    ModelSpec spec = model_.spec();
-    int m = 0;
-    for (int d : spec.tokenDims) m += d;
-    std::vector<float> formed(m);
-    model_.pool.forward(raw.data(), formed.data());
-    std::vector<float> gated(m);
-    model_.gate.forward(formed.data(), gated.data());
-    return gated;
+    return raw;
   }
 
   py::tuple evalFen(const std::string& fen) {

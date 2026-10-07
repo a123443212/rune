@@ -64,26 +64,22 @@ void FlexQuantTables::quantizeFrom(const FlexEmbeddings& src, const TokenLayout&
   float bound = useInt16_ ? 32767.0f : 127.0f;
   int qmax = useInt16_ ? 32767 : 127;
   int qmin = useInt16_ ? -32767 : -127;
-  for (int t = 0; t < layout.tokens; ++t) {
+  (void)layout;
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    const std::vector<float>& data = src.groupData(g);
     float maxAbs = 0.0f;
-    for (const TokenSource& s : layout.sources[t]) {
-      const std::vector<float>& data = src.groupData(s.group);
-      for (float v : data) {
-        float a = v < 0 ? -v : v;
-        if (a > maxAbs) maxAbs = a;
-      }
+    for (float v : data) {
+      float a = v < 0 ? -v : v;
+      if (a > maxAbs) maxAbs = a;
     }
     float scale = maxAbs / bound;
     if (scale <= 0.0f) scale = 1.0f;
-    for (const TokenSource& s : layout.sources[t]) {
-      scales.embedding[s.group] = scale;
-      const std::vector<float>& data = src.groupData(s.group);
-      for (size_t i = 0; i < data.size(); ++i) {
-        int q = static_cast<int>(std::lround(data[i] / scale));
-        if (q > qmax) q = qmax;
-        if (q < qmin) q = qmin;
-        tables_[s.group][i] = q;
-      }
+    scales.embedding[g] = scale;
+    for (size_t i = 0; i < data.size(); ++i) {
+      int q = static_cast<int>(std::lround(data[i] / scale));
+      if (q > qmax) q = qmax;
+      if (q < qmin) q = qmin;
+      tables_[g][i] = q;
     }
   }
 }

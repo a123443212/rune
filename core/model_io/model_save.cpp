@@ -198,9 +198,9 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   std::vector<std::vector<int>> shapes;
   std::vector<const float*> data;
   arch.getTensors(names, shapes, data);
-  int sw = 32;
+  int sw = spec.sharedWidth;
   VarWidths gw;
-  for (int g = 0; g < 8; ++g) gw.w[g] = (spec.pooling == "shared") ? 32 : spec.tokenDims[g];
+  for (int g = 0; g < 8; ++g) gw.w[g] = (spec.pooling == "shared") ? sw : spec.tokenDims[g];
   VarQuantTables qt;
   qt.configure(gw, quantization == "int16");
   VarScales sc;

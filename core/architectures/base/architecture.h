@@ -38,6 +38,7 @@ struct ModelSpec {
   int cheapHidden = 32;
   int refH1 = 128;
   int refH2 = 32;
+  int sharedWidth = 32;
 
   std::string canonicalString() const;
   uint64_t configHash() const;

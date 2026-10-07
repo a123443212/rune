@@ -40,7 +40,7 @@ static void testGraphDense() {
   auto aff = g.affectedEdges({3});
   CHECK(static_cast<int>(aff.size()) == 15);
   auto rows = g.affectedRows({5, 3, 3});
-  CHECK(rows.size() == 2);
+  CHECK(rows.size() == 8);
   CHECK(v13::scoreCellsForChanged(8, {3}) == 15);
   CHECK(v13::scoreCellsForChanged(8, {0, 5}) == 28);
 }

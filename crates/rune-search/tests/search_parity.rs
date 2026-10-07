@@ -44,3 +44,13 @@ fn search_scores_mate_and_stalemate() {
     assert!((s2 - 0.0).abs() < 1e-6, "{}", s2);
     assert!(m2.is_none());
 }
+
+const FIFTY: &str = "6k1/8/8/8/8/8/8/K6R w - - 100 45";
+
+#[test]
+fn search_returns_draw_on_fifty_moves() {
+    let mut eval = |_: &str| 0.9f32;
+    let mut a = AlphaBeta::new(&mut eval, LazyConfig::default());
+    let (s, _) = a.search(FIFTY, 2);
+    assert!((s - 0.0).abs() < 1e-6, "{}", s);
+}

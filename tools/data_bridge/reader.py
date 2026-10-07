@@ -128,6 +128,7 @@ def to_torch_batch(records, group_widths=None, device="cpu"):
 
     from training.features.python_features import VOCAB_SIZES
 
+    dev = torch.device(device)
     if group_widths is None:
         group_widths = [0] * 8
         for r in records:
@@ -140,8 +141,8 @@ def to_torch_batch(records, group_widths=None, device="cpu"):
     n = len(records)
     ids, masks = [], []
     for g in range(8):
-        ids.append(torch.zeros(n, group_widths[g], dtype=torch.long))
-        masks.append(torch.zeros(n, group_widths[g], dtype=torch.float32))
+        ids.append(torch.zeros(n, group_widths[g], dtype=torch.long, device=dev))
+        masks.append(torch.zeros(n, group_widths[g], dtype=torch.float32, device=dev))
     values, wdls = [], []
     for b, r in enumerate(records):
         per = {}
@@ -153,7 +154,7 @@ def to_torch_batch(records, group_widths=None, device="cpu"):
                 masks[g][b, j] = 1.0
         values.append(r["teacher_value"] if r["has_teacher"] else 0.0)
         wdls.append(r["teacher_wdl"])
-    return ids, masks, torch.tensor(values), torch.tensor(wdls, dtype=torch.long)
+    return ids, masks, torch.tensor(values, device=dev), torch.tensor(wdls, dtype=torch.long, device=dev)
 
 
 class ShardLoader:
@@ -163,14 +164,16 @@ class ShardLoader:
         self.shuffle = shuffle
         self.seed = seed
         self.device = device
+        self.epoch = 0
 
     def __iter__(self):
         import random
 
         idx = list(range(len(self.records)))
         if self.shuffle:
-            rng = random.Random(self.seed)
+            rng = random.Random(self.seed + self.epoch)
             rng.shuffle(idx)
+        self.epoch += 1
         for s in range(0, len(idx), self.batch_size):
             chunk = [self.records[i] for i in idx[s:s + self.batch_size]]
             yield to_torch_batch(chunk, device=self.device)

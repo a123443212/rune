@@ -73,14 +73,19 @@ std::vector<int> changedTokensByCompare(const float* tokOld, const float* tokNew
   return out;
 }
 
-void applyAccumDelta(const EmbeddingTables& tables, float* acc, int numGroups, int dim,
+void applyAccumDelta(const EmbeddingTables& tables, float* acc, const TokenLayout& layout,
                      const GroupDelta& delta) {
-  for (int g = 0; g < numGroups; ++g) {
+  int dim = layout.dim;
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
     for (const auto& f : delta.added[g]) {
-      for (int d = 0; d < dim; ++d) acc[g * dim + d] += tables.get(f.group, f.index, d);
+      int t = layout.findToken(f.group, f.index);
+      if (t < 0) continue;
+      for (int d = 0; d < dim; ++d) acc[t * dim + d] += tables.get(f.group, f.index, d);
     }
     for (const auto& f : delta.removed[g]) {
-      for (int d = 0; d < dim; ++d) acc[g * dim + d] -= tables.get(f.group, f.index, d);
+      int t = layout.findToken(f.group, f.index);
+      if (t < 0) continue;
+      for (int d = 0; d < dim; ++d) acc[t * dim + d] -= tables.get(f.group, f.index, d);
     }
   }
 }

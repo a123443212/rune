@@ -4,6 +4,7 @@
 #include <vector>
 
 #include "core/accumulators/grouped_accumulator.h"
+#include "core/accumulators/token_layout.h"
 #include "core/features/feature_set.h"
 
 namespace rune {
@@ -24,7 +25,7 @@ std::vector<int> changedTokensFromGroups(const GroupDelta& delta,
 std::vector<int> changedTokensByCompare(const float* tokOld, const float* tokNew,
                                         int numTokens, int dim);
 
-void applyAccumDelta(const EmbeddingTables& tables, float* acc, int numGroups, int dim,
+void applyAccumDelta(const EmbeddingTables& tables, float* acc, const TokenLayout& layout,
                      const GroupDelta& delta);
 
 }

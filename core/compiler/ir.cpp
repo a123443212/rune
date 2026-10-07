@@ -22,7 +22,7 @@ bool verifyIr(const RuneIr& ir, std::string& err) {
     err = "unsupported quantization";
     return false;
   }
-  bool need[14] = {false, false, false, false, false, false, false, false, false, false, false, false, false, false};
+  bool need[15] = {false, false, false, false, false, false, false, false, false, false, false, false, false, false, false};
   for (const IrOp& o : ir.ops) {
     if (o.kind == "FeatureUpdate") need[0] = true;
     if (o.kind == "AccumulatorUpdate") need[1] = true;
@@ -31,15 +31,16 @@ bool verifyIr(const RuneIr& ir, std::string& err) {
     if (o.kind == "K") need[4] = true;
     if (o.kind == "V") need[5] = true;
     if (o.kind == "Score") need[6] = true;
-    if (o.kind == "Gate") need[7] = true;
-    if (o.kind == "Mix") need[8] = true;
-    if (o.kind == "Residual") need[9] = true;
-    if (o.kind == "HeadH1") need[10] = true;
-    if (o.kind == "HeadH2") need[11] = true;
-    if (o.kind == "Value") need[12] = true;
-    if (o.kind == "WDL") need[13] = true;
+    if (o.kind == "Bias") need[7] = true;
+    if (o.kind == "Gate") need[8] = true;
+    if (o.kind == "Mix") need[9] = true;
+    if (o.kind == "Residual") need[10] = true;
+    if (o.kind == "HeadH1") need[11] = true;
+    if (o.kind == "HeadH2") need[12] = true;
+    if (o.kind == "Value") need[13] = true;
+    if (o.kind == "WDL") need[14] = true;
   }
-  for (int i = 0; i < 14; ++i) {
+  for (int i = 0; i < 15; ++i) {
     if (!need[i]) {
       err = "missing op";
       return false;

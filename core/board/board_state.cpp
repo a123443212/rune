@@ -179,6 +179,8 @@ uint64_t Board::hashKey() const {
   h *= 1099511628211ULL;
   h ^= castling_;
   h *= 1099511628211ULL;
+  h ^= static_cast<uint64_t>(epSquare_ + 1);
+  h *= 1099511628211ULL;
   return h;
 }
 

@@ -10,9 +10,16 @@ class FlexDataset(RuneDataset):
         self.contexts = [context_vector(r["fen"]) for r in records]
 
     def collate(self, idxs):
-        ids, masks, value, wdl = super().collate(idxs)
+        out = super().collate(idxs)
+        if len(out) == 6:
+            ids, masks, _, value, wdl, teach = out
+        else:
+            ids, masks, value, wdl = out
+            teach = None
         ctx = torch.tensor([self.contexts[i] for i in idxs], dtype=torch.float32)
-        return ids, masks, ctx, value, wdl
+        if teach is None:
+            return ids, masks, ctx, value, wdl
+        return ids, masks, ctx, value, wdl, teach
 
 
 def make_flex_loader(records, batch_size=256, shuffle=True, seed=0, max_per_group=None):

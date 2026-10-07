@@ -23,6 +23,7 @@ int main() {
   testMakeUnmakeConsistency();
   testKingTwoSquareOffRank();
   testEnPassantUnmake();
+  testHashKeyEp();
   testFeatures();
   testAccumulatorIncremental();
   testAttentionMath();

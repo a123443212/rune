@@ -34,9 +34,14 @@ std::vector<std::pair<int, int>> InteractionGraph::affectedEdges(
 }
 
 std::vector<int> InteractionGraph::affectedRows(const std::vector<int>& changed) const {
-  std::vector<int> out = changed;
-  std::sort(out.begin(), out.end());
-  out.erase(std::unique(out.begin(), out.end()), out.end());
+  std::vector<int> mark(static_cast<size_t>(tokens_), 0);
+  for (const auto& e : affectedEdges(changed)) {
+    mark[static_cast<size_t>(e.first)] = 1;
+  }
+  std::vector<int> out;
+  for (int a = 0; a < tokens_; ++a) {
+    if (mark[static_cast<size_t>(a)]) out.push_back(a);
+  }
   return out;
 }
 

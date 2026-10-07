@@ -89,3 +89,9 @@ void testEnPassantUnmake() {
   b.unmakeMove();
   CHECK(b.toFen() == before);
 }
+
+void testHashKeyEp() {
+  Board a("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1");
+  Board b("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1");
+  CHECK(a.hashKey() != b.hashKey());
+}

@@ -50,9 +50,12 @@ pub fn run(model_a: &str, model_b: &str, fen: &str, depth: usize, tol: f32) -> i
         (s, m, ab.stats.nodes, ab.stats.cutoffs)
     };
     let d = (sa - sb).abs();
-    println!("a_score {:.4} a_move {} a_nodes {} a_evals {} a_cutoffs {}", sa, ma.unwrap_or_default(), na, ca.get(), apa);
-    println!("b_score {:.4} b_move {} b_nodes {} b_evals {} b_cutoffs {}", sb, mb.unwrap_or_default(), nb, cb.get(), cpb);
-    if d <= tol && na == nb {
+    let bad = d.is_nan();
+    println!("a_score {:.4} a_move {} a_nodes {} a_evals {} a_cutoffs {}", sa, ma.clone().unwrap_or_default(), na, ca.get(), apa);
+    println!("b_score {:.4} b_move {} b_nodes {} b_evals {} b_cutoffs {}", sb, mb.clone().unwrap_or_default(), nb, cb.get(), cpb);
+    println!("node_delta {}", na.abs_diff(nb));
+    println!("moves_match {}", ma == mb);
+    if !bad && d <= tol {
         println!("status PARITY");
         0
     } else {

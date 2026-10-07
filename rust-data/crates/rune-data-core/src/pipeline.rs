@@ -425,11 +425,13 @@ pub fn sample_uniform(records: Vec<Record>, n: usize, seed: u64) -> Vec<Record> 
 }
 
 pub fn sample_stratified(records: Vec<Record>, n: usize, seed: u64) -> Vec<Record> {
+    let total = records.len();
+    let want = n.min(total);
     let mut buckets: [Vec<Record>; 3] = [Vec::new(), Vec::new(), Vec::new()];
     for r in records {
         buckets[r.phase.min(2) as usize].push(r);
     }
-    let per = n / 3;
+    let per = want / 3;
     let mut out = Vec::new();
     let mut rng = Rng::new(seed);
     for b in buckets.iter_mut() {
@@ -438,6 +440,16 @@ pub fn sample_stratified(records: Vec<Record>, n: usize, seed: u64) -> Vec<Recor
             b.swap(i, j);
         }
         out.extend(b.drain(..per.min(b.len())));
+    }
+    let mut rest: Vec<Record> = buckets.into_iter().flatten().collect();
+    for i in (1..rest.len()).rev() {
+        let j = rng.below(i + 1);
+        rest.swap(i, j);
+    }
+    out.extend(rest.into_iter().take(want.saturating_sub(out.len())));
+    for i in (1..out.len()).rev() {
+        let j = rng.below(i + 1);
+        out.swap(i, j);
     }
     out
 }
@@ -1458,5 +1470,30 @@ mod target_tests {
         assert_eq!(scores, vec![5.0, 4.0]);
         assert_eq!(topk_by_score(&v, 0).len(), 0);
         assert_eq!(topk_by_score(&v, 99).len(), 5);
+    }
+
+    #[test]
+    fn stratified_fills_remainder() {
+        let mk = |fen: &str, phase: u8| {
+            let mut r = crate::record::Record::from_fen(fen, "g", 8, 0, false).unwrap();
+            r.phase = phase;
+            r
+        };
+        let start = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1";
+        let end = "7k/8/8/8/8/8/8/K6R w - - 0 1";
+        let mut v = Vec::new();
+        for _ in 0..4 {
+            v.push(mk(start, 0));
+        }
+        for _ in 0..4 {
+            v.push(mk(start, 1));
+        }
+        for _ in 0..4 {
+            v.push(mk(end, 2));
+        }
+        assert_eq!(sample_stratified(v.clone(), 10, 7).len(), 10);
+        assert_eq!(sample_stratified(v.clone(), 9, 7).len(), 9);
+        assert_eq!(sample_stratified(v.clone(), 99, 7).len(), 12);
+        assert_eq!(sample_stratified(v, 0, 7).len(), 0);
     }
 }

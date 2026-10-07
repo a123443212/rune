@@ -1,5 +1,6 @@
 use shakmaty::{Chess, Position};
 use shakmaty::fen::Fen;
+use shakmaty::zobrist::Zobrist64;
 use std::str::FromStr;
 use crate::lazy::LazyConfig;
 
@@ -66,9 +67,10 @@ where
         let mut best_m = None;
         let mut alpha = f32::NEG_INFINITY;
         let beta = f32::INFINITY;
+        let mut hist = vec![pos.zobrist_hash(shakmaty::EnPassantMode::Legal)];
         for m in &moves {
             let child = apply_uci(&pos, m);
-            let v = -self.negamax(&child, depth.saturating_sub(1), 1, -beta, -alpha);
+            let v = -self.negamax(&child, depth.saturating_sub(1), 1, -beta, -alpha, &mut hist);
             self.stats.nodes += 1;
             self.stats.root_count += 1;
             if best.is_none_or(|b| v > b) {
@@ -94,12 +96,25 @@ where
         (s, best_m)
     }
 
-    fn negamax(&mut self, pos: &Chess, depth: usize, ply: usize, mut alpha: f32, beta: f32) -> f32 {
+    fn negamax(&mut self, pos: &Chess, depth: usize, ply: usize, mut alpha: f32, beta: f32, hist: &mut Vec<Zobrist64>) -> f32 {
+        let key: Zobrist64 = pos.zobrist_hash(shakmaty::EnPassantMode::Legal);
+        hist.push(key);
+        if hist.iter().filter(|h| **h == key).count() >= 3 {
+            hist.pop();
+            self.stats.nodes += 1;
+            return 0.0;
+        }
+        if pos.halfmoves() >= 100 {
+            hist.pop();
+            self.stats.nodes += 1;
+            return 0.0;
+        }
         if depth == 0 {
             self.stats.nodes += 1;
             self.stats.evals += 1;
             self.stats.leaf_count += 1;
             let fen = Fen::from_position(pos, shakmaty::EnPassantMode::Legal).to_string();
+            hist.pop();
             return (self.eval)(&fen);
         }
         let moves = pos.legal_moves();
@@ -107,12 +122,13 @@ where
             self.stats.nodes += 1;
             self.stats.evals += 1;
             self.stats.leaf_count += 1;
+            hist.pop();
             return terminal_score(pos, ply);
         }
         let mut best = f32::NEG_INFINITY;
         for m in &moves {
             let child = apply_uci_move(pos, m);
-            let v = -self.negamax(&child, depth - 1, ply + 1, -beta, -alpha);
+            let v = -self.negamax(&child, depth - 1, ply + 1, -beta, -alpha, hist);
             self.stats.nodes += 1;
             if beta - alpha > 1.0 {
                 self.stats.pv_count += 1;
@@ -132,6 +148,7 @@ where
                 break;
             }
         }
+        hist.pop();
         best
     }
 }
