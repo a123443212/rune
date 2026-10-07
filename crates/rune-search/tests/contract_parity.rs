@@ -31,6 +31,19 @@ fn cache_rejects_foreign_model() {
 }
 
 #[test]
+fn ep_in_cache_key_and_cap_zero_disables() {
+    let a = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 2";
+    let b = "rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 2";
+    assert_ne!(cache_key(a, "h", "full"), cache_key(b, "h", "full"));
+    let mut c = EvalCache::new("h", "full", 0);
+    for i in 0..100 {
+        c.put(&format!("f{}", i), 0.5);
+    }
+    assert!(c.get("f0").is_none());
+    assert!(c.get("f99").is_none());
+}
+
+#[test]
 fn lazy_modes_match_spec() {
     let l0 = LazyConfig::default();
     let l1 = LazyConfig { mode: LazyMode::L1, ..Default::default() };

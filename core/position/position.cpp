@@ -25,6 +25,9 @@ bool Position::makeMove(const Move& m) {
 }
 
 void Position::unmakeMove() {
+  if (board_.historySize() == 0) {
+    return;
+  }
   board_.unmakeMove();
   meta_.ply -= 1;
   meta_.phase = board_.gamePhase();
@@ -38,11 +41,7 @@ std::string Position::normalizedKey() const {
   std::string fen = board_.toFen();
   auto pos = fen.find_last_of(' ');
   auto prev = fen.find_last_of(' ', pos - 1);
-  std::string withoutCounters = fen.substr(0, prev);
-  if (board_.sideToMove() == Color::Black) {
-    return withoutCounters;
-  }
-  return withoutCounters;
+  return fen.substr(0, prev);
 }
 
 }

@@ -44,9 +44,11 @@ std::string evalCacheKey(const std::string& fen, const std::string& modelHash, c
   size_t sp = fen.find(' ');
   size_t sp2 = std::string::npos;
   size_t sp3 = std::string::npos;
+  size_t sp4 = std::string::npos;
   if (sp != std::string::npos) sp2 = fen.find(' ', sp + 1);
   if (sp2 != std::string::npos) sp3 = fen.find(' ', sp2 + 1);
-  std::string core = fen.substr(0, sp3);
+  if (sp3 != std::string::npos) sp4 = fen.find(' ', sp3 + 1);
+  std::string core = fen.substr(0, sp4);
   std::string raw = core + "|" + modelHash + "|" + mode;
   uint64_t h = 1469598103934665603ULL;
   for (unsigned char c : raw) {

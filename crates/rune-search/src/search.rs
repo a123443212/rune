@@ -3,6 +3,15 @@ use shakmaty::fen::Fen;
 use std::str::FromStr;
 use crate::lazy::LazyConfig;
 
+pub const MATE_SCORE: f32 = 10000.0;
+
+fn terminal_score(pos: &Chess, ply: usize) -> f32 {
+    if pos.is_checkmate() {
+        return -(MATE_SCORE - ply as f32);
+    }
+    0.0
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct SearchStats {
     pub nodes: usize,
@@ -77,7 +86,7 @@ where
         let s = best.unwrap_or_else(|| {
             self.stats.nodes += 1;
             self.stats.evals += 1;
-            (self.eval)(fen)
+            terminal_score(&pos, 0)
         });
         self.stats.seconds = t0.elapsed().as_secs_f64();
         self.stats.root_score = s;
@@ -98,8 +107,7 @@ where
             self.stats.nodes += 1;
             self.stats.evals += 1;
             self.stats.leaf_count += 1;
-            let fen = Fen::from_position(pos, shakmaty::EnPassantMode::Legal).to_string();
-            return (self.eval)(&fen);
+            return terminal_score(pos, ply);
         }
         let mut best = f32::NEG_INFINITY;
         for m in &moves {

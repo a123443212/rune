@@ -78,3 +78,14 @@ void testKingTwoSquareOffRank() {
   b.unmakeMove();
   CHECK(b.toFen() == before);
 }
+
+void testEnPassantUnmake() {
+  Board b("7k/8/8/3pP3/8/8/8/K7 w - d6 0 1");
+  std::string before = b.toFen();
+  Move m;
+  m.from = makeSq(4, 4);
+  m.to = makeSq(3, 5);
+  CHECK(b.makeMove(m));
+  b.unmakeMove();
+  CHECK(b.toFen() == before);
+}

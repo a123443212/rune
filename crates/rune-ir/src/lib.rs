@@ -85,7 +85,7 @@ pub struct BufferPlace {
 pub struct MemoryPlan {
     pub arena_bytes: usize,
     pub alignment: usize,
-    pub buffers: std::collections::HashMap<String, BufferPlace>,
+    pub buffers: std::collections::BTreeMap<String, BufferPlace>,
     pub strategy: String,
     pub in_place: Vec<String>,
 }
@@ -101,7 +101,7 @@ pub struct RuneIr {
     pub fusion: Vec<FusionGroup>,
     pub kernel_plan: Vec<KernelEntry>,
     pub target: IrTarget,
-    pub hashes: std::collections::HashMap<String, String>,
+    pub hashes: std::collections::BTreeMap<String, String>,
 }
 
 pub fn valid_isa(isa: &str) -> bool {

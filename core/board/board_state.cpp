@@ -31,6 +31,7 @@ bool Board::setFen(const std::string& fen) {
       file = 0;
     } else if (std::isdigit(static_cast<unsigned char>(c))) {
       file += c - '0';
+      if (file > 8) return false;
     } else {
       if (file >= 8 || rank < 0) return false;
       Color col = std::isupper(static_cast<unsigned char>(c)) ? Color::White : Color::Black;
@@ -48,24 +49,34 @@ bool Board::setFen(const std::string& fen) {
       file += 1;
     }
   }
+  if (side != "w" && side != "b") return false;
   side_ = (side == "b") ? Color::Black : Color::White;
   castling_ = 0;
   if (castle != "-") {
     for (char c : castle) {
       if (c == 'K') castling_ |= kCastleWK;
-      if (c == 'Q') castling_ |= kCastleWQ;
-      if (c == 'k') castling_ |= kCastleBK;
-      if (c == 'q') castling_ |= kCastleBQ;
+      else if (c == 'Q') castling_ |= kCastleWQ;
+      else if (c == 'k') castling_ |= kCastleBK;
+      else if (c == 'q') castling_ |= kCastleBQ;
+      else return false;
     }
   }
   epSquare_ = -1;
   if (ep != "-") {
+    if (ep.size() != 2) return false;
     int f = ep[0] - 'a';
     int r = ep[1] - '1';
     if (onBoard(f, r)) epSquare_ = makeSq(f, r);
   }
-  halfmove_ = static_cast<uint16_t>(std::stoi(half));
-  fullmove_ = static_cast<uint16_t>(std::stoi(full));
+  try {
+    int halfV = std::stoi(half);
+    int fullV = std::stoi(full);
+    if (halfV < 0 || fullV < 1) return false;
+    halfmove_ = static_cast<uint16_t>(halfV);
+    fullmove_ = static_cast<uint16_t>(fullV);
+  } catch (...) {
+    return false;
+  }
   return isLegalPosition();
 }
 

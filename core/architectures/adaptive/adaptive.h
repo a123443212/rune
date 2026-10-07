@@ -27,6 +27,7 @@ struct RoutingThresholds {
   float diffT = 0.5f;
   float uncT = 0.5f;
   float stabT = 0.5f;
+  float tHigh = 0.5f;
   bool hasTLow = false;
   float tLow = 0.5f;
 };

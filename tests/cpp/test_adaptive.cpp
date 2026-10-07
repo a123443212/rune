@@ -114,6 +114,26 @@ void testAdaptiveHysteresis() {
   CHECK(m2.configure(plain, err));
   CHECK(m2.route(0.5f, true) == true);
   CHECK(m2.route(0.4f, false) == false);
+  float nan = std::nanf("");
+  CHECK(m2.route(nan, true) == true);
+  CHECK(m2.route(nan, false) == true);
+}
+
+void testRouteSearchHigh() {
+  AdaptiveBuildSpec spec;
+  AdaptiveModel m;
+  std::string err;
+  CHECK(m.configure(spec, err));
+  RoutingThresholds t;
+  t.diffT = 0.5f;
+  t.uncT = 0.5f;
+  t.stabT = 0.5f;
+  t.tHigh = 0.1f;
+  CHECK(m.routeSearch(SearchRoute::Difficulty, 0.2f, 0.0f, 0.0f, false, t) == true);
+  float nan = std::nanf("");
+  RoutingThresholds t2;
+  CHECK(m.routeSearch(SearchRoute::Difficulty, nan, 0.0f, 0.0f, false, t2) == true);
+  CHECK(m.routeSearch(SearchRoute::Difficulty, 0.2f, 0.0f, 0.0f, false, t2) == false);
 }
 
 void testAdaptiveIncremental() {

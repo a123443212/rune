@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use rune_ir::{FusionGroup, IrModel, IrOp, IrTarget, IrTensor, MemoryPlan, RuneIr};
 use rune_model::RuneModel;
 use serde_json::json;
@@ -28,7 +28,7 @@ fn empty_memory() -> MemoryPlan {
     MemoryPlan {
         arena_bytes: 0,
         alignment: 32,
-        buffers: HashMap::new(),
+        buffers: BTreeMap::new(),
         strategy: String::new(),
         in_place: Vec::new(),
     }
@@ -58,6 +58,12 @@ pub fn build_from_model(m: &RuneModel, isa: &str, cpu: &str) -> Result<RuneIr, S
     }
     if quant != "fp32" && quant != "int8" && quant != "int16" {
         return Err(format!("unsupported quantization {}", quant));
+    }
+    if gate != "clip" && gate != "hard_sigmoid" {
+        return Err(format!("unsupported gate {}", gate));
+    }
+    if h1 == 0 || h1 > 4096 || h2 == 0 || h2 > 4096 {
+        return Err(format!("unsupported head {}x{}", h1, h2));
     }
     let adaptive = arch == "RUNE-04" || arch == "RUNE-05";
     let model = IrModel {
@@ -124,7 +130,7 @@ pub fn build_from_model(m: &RuneModel, isa: &str, cpu: &str) -> Result<RuneIr, S
         fusion,
         kernel_plan: Vec::new(),
         target,
-        hashes: HashMap::new(),
+        hashes: BTreeMap::new(),
     };
     Ok(ir)
 }

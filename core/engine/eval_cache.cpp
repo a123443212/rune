@@ -21,6 +21,9 @@ void EvalCache::put(const std::string& fen, float value) {
     it->second = value;
     return;
   }
+  if (cap_ == 0) {
+    return;
+  }
   if (map_.size() >= cap_ && !order_.empty()) {
     map_.erase(order_.front());
     order_.erase(order_.begin());

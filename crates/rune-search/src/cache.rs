@@ -44,6 +44,9 @@ impl EvalCache {
     }
 
     pub fn put(&mut self, fen: &str, value: f32) {
+        if self.cap == 0 {
+            return;
+        }
         let k = cache_key(fen, &self.model_hash, &self.mode);
         if self.map.contains_key(&k) {
             self.map.insert(k, value);

@@ -44,6 +44,10 @@ bool checkIsaSupported(const std::string& isa, std::string& err) {
     err = "avx2 artifact on non-avx2 cpu";
     return false;
   }
+  if (isa == "avx512" && !kern::hasAvx512()) {
+    err = "avx512 artifact on non-avx512 cpu";
+    return false;
+  }
   return true;
 }
 bool readCompiledHeader(const std::string& path, std::string& headerOut, CompiledInfo& info, std::string& err) {

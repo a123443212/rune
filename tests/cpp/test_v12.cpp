@@ -40,6 +40,13 @@ static void testCache() {
   CHECK(std::fabs(v - 0.5f) < 1e-9);
   eng::EvalCache d("modelB", "full", 4);
   CHECK(!d.get("fen1", v));
+  std::string ka = eng::evalCacheKey("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq e3 0 1", "h", "full");
+  std::string kb = eng::evalCacheKey("rnbqkbnr/pppppppp/8/8/4P3/8/PPPP1PPP/RNBQKBNR b KQkq - 0 1", "h", "full");
+  CHECK(ka != kb);
+  eng::EvalCache z("modelZ", "full", 0);
+  for (int i = 0; i < 100; ++i) z.put("fen" + std::to_string(i), 0.5f);
+  CHECK(z.size() == 0);
+  CHECK(!z.get("fen0", v));
 }
 static void testSearchRuns() {
   Board b;
@@ -54,6 +61,20 @@ static void testSearchRuns() {
   CHECK(st.nodes > 0);
   CHECK(st.hasMove);
   CHECK(s > -2.0f && s < 2.0f);
+}
+static void testSearchMate() {
+  eng::LazyConfig cfg;
+  eng::EvalFn ev = [](Board&) -> float { return 0.5f; };
+  eng::SearchStats st;
+  Board mate("rnb1kbnr/pppp1ppp/8/4p3/6Pq/5P2/PPPPP2P/RNBQKBNR w KQkq - 0 1");
+  float s = eng::searchRoot(mate, 2, ev, cfg, st, -1e9f, 1e9f);
+  CHECK(!st.hasMove);
+  CHECK(s < -9000.0f);
+  Board stale("7k/5Q2/6K1/8/8/8/8/8 b - - 0 1");
+  eng::SearchStats st2;
+  float s2 = eng::searchRoot(stale, 2, ev, cfg, st2, -1e9f, 1e9f);
+  CHECK(!st2.hasMove);
+  CHECK(std::fabs(s2) < 1e-6f);
 }
 static void testIncrementalStress() {
   Board b;
@@ -113,6 +134,7 @@ void runV12Tests() {
   testStm();
   testCache();
   testSearchRuns();
+  testSearchMate();
   testIncrementalStress();
   testThreadStates();
 }

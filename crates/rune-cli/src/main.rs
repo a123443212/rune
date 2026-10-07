@@ -134,6 +134,7 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
         }
     };
     let mut maxd: f32 = 0.0;
+    let mut bad = false;
     let mut n = 0;
     for line in data.lines() {
         let fen = line.trim();
@@ -155,7 +156,9 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
         };
         let r2 = ev.forward_tokens(&ev2_tokens);
         let d = (r1.value - r2.value).abs();
-        if d > maxd {
+        if d.is_nan() {
+            bad = true;
+        } else if d > maxd {
             maxd = d;
         }
         let _ = before;
@@ -163,8 +166,9 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
         println!("pos {} value {:.6} wdl {:.4} {:.4} {:.4}", n, r1.value, r1.wdl[0], r1.wdl[1], r1.wdl[2]);
         n += 1;
     }
-    println!("compared {} max_abs_diff {:.9} tol {:.9} {}", n, maxd, tol, if maxd <= tol { "PASS" } else { "FAIL" });
-    if maxd <= tol {
+    let pass = !bad && maxd <= tol;
+    println!("compared {} max_abs_diff {:.9} tol {:.9} {}", n, maxd, tol, if pass { "PASS" } else { "FAIL" });
+    if pass {
         0
     } else {
         2

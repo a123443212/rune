@@ -28,6 +28,7 @@ pub fn run(generic: &str, compiled: &str, positions: &str, tol: f32) -> i32 {
         }
     };
     let mut maxd: f32 = 0.0;
+    let mut bad = false;
     let mut n = 0;
     for line in data.lines() {
         let fen = line.trim();
@@ -44,14 +45,17 @@ pub fn run(generic: &str, compiled: &str, positions: &str, tol: f32) -> i32 {
         let r1 = ev_g.evaluate_board(&b);
         let r2 = ev_c.evaluate_board(&b);
         let d = (r1.value - r2.value).abs();
-        if d > maxd {
+        if d.is_nan() {
+            bad = true;
+        } else if d > maxd {
             maxd = d;
         }
         println!("pos {} generic {:.6} compiled {:.6} diff {:.2e}", n, r1.value, r2.value, d);
         n += 1;
     }
-    println!("compared {} max_abs_diff {:.9} tol {:.9} {}", n, maxd, tol, if maxd <= tol { "PASS" } else { "FAIL" });
-    if maxd <= tol {
+    let pass = !bad && maxd <= tol;
+    println!("compared {} max_abs_diff {:.9} tol {:.9} {}", n, maxd, tol, if pass { "PASS" } else { "FAIL" });
+    if pass {
         0
     } else {
         2

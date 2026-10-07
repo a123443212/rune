@@ -23,6 +23,7 @@ void runeTestFailClose(const char* file, int line, double a, double b, double to
 void testBoard();
 void testMakeUnmakeConsistency();
 void testKingTwoSquareOffRank();
+void testEnPassantUnmake();
 void testFeatures();
 void testAccumulatorIncremental();
 void testAttentionMath();
@@ -44,6 +45,7 @@ void testDenseParamAccounting();
 void testAdaptiveConfigure();
 void testAdaptiveRoutingModes();
 void testAdaptiveHysteresis();
+void testRouteSearchHigh();
 void testAdaptiveIncremental();
 void testAdaptiveModelIO();
 void testAdaptiveParamAccounting();

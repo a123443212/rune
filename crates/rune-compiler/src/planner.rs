@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::BTreeMap;
 use rune_ir::{BufferPlace, KernelEntry, MemoryPlan, RuneIr};
 
 fn fusion_of(kind: &str) -> String {
@@ -65,7 +65,7 @@ pub fn plan_memory(tokens: usize, dim: usize, h1: usize, h2: usize) -> MemoryPla
         vec!["k_buf", "h2_buf"],
         vec!["scores_buf", "gate_buf"],
     ];
-    let mut places: HashMap<String, BufferPlace> = HashMap::new();
+    let mut places: BTreeMap<String, BufferPlace> = BTreeMap::new();
     let mut off: usize = 0;
     for (name, elems) in live {
         let mut shared_off: Option<usize> = None;

@@ -75,6 +75,20 @@ pub fn token_of(tokens: usize, group: u8, index: u16) -> Option<usize> {
     }
     None
 }
+pub fn token_scale_group(tokens: usize, token: usize) -> usize {
+    if tokens == 8 {
+        return token.min(7);
+    }
+    if tokens == 6 {
+        const PRIMARY: [usize; 6] = [0, 1, 2, 3, 5, 7];
+        return PRIMARY[token.min(5)];
+    }
+    if tokens == 10 {
+        const PRIMARY: [usize; 10] = [0, 1, 2, 2, 3, 4, 5, 5, 6, 7];
+        return PRIMARY[token.min(9)];
+    }
+    token.min(7)
+}
 pub struct Accumulator {
     pub dim: usize,
     pub tokens: usize,
@@ -182,7 +196,7 @@ impl IntAccumulator {
     pub fn tokens(&self, out: &mut [f32]) {
         for g in 0..self.tokens {
             for d in 0..self.dim {
-                let v = self.acc[g * self.dim + d] as f32 * self.scales[g.min(7)];
+                let v = self.acc[g * self.dim + d] as f32 * self.scales[token_scale_group(self.tokens, g)];
                 out[g * self.dim + d] = kernel::clipped_relu(v);
             }
         }

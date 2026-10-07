@@ -22,6 +22,7 @@ int main() {
   testBoard();
   testMakeUnmakeConsistency();
   testKingTwoSquareOffRank();
+  testEnPassantUnmake();
   testFeatures();
   testAccumulatorIncremental();
   testAttentionMath();
@@ -44,6 +45,7 @@ int main() {
   testAdaptiveConfigure();
   testAdaptiveRoutingModes();
   testAdaptiveHysteresis();
+  testRouteSearchHigh();
   testAdaptiveIncremental();
   testAdaptiveModelIO();
   testAdaptiveParamAccounting();

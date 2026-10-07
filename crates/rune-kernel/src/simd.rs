@@ -26,6 +26,14 @@ pub fn has_avx2_fma() -> bool {
 pub fn has_avx2_fma() -> bool {
     false
 }
+#[cfg(target_arch = "x86_64")]
+pub fn has_avx512() -> bool {
+    std::is_x86_feature_detected!("avx512f")
+}
+#[cfg(not(target_arch = "x86_64"))]
+pub fn has_avx512() -> bool {
+    false
+}
 pub fn active_path() -> KernelPath {
     match FORCED.load(Ordering::SeqCst) {
         1 => KernelPath::Scalar,

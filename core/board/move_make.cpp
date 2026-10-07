@@ -78,11 +78,14 @@ bool Board::makeMove(const Move& m) {
   snap.captured = squares_[m.to];
   snap.castling = castling_;
   snap.epSquarePrev = epSquare_;
+  snap.isEp = (moving.type == PieceType::Pawn && m.to == epSquare_ && squares_[m.to].empty() &&
+               fileOf(m.from) != fileOf(m.to));
+  if (snap.isEp) {
+    snap.captured = squares_[makeSq(fileOf(m.to), rankOf(m.from))];
+  }
   snap.halfmove = halfmove_;
   snap.fullmove = fullmove_;
   snap.isCastle = isCastle;
-  snap.isEp = (moving.type == PieceType::Pawn && m.to == epSquare_ && squares_[m.to].empty() &&
-               fileOf(m.from) != fileOf(m.to));
   Color us = side_;
   std::array<Piece, 64> saved = squares_;
   uint8_t savedCastling = castling_;

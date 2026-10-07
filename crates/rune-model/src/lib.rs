@@ -77,8 +77,17 @@ fn get_str(v: &serde_json::Value, a: &str, b: &str) -> String {
 fn get_u32(v: &serde_json::Value, key: &str, fb: u32) -> u32 {
     v.get(key).and_then(|x| x.as_u64()).unwrap_or(fb as u64) as u32
 }
-fn get_usize(v: &serde_json::Value, key: &str, fb: usize) -> usize {
-    v.get(key).and_then(|x| x.as_u64()).unwrap_or(fb as u64) as usize
+fn need_usize(v: &serde_json::Value, key: &str) -> Result<usize, LoadError> {
+    match v.get(key) {
+        None => Err(LoadError::BadHeader(format!("missing {}", key))),
+        Some(x) => x.as_u64().map(|n| n as usize).ok_or_else(|| LoadError::BadHeader(format!("bad {}", key))),
+    }
+}
+fn need_scale(scales: &HashMap<String, f32>, name: &str) -> Result<f32, LoadError> {
+    match scales.get(name) {
+        Some(s) if *s > 0.0 && s.is_finite() => Ok(*s),
+        _ => Err(LoadError::BadHeader(format!("bad scale {}", name))),
+    }
 }
 pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     let bytes = fs::read(path).map_err(|e| LoadError::Io(e.to_string()))?;
@@ -114,8 +123,8 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     if !spec::is_supported_quant(&quant) {
         return Err(LoadError::UnsupportedQuant(quant));
     }
-    let tokens = get_usize(&hv, "tokens", 8);
-    let token_dim = get_usize(&hv, "token_dim", 32);
+    let tokens = need_usize(&hv, "tokens")?;
+    let token_dim = need_usize(&hv, "token_dim")?;
     if tokens == 0 || tokens > 16 || token_dim == 0 || token_dim > 128 {
         return Err(LoadError::ShapeMismatch("tokens or dim out of range".to_string()));
     }
@@ -178,6 +187,9 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     let mut off: usize = 0;
     let mut arrays: HashMap<String, Vec<f32>> = HashMap::new();
     for m in &metas {
+        if arrays.contains_key(&m.name) {
+            return Err(LoadError::BadHeader(format!("duplicate tensor {}", m.name)));
+        }
         let mut count: usize = 1;
         for d in &m.shape {
             count = count.checked_mul(*d).ok_or_else(|| LoadError::Oversized("tensor mul overflow".to_string()))?;
@@ -189,7 +201,7 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
             if off + count > payload.len() {
                 return Err(LoadError::Truncated);
             }
-            let scale = scales.get(&m.name).copied().unwrap_or(1.0);
+            let scale = need_scale(&scales, &m.name)?;
             let mut v: Vec<f32> = Vec::with_capacity(count);
             for i in 0..count {
                 let q = payload[off + i] as i8 as i32;
@@ -201,7 +213,7 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
             if off + count * 2 > payload.len() {
                 return Err(LoadError::Truncated);
             }
-            let scale = scales.get(&m.name).copied().unwrap_or(1.0);
+            let scale = need_scale(&scales, &m.name)?;
             let mut v: Vec<f32> = Vec::with_capacity(count);
             for i in 0..count {
                 let lo = payload[off + i * 2] as u16;
@@ -224,6 +236,9 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
             off += count * 4;
             arrays.insert(m.name.clone(), v);
         }
+    }
+    if off != payload.len() {
+        return Err(LoadError::BadHeader("trailing payload bytes".to_string()));
     }
     let mut sarr = [1.0_f32; 8];
     for g in 0..8 {

@@ -23,9 +23,9 @@ pub fn run(model: &str, out: &str, isa: &str, cpu: &str) -> i32 {
         eprintln!("ir invalid: {}", errs.join("; "));
         return 2;
     }
-    let kp = serde_json::to_vec(&ir.kernel_plan).unwrap_or_default();
-    let mp2 = serde_json::to_vec(&ir.memory).unwrap_or_default();
-    let tp = serde_json::to_vec(&ir.target).unwrap_or_default();
+    let kp = serde_json::to_vec(&serde_json::to_value(&ir.kernel_plan).unwrap_or(serde_json::Value::Array(vec![]))).unwrap_or_default();
+    let mp2 = serde_json::to_vec(&serde_json::to_value(&ir.memory).unwrap_or(serde_json::Value::Null)).unwrap_or_default();
+    let tp = serde_json::to_vec(&serde_json::to_value(&ir.target).unwrap_or(serde_json::Value::Null)).unwrap_or_default();
     let ph = rune_compiler::plan_hash(&kp, &mp2, &tp);
     let payload = m.payload_bytes.clone();
     let mut header = m.header.raw.clone();
@@ -38,8 +38,10 @@ pub fn run(model: &str, out: &str, isa: &str, cpu: &str) -> i32 {
     header["kernel_plan"] = serde_json::to_value(&ir.kernel_plan).unwrap_or(serde_json::Value::Array(vec![]));
     header["fusion_plan"] = serde_json::to_value(&ir.fusion).unwrap_or(serde_json::Value::Array(vec![]));
     header["memory_plan"] = serde_json::to_value(&ir.memory).unwrap_or(serde_json::Value::Null);
+    header["target"] = serde_json::to_value(&ir.target).unwrap_or(serde_json::Value::Null);
     header["kernel_plan_hash"] = serde_json::Value::String(ph.clone());
-    header["source_hash"] = serde_json::Value::String(rune_compiler::source_hash(b"{}", &payload));
+    let src = serde_json::to_vec(&m.header.raw).unwrap_or_default();
+    header["source_hash"] = serde_json::Value::String(rune_compiler::source_hash(&src, &payload));
     let bytes = rune_compiler::write_compiled(header, &payload);
     match std::fs::write(out, &bytes) {
         Ok(()) => {

@@ -22,6 +22,8 @@ fn get_str(v: &serde_json::Value, k: &str) -> String {
     v.get(k).and_then(|x| x.as_str()).unwrap_or("").to_string()
 }
 
+const MAX_ARENA_BYTES: usize = 1 << 30;
+
 pub fn load_compiled_header(path: &Path) -> Result<CompiledHeader> {
     let data = std::fs::read(path).map_err(|e| RuntimeError::InvalidState(e.to_string()))?;
     let (header, _) = rune_compiler::read_header(&data).map_err(RuntimeError::InvalidState)?;
@@ -40,6 +42,9 @@ pub fn load_compiled_header(path: &Path) -> Result<CompiledHeader> {
     if isa == "avx2" && !rune_kernel::simd::has_avx2_fma() {
         return Err(RuntimeError::InvalidState("avx2 artifact on non-avx2 cpu".to_string()));
     }
+    if isa == "avx512" && !rune_kernel::simd::has_avx512() {
+        return Err(RuntimeError::InvalidState("avx512 artifact on non-avx512 cpu".to_string()));
+    }
     let plan: Vec<rune_ir::KernelEntry> = header
         .get("kernel_plan")
         .and_then(|v| serde_json::from_value(v.clone()).ok())
@@ -48,6 +53,19 @@ pub fn load_compiled_header(path: &Path) -> Result<CompiledHeader> {
         return Err(RuntimeError::InvalidState("missing kernel plan".to_string()));
     }
     let mem = header.get("memory_plan").and_then(|v| v.get("arena_bytes")).and_then(|v| v.as_u64()).unwrap_or(0) as usize;
+    if mem > MAX_ARENA_BYTES {
+        return Err(RuntimeError::InvalidState("arena bytes out of range".to_string()));
+    }
+    if let Some(target) = header.get("target") {
+        let kp = serde_json::to_vec(&header.get("kernel_plan").cloned().unwrap_or(serde_json::Value::Array(vec![]))).unwrap_or_default();
+        let mp = serde_json::to_vec(&header.get("memory_plan").cloned().unwrap_or(serde_json::Value::Null)).unwrap_or_default();
+        let tp = serde_json::to_vec(target).unwrap_or_default();
+        let want = rune_compiler::plan_hash(&kp, &mp, &tp);
+        let got = get_str(&header, "kernel_plan_hash");
+        if got != want {
+            return Err(RuntimeError::InvalidState("kernel plan hash mismatch".to_string()));
+        }
+    }
     Ok(CompiledHeader {
         compiled,
         ir_version: irv,

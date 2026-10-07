@@ -210,6 +210,9 @@ void AdaptiveModel::refineForward(const float* cheapFlat, float& value, float* w
 }
 
 bool AdaptiveModel::route(float difficulty, bool prev, float threshold) const {
+  if (!(difficulty == difficulty)) {
+    return true;
+  }
   if (bspec_.hasTLow) {
     if (prev) [[likely]] {
       return difficulty >= bspec_.tLow;
@@ -239,8 +242,15 @@ float AdaptiveModel::stabilityForward(const float* cheapFlat) const {
 bool AdaptiveModel::routeSearch(SearchRoute route, float difficulty, float uncertainty,
                                 float stability, bool prev, const RoutingThresholds& t) const {
   bool needDiff;
-  if (t.hasTLow) needDiff = prev ? difficulty >= t.tLow : difficulty >= t.diffT;
-  else needDiff = difficulty >= t.diffT;
+  if (!(difficulty == difficulty)) {
+    needDiff = true;
+  } else if (difficulty >= t.tHigh) {
+    needDiff = true;
+  } else if (t.hasTLow) {
+    needDiff = prev ? difficulty >= t.tLow : difficulty >= t.diffT;
+  } else {
+    needDiff = difficulty >= t.diffT;
+  }
   bool needUnc = uncertainty >= t.uncT;
   if (route == SearchRoute::Difficulty) return needDiff;
   if (route == SearchRoute::Uncertainty) return needUnc;

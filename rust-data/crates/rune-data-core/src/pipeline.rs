@@ -1070,7 +1070,7 @@ pub fn select_topk(
 }
 
 pub fn topk_by_score(scored: &[ScoredRecord], k: usize) -> Vec<usize> {
-    use std::cmp::Ordering;
+    use std::cmp::{Ordering, Reverse};
     use std::collections::BinaryHeap;
     struct Item {
         score: f32,
@@ -1096,24 +1096,24 @@ pub fn topk_by_score(scored: &[ScoredRecord], k: usize) -> Vec<usize> {
         }
     }
     let k = k.min(scored.len());
-    let mut heap: BinaryHeap<Item> = BinaryHeap::with_capacity(k + 1);
+    if k == 0 {
+        return Vec::new();
+    }
+    let mut heap: BinaryHeap<Reverse<Item>> = BinaryHeap::with_capacity(k + 1);
     for (idx, s) in scored.iter().enumerate() {
-        heap.push(Item {
+        heap.push(Reverse(Item {
             score: s.final_score,
             ident: s.record.identity,
             idx,
-        });
-        if heap.len() > k.max(1) {
+        }));
+        if heap.len() > k {
             heap.pop();
         }
     }
-    let mut top: Vec<usize> = heap
-        .into_sorted_vec()
+    heap.into_sorted_vec()
         .into_iter()
-        .map(|it| it.idx)
-        .collect();
-    top.reverse();
-    top
+        .map(|it| it.0.idx)
+        .collect()
 }
 
 #[derive(Debug, Clone, Default)]
@@ -1408,5 +1408,55 @@ mod target_tests {
         unlabeled.has_teacher = false;
         let rep = verify_target_records(&[good, bad, unlabeled], true);
         assert_eq!((rep.ok, rep.bad_range, rep.missing_teacher), (1, 1, 1));
+    }
+
+    fn scored_record(score: f32, ident: u64) -> ScoredRecord {
+        ScoredRecord {
+            record: crate::record::Record {
+                fen: String::new(),
+                identity: ident,
+                phase: 0,
+                stm: 0,
+                piece_count: 0,
+                pawn_count: 0,
+                queens: 0,
+                imbalance_bucket: 0,
+                teacher_value: 0.0,
+                teacher_wdl: 0,
+                has_teacher: false,
+                teacher_cp: 0,
+                perspective_stm: true,
+                game_hash: 0,
+                ply: 0,
+                source_id: 0,
+                features: Vec::new(),
+                active_round: 0,
+                sel_method: crate::record::SelMethod::None,
+                sel_score: 0.0,
+            },
+            components: ScoreComponents {
+                disagreement: 0.0,
+                uncertainty: 0.0,
+                instability: 0.0,
+                rank_disagreement: 0.0,
+                rarity: 0.0,
+            },
+            final_score: score,
+        }
+    }
+
+    #[test]
+    fn topk_keeps_highest_scores() {
+        let v: Vec<ScoredRecord> = [1.0, 5.0, 3.0, 4.0, 2.0]
+            .into_iter()
+            .enumerate()
+            .map(|(i, s)| scored_record(s, i as u64))
+            .collect();
+        let top = topk_by_score(&v, 2);
+        assert_eq!(top.len(), 2);
+        let scores: Vec<f32> = top.iter().map(|i| v[*i].final_score).collect();
+        assert_eq!(scores, vec![5.0, 4.0]);
+        assert_eq!(topk_by_score(&v, 0).len(), 0);
+        assert_eq!(topk_by_score(&v, 99).len(), 5);
     }
 }

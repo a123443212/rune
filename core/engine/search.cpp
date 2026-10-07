@@ -6,6 +6,13 @@ double SearchStats::nps() const {
   return seconds > 0 ? (double)nodes / seconds : 0.0;
 }
 namespace {
+constexpr float kMateScore = 10000.0f;
+float terminalScore(Board& b, int ply) {
+  if (b.inCheck(b.sideToMove())) {
+    return -(kMateScore - static_cast<float>(ply));
+  }
+  return 0.0f;
+}
 float negamax(Board& b, int depth, int ply, float alpha, float beta, bool root, EvalFn& ev, const LazyConfig& cfg, SearchStats& stats) {
   (void)cfg;
   if (depth <= 0) {
@@ -20,13 +27,13 @@ float negamax(Board& b, int depth, int ply, float alpha, float beta, bool root, 
     ++stats.nodes;
     ++stats.evals;
     ++stats.leafCount;
-    return ev(b);
+    return terminalScore(b, ply);
   }
   float best = -1e9f;
   for (const Move& m : moves) {
-    Board child = b;
-    if (!child.makeMove(m)) continue;
-    float v = -negamax(child, depth - 1, ply + 1, -beta, -alpha, false, ev, cfg, stats);
+    if (!b.makeMove(m)) continue;
+    float v = -negamax(b, depth - 1, ply + 1, -beta, -alpha, false, ev, cfg, stats);
+    b.unmakeMove();
     ++stats.nodes;
     if (root) ++stats.rootCount;
     else if (beta - alpha > 1.0f) ++stats.pvCount;
@@ -49,10 +56,17 @@ float searchRoot(Board& board, int depth, EvalFn ev, const LazyConfig& cfg, Sear
   board.generateLegalMoves(moves);
   float best = -1e9f;
   bool first = true;
+  if (moves.empty()) {
+    stats.nodes += 1;
+    stats.evals += 1;
+    stats.leafCount += 1;
+    stats.rootScore = terminalScore(board, 0);
+    return stats.rootScore;
+  }
   for (const Move& m : moves) {
-    Board child = board;
-    if (!child.makeMove(m)) continue;
-    float v = -negamax(child, depth - 1, 1, -beta, -alpha, false, ev, cfg, stats);
+    if (!board.makeMove(m)) continue;
+    float v = -negamax(board, depth - 1, 1, -beta, -alpha, false, ev, cfg, stats);
+    board.unmakeMove();
     ++stats.nodes;
     ++stats.rootCount;
     if (first || v > best) {

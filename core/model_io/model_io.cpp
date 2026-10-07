@@ -4,6 +4,7 @@
 #include <cstdint>
 #include <fstream>
 #include <new>
+#include <set>
 #include <sstream>
 
 namespace rune {
@@ -449,9 +450,14 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   int dim = out.isFlex ? out.spec.tokenDim : 32;
   std::vector<std::string> archNames;
   std::vector<float> archFlat;
+  std::set<std::string> seenNames;
   size_t totalBytes = 0;
   try {
   for (const TensorMeta& t : metas) {
+    if (!seenNames.insert(t.name).second) {
+      err = "duplicate tensor " + t.name;
+      return false;
+    }
     size_t count = 1;
     for (int s : t.shape) {
       if (s < 0 || s > 1000000) {
@@ -493,9 +499,18 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       }
       double scale = extractNumber(header, t.name, 1.0);
       if (t.dtype == "int8" || t.dtype == "int16") {
+        std::string spat = "\"" + t.name + "\":";
+        if (header.find(spat) == std::string::npos) {
+          err = "missing embedding scale " + t.name;
+          return false;
+        }
+        if (!(scale > 0.0) || !(scale == scale)) {
+          err = "bad embedding scale " + t.name;
+          return false;
+        }
         if (t.dtype == "int8") {
-          std::vector<char> buf(count);
-          f.read(buf.data(), count);
+          std::vector<int8_t> buf(count);
+          f.read(reinterpret_cast<char*>(buf.data()), count);
           if (!f) {
             err = "truncated payload";
             return false;
@@ -552,6 +567,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       archNames.push_back(t.name);
       for (float v : buf) archFlat.push_back(v);
     }
+  }
+  if (f.peek() != std::ifstream::traits_type::eof()) {
+    err = "trailing payload bytes";
+    return false;
   }
   } catch (const std::bad_alloc&) {
     err = "oversized allocation";
