@@ -1,6 +1,7 @@
 import hashlib
 import json
 import os
+import warnings
 
 from training.datasets import pipeline as P
 from training.export.export import export_model
@@ -76,7 +77,7 @@ def experimental_reasons(config):
     arch = config.get("architecture", {})
     for key in ("tokens", "token_dim", "gate", "alpha"):
         if arch.get(key, CORE_ARCH[key]) != CORE_ARCH[key]:
-            reasons.append(f"architecture.{key}={arch.get(key)} deviates from core")
+            warnings.warn(f"architecture.{key}={arch.get(key)} deviates from core")
     return reasons
 
 MILESTONE_TAGS = {10_000_000: "10m", 25_000_000: "25m", 50_000_000: "50m", 100_000_000: "100m",

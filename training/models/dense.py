@@ -93,8 +93,12 @@ class ChannelGate(nn.Module):
         self.token_dims = check_dims(token_dims)
         self.enabled = enabled
         total = sum(self.token_dims)
-        self.ga = nn.Parameter(torch.zeros(total))
-        self.gb = nn.Parameter(torch.ones(total))
+        if enabled:
+            self.ga = nn.Parameter(torch.zeros(total))
+            self.gb = nn.Parameter(torch.ones(total))
+        else:
+            self.register_parameter("ga", None)
+            self.register_parameter("gb", None)
 
     def forward(self, flat):
         if not self.enabled:

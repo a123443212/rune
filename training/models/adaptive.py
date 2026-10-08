@@ -101,6 +101,8 @@ class AdaptiveModel(nn.Module):
         self.threshold = threshold
         self.t_high = threshold if t_high is None else t_high
         self.t_low = t_low
+        if self.t_low is not None and not (self.t_low <= self.threshold <= self.t_high):
+            raise ValueError(f"need t_low <= threshold <= t_high, got {self.t_low}, {self.threshold}, {self.t_high}")
         self.refine_precision = refine_precision
         self.cheap_hidden = cheap_hidden
         self.ref_h1 = ref_h1

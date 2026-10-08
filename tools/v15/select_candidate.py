@@ -2,14 +2,16 @@ import sys
 
 sys.path.insert(0, ".")
 
+from training.models import adaptive, dense, rune_models
+
 MACHINE = "linux-x86_64-cmake-O2-scalar"
 DATE = "2026-10-05"
 
-ARCH_PARAMS = {
-    "C0-MLP": 37156,
-    "C1-ATTN-GAB-8x32": 40388,
-    "C2-Adaptive-04": 49001,
-    "C3-Dense-B": 42592,
+CANDIDATE_BUILDERS = {
+    "C0-MLP": lambda: rune_models.build_model("RUNE-MLP"),
+    "C1-ATTN-GAB-8x32": lambda: rune_models.build_model("RUNE-ATTN-GAB"),
+    "C2-Adaptive-04": adaptive.build_adaptive_model,
+    "C3-Dense-B": lambda: dense.build_dense_model(variant="B"),
 }
 
 CANDIDATES = {
@@ -49,11 +51,15 @@ CANDIDATES = {
 def main():
     rows = []
     for name, c in CANDIDATES.items():
-        c["params"] = ARCH_PARAMS[name]
+        model = CANDIDATE_BUILDERS[name]()
+        total = sum(p.numel() for p in model.parameters())
+        emb = sum(t.numel() for t in model.embedding_tensors().values())
+        c["params"] = total - emb
+        c["params_true"] = total
     print(f"machine={MACHINE} date={DATE}")
-    print("candidate,params,flops_k,full_us,notes")
+    print("candidate,params_arch,params_true,flops_k,full_us,notes")
     for name, c in CANDIDATES.items():
-        print(f"{name},{c['params']},{c['flops_k']},{c['full_us']},{c['evidence']}")
+        print(f"{name},{c['params']},{c['params_true']},{c['flops_k']},{c['full_us']},{c['evidence']}")
     print("quality: unmeasured for all (no trained weights >=25M exist)")
     print("selection: C1-ATTN-GAB-8x32")
 
