@@ -1,3 +1,0 @@
-[workspace]
-members = ["crates/rune-data-core", "crates/rune-data-cli"]
-resolver = "2"

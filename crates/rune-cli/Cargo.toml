@@ -12,7 +12,6 @@ rune-spec = { path = "../rune-spec" }
 rune-model = { path = "../rune-model" }
 rune-kernel = { path = "../rune-kernel" }
 rune-runtime = { path = "../rune-runtime" }
-rune-data = { path = "../rune-data" }
 rune-ir = { path = "../rune-ir" }
 rune-compiler = { path = "../rune-compiler" }
 rune-search = { path = "../rune-search" }

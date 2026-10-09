@@ -98,12 +98,58 @@ def export_model(model, path, quantization="fp32"):
     hh = format(fnv1a(payload), "016x")
     header["model_hash"] = hh
     header["checksum"] = hh
+    tmp = dict(header)
+    tmp["model_hash"] = "0000000000000000"
+    tmp["checksum"] = "0000000000000000"
+    tmp["header_hash"] = "0000000000000000"
+    htmp = json.dumps(tmp, separators=(",", ":")).encode()
+    header["header_hash"] = format(fnv1a(bytes(htmp) + bytes(payload)), "016x")
     hbytes = json.dumps(header, separators=(",", ":")).encode()
     with open(path, "wb") as f:
         f.write(MAGIC)
         f.write(struct.pack("<I", len(hbytes)))
         f.write(hbytes)
         f.write(payload)
+    return header
+
+
+def verify_scales(header):
+    legacy = header.get("scales")
+    qm = header.get("quantization_metadata", {}).get("scales") if isinstance(header.get("quantization_metadata"), dict) else None
+    if isinstance(legacy, dict) and isinstance(qm, dict):
+        if set(legacy.keys()) != set(qm.keys()):
+            raise ValueError("scale mismatch")
+        for k in legacy:
+            if legacy[k] != qm[k]:
+                raise ValueError("scale mismatch")
+    return True
+
+
+def verify_file_hashes(path):
+    import json
+    with open(path, "rb") as f:
+        blob = f.read()
+    assert blob[:4] == MAGIC, "bad magic"
+    (n,) = struct.unpack_from("<I", blob, 4)
+    hbytes = blob[8:8 + n]
+    payload = blob[8 + n:]
+    header = json.loads(hbytes)
+    verify_scales(header)
+    want = header.get("model_hash", header.get("checksum", ""))
+    assert format(fnv1a(payload), "016x") == want, "checksum mismatch"
+    hh = header.get("header_hash", "")
+    if hh:
+        tmp = bytearray(hbytes)
+        for key in (b'"model_hash":"', b'"checksum":"', b'"header_hash":"'):
+            p = bytes(tmp).find(key)
+            while p != -1:
+                v = p + len(key)
+                q = bytes(tmp).find(b'"', v)
+                if q == v + 16:
+                    for i in range(16):
+                        tmp[v + i] = 0x30
+                p = bytes(tmp).find(key, q + 1 if q != -1 else v)
+        assert format(fnv1a(bytes(tmp) + payload), "016x") == hh, "header hash mismatch"
     return header
 
 
@@ -121,7 +167,7 @@ def read_header(path):
 def load_exported_arrays(path):
     import json
 
-    header = read_header(path)
+    header = verify_file_hashes(path)
     with open(path, "rb") as f:
         f.read(4)
         (n,) = struct.unpack("<I", f.read(4))

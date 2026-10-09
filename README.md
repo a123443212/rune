@@ -19,7 +19,7 @@ House rules (stable across all versions):
 | --------- | ---- | -------- |
 | C++ | Chess runtime and inference (board, features, accumulators, architectures, SIMD, model I/O, benchmarks, tests) | `core/`, `benchmarks/`, `bindings/`, `tests/cpp` |
 | Python / PyTorch | Training and research (features mirror, models, losses, datasets, trainer, export, screening, analysis, match harness) | `training/`, `tools/`, `tests/test_*.py` |
-| Rust | Data engine (parse, validate, dedup, filter, shard, serve batches, `.rune-data` format) | `rust-data/`, `tools/data_bridge/` |
+| Rust | Unified Cargo workspace: inference runtime (spec, model, kernel, runtime, search, IR, compiler, CLI) and data engine (parse, validate, dedup, filter, shard, serve batches, `.rune-data` format) | `crates/`, `tools/data_bridge/` |
 
 The three meet only through artifacts: datasets (`.rune-data`,
 manifests) and models (`.rune`, checksums). No subsystem reaches
@@ -29,15 +29,14 @@ into another's internals.
 
 Work proceeds as `rune-vNN` generations. Each generation owns:
 
-- `docs/architecture/rune-vNN.md` — what was built and why
-- `docs/experiments/rune-vNN-plan.md`, `rune-vNN-results.md` — running log
-- `docs/experiments/rune-vNN-vMM-audit.md` — evidence-gated audit of the previous generation
-- `docs/performance/rune-vNN-*.md` — measured numbers with machine caveats
 - `configs/vNN/` — experiment configs for that generation
-- `docs/experiments/failed/` — dead ends, kept readable
+- `spec/` — normative contracts (runtime, features, model format,
+  quantization, IR) plus golden test vectors in `spec/test-vectors/`
+- `spec/VERSIONS.md` — which version numbers exist and what they cover
 
-To find the current state, read the newest
-`docs/experiments/rune-vNN-results.md` (or `git log --oneline`).
+There is no separate docs tree: history lives in `git log --oneline`.
+To find the current state, read the newest generation's config in
+`configs/` and the matching spec, or check `git log --oneline`.
 Any document that names a "latest version" instead of pointing
 here is stale by definition.
 
@@ -50,8 +49,15 @@ cmake -S . -B build && cmake --build build -j4
 pip install -r requirements.txt
 pytest tests/               # Python suite (some tests need the bindings below)
 
-cargo build --workspace --manifest-path rust-data/Cargo.toml
-cargo test --workspace --manifest-path rust-data/Cargo.toml
+cargo build --workspace
+cargo test --workspace --locked   # single Rust workspace: runtime + data engine
+```
+
+Two Rust binaries come out of the workspace:
+
+```bash
+cargo run -p rune-cli -- eval --model <model.rune> --fen "<fen>"
+cargo run -p rune-data-cli -- --help   # data engine: ingest, validate, shard, ...
 ```
 
 Python bindings (`rune_bindings`) need CPython headers. Without
@@ -71,12 +77,13 @@ python tools/dataset/build_real_pool.py --out data/pool.jsonl --games 200
 python tools/dataset/label_engine.py --pool data/pool.jsonl --out data/labeled.jsonl \
     --engine /path/to/stockfish --depth 12 --copy-to-ground-truth
 python tools/screening/run_screening.py --config configs/vNN/<leg>.yaml --pool data/labeled.jsonl
-./rust-data/target/release/rune-data benchmark --pool data/pool.jsonl
+./target/release/rune-data benchmark --pool data/pool.jsonl
 ```
 
 Every run records config, seed, dataset/teacher/model hashes,
 hyperparameters, and position counts in `metrics.json`; see the
-current generation's plan doc for interpretation rules.
+matching config in `configs/` and `spec/VERSIONS.md` for
+interpretation rules.
 
 ## Key conventions (decided once, followed everywhere)
 

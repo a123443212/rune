@@ -25,10 +25,8 @@ jobs:
       - uses: actions/checkout@v4
       - name: toolchain
         uses: dtolnay/rust-toolchain@stable
-      - name: new workspace
+      - name: rust workspace
         run: cargo test --workspace --locked
-      - name: legacy data engine
-        run: cargo test --workspace --manifest-path rust-data/Cargo.toml
       - name: compile smoke
         run: cargo run --release -p rune-cli -- compile --model spec/test-vectors/models/small-gab-fp32.rune --out /tmp/ci-portable.rune --isa portable
       - name: inspect smoke

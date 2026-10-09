@@ -46,7 +46,7 @@ def test_bridge_matches_python_collate():
     rb = to_torch_batch(rs_recs)
     pb = next(iter(make_loader(kept, batch_size=4096, shuffle=False, seed=0)[0]))
     assert len(rb[0][0]) == len(pb[0][0])
-    for g in range(8):
+    for g in range(9):
         assert torch.equal(pb[0][g], rb[0][g]), f"ids group {g}"
         assert torch.equal(pb[1][g], rb[1][g]), f"masks group {g}"
 

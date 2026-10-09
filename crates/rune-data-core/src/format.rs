@@ -3,7 +3,7 @@ use crate::record::Record;
 
 pub const MAGIC: &[u8; 8] = b"RUNEDATA";
 pub const FORMAT_VERSION: u32 = 1;
-pub const SCHEMA_VERSION: u32 = 1;
+pub const SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[repr(u8)]
@@ -186,8 +186,11 @@ fn decode_record(cur: &mut Cursor, schema: u32) -> Result<Record> {
     for _ in 0..feat_count {
         let g = cur.u16()?;
         let i = cur.u16()?;
-        if g > 7 {
+        if g > 8 {
             return Err(Error::BadFormat(format!("bad group {g}")));
+        }
+        if (i as usize) >= crate::features::VOCAB_SIZES[g as usize] {
+            return Err(Error::BadFormat(format!("bad index {i} for group {g}")));
         }
         features.push((g as u8, i));
     }

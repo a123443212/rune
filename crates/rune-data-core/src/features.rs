@@ -332,6 +332,31 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
         feats.push((7, (37 + board::sq_file(rel(board.ep_sq as usize))) as u16));
     }
     feats.push((7, (45 + (board.halfmove_clock / 20).min(4)) as u16));
+    let mut pair_ids: Vec<i32> = Vec::new();
+    for sq in 0..64 {
+        match board.sq[sq] {
+            Some(c) if c.kind == PAWN && sq >= 8 && sq <= 55 => {
+                let ci = if c.color == us { 0 } else { 1 };
+                pair_ids.push(ci * 48 + (rel(sq) as i32 - 8));
+            }
+            _ => {}
+        }
+    }
+    for i in 0..pair_ids.len() {
+        for j in (i + 1)..pair_ids.len() {
+            let pa = pair_ids[i];
+            let pb = pair_ids[j];
+            if pa == pb {
+                continue;
+            }
+            let lo = if pa < pb { pa } else { pb };
+            let hi = if pa < pb { pb } else { pa };
+            let idx = hi * (hi - 1) / 2 + lo;
+            if idx >= 0 && idx < 4560 {
+                feats.push((8, idx as u16));
+            }
+        }
+    }
     feats.sort_unstable();
     feats.dedup();
     feats

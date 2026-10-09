@@ -89,6 +89,31 @@ fn need_scale(scales: &HashMap<String, f32>, name: &str) -> Result<f32, LoadErro
         _ => Err(LoadError::BadHeader(format!("bad scale {}", name))),
     }
 }
+fn zero_hash_values(hstr: &str) -> String {
+    let mut out = hstr.to_string();
+    for key in ["\"model_hash\":\"", "\"checksum\":\"", "\"header_hash\":\""] {
+        let mut start = 0;
+        loop {
+            let hay = out[start..].to_string();
+            let found = hay.find(key);
+            let pos = match found {
+                Some(p) => start + p,
+                None => break,
+            };
+            let v = pos + key.len();
+            if v + 17 <= out.len() && out[v..v + 16].chars().all(|c| c.is_ascii_hexdigit()) && out[v + 16..].chars().next() == Some('"') {
+                out.replace_range(v..v + 16, "0000000000000000");
+                start = v + 16;
+            } else {
+                start = v;
+            }
+            if start >= out.len() {
+                break;
+            }
+        }
+    }
+    out
+}
 pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     let bytes = fs::read(path).map_err(|e| LoadError::Io(e.to_string()))?;
     if bytes.len() < 8 {
@@ -151,24 +176,46 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     if metas.is_empty() {
         return Err(LoadError::BadHeader("empty tensor list".to_string()));
     }
-    let mut scales: HashMap<String, f32> = HashMap::new();
+    let mut legacy_scales: HashMap<String, f64> = HashMap::new();
     if let Some(sv) = hv.get("scales").and_then(|x| x.as_object()) {
         for (k, v) in sv {
             if let Some(f) = v.as_f64() {
-                scales.insert(k.clone(), f as f32);
+                legacy_scales.insert(k.clone(), f);
             }
         }
     }
+    let mut qm_scales: HashMap<String, f64> = HashMap::new();
     if let Some(qm) = hv.get("quantization_metadata").and_then(|x| x.as_object()) {
         if let Some(s2) = qm.get("scales").and_then(|x| x.as_object()) {
             for (k, v) in s2 {
                 if let Some(f) = v.as_f64() {
-                    scales.insert(k.clone(), f as f32);
+                    qm_scales.insert(k.clone(), f);
                 }
             }
         }
     }
+    if !legacy_scales.is_empty() && !qm_scales.is_empty() {
+        if legacy_scales.len() != qm_scales.len() {
+            return Err(LoadError::BadHeader("scale mismatch".to_string()));
+        }
+        for (k, v) in &legacy_scales {
+            match qm_scales.get(k) {
+                Some(w) if w == v => {}
+                _ => return Err(LoadError::BadHeader("scale mismatch".to_string())),
+            }
+        }
+    }
+    let mut scales: HashMap<String, f32> = HashMap::new();
+    for (k, v) in &qm_scales {
+        scales.insert(k.clone(), *v as f32);
+    }
+    for (k, v) in &legacy_scales {
+        if !scales.contains_key(k) {
+            scales.insert(k.clone(), *v as f32);
+        }
+    }
     let hash_str = get_str(&hv, "model_hash", "checksum");
+    let header_hash_str = hv.get("header_hash").and_then(|x| x.as_str()).unwrap_or("").to_string();
     let payload = bytes[8 + hlen..].to_vec();
     if payload.len() > spec::MAX_PAYLOAD_BYTES {
         return Err(LoadError::Oversized("payload too large".to_string()));
@@ -180,6 +227,16 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     if !hash_str.is_empty() {
         let got = spec::fnv1a64(&payload);
         let want = u64::from_str_radix(hash_str.trim(), 16).map_err(|_| LoadError::BadHeader("bad hash hex".to_string()))?;
+        if got != want {
+            return Err(LoadError::ChecksumMismatch);
+        }
+    }
+    if !header_hash_str.is_empty() {
+        let zeroed = zero_hash_values(hstr);
+        let mut combined = zeroed.into_bytes();
+        combined.extend_from_slice(&payload);
+        let got = spec::fnv1a64(&combined);
+        let want = u64::from_str_radix(header_hash_str.trim(), 16).map_err(|_| LoadError::BadHeader("bad hash hex".to_string()))?;
         if got != want {
             return Err(LoadError::ChecksumMismatch);
         }

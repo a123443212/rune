@@ -242,6 +242,97 @@ std::string pickString(const std::string& h, const std::string& a, const std::st
   return extractString(h, b);
 }
 
+bool extractFromMapBody(const std::string& body, const std::string& name, double& out) {
+  std::string pat = "\"" + name + "\":";
+  size_t p = body.find(pat);
+  if (p == std::string::npos) return false;
+  size_t v = p + pat.size();
+  size_t q = body.find_first_of(",}", v);
+  if (q == std::string::npos) q = body.size();
+  try {
+    out = std::stod(body.substr(v, q - v));
+  } catch (...) {
+    return false;
+  }
+  return true;
+}
+
+void collectScalesMaps(const std::string& header, std::vector<std::string>& maps) {
+  size_t pos = 0;
+  while (true) {
+    size_t p = header.find("\"scales\":{", pos);
+    if (p == std::string::npos) break;
+    size_t s = header.find('{', p);
+    size_t e = header.find('}', s);
+    if (e == std::string::npos) break;
+    maps.push_back(header.substr(s + 1, e - s - 1));
+    pos = e + 1;
+  }
+}
+
+bool resolveEmbeddingScale(const std::string& header, const std::string& name, double& out, std::string& err) {
+  std::vector<std::string> maps;
+  collectScalesMaps(header, maps);
+  bool have = false;
+  double first = 1.0;
+  for (size_t i = 0; i < maps.size(); ++i) {
+    double v = 1.0;
+    if (!extractFromMapBody(maps[i], name, v)) continue;
+    if (!have) {
+      first = v;
+      have = true;
+    } else if (v != first) {
+      err = "scale mismatch " + name;
+      return false;
+    }
+  }
+  if (!have) return false;
+  out = first;
+  return true;
+}
+
+bool isHex16(const std::string& s, size_t pos) {
+  if (pos + 16 > s.size()) return false;
+  for (size_t i = 0; i < 16; ++i) {
+    char c = s[pos + i];
+    bool ok = (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F');
+    if (!ok) return false;
+  }
+  return true;
+}
+
+std::string zeroHashValues(const std::string& header) {
+  std::string out = header;
+  const char* keys[3] = {"\"model_hash\":\"", "\"checksum\":\"", "\"header_hash\":\""};
+  for (int k = 0; k < 3; ++k) {
+    std::string pat = keys[k];
+    size_t pos = 0;
+    while (true) {
+      size_t p = out.find(pat, pos);
+      if (p == std::string::npos) break;
+      size_t v = p + pat.size();
+      if (isHex16(out, v) && v + 16 < out.size() && out[v + 16] == '"') {
+        for (size_t i = 0; i < 16; ++i) out[v + i] = '0';
+        pos = v + 16;
+      } else {
+        pos = v;
+      }
+      if (pos >= out.size()) break;
+    }
+  }
+  return out;
+}
+
+std::string toHex16(uint64_t v) {
+  static const char* digits = "0123456789abcdef";
+  std::string s(16, '0');
+  for (int i = 15; i >= 0; --i) {
+    s[i] = digits[v & 15];
+    v >>= 4;
+  }
+  return s;
+}
+
 void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.arch = pickString(header, "architecture_id", "arch");
   spec.archVersion = pickString(header, "architecture_version", "arch_version");
@@ -502,10 +593,15 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
         err = "embedding shape mismatch " + t.name;
         return false;
       }
-      double scale = extractNumber(header, t.name, 1.0);
+      double scale = 1.0;
+      std::string scaleErr;
+      bool haveScale = resolveEmbeddingScale(header, t.name, scale, scaleErr);
+      if (!scaleErr.empty()) {
+        err = scaleErr;
+        return false;
+      }
       if (t.dtype == "int8" || t.dtype == "int16") {
-        std::string spat = "\"" + t.name + "\":";
-        if (header.find(spat) == std::string::npos) {
+        if (!haveScale) {
           err = "missing embedding scale " + t.name;
           return false;
         }
@@ -638,6 +734,26 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       if (got != want) {
         err = "checksum mismatch";
         return false;
+      }
+      std::string hh = extractString(header, "header_hash");
+      if (!hh.empty()) {
+        uint64_t wantH = 0;
+        try {
+          wantH = std::stoull(hh, nullptr, 16);
+        } catch (...) {
+          err = "bad checksum format";
+          return false;
+        }
+        std::string tmp = zeroHashValues(header);
+        std::string combined;
+        combined.reserve(tmp.size() + payload.size());
+        combined.append(tmp);
+        combined.append(payload);
+        uint64_t gotH = fnv1aHash(combined);
+        if (gotH != wantH) {
+          err = "checksum mismatch";
+          return false;
+        }
       }
     }
   }

@@ -27,6 +27,7 @@ attention, geometric_bias, head, quantization, gate, alpha, ...
 tensor_metadata   array [{name, shape:[...], dtype:"float32"|"int8"|"int16"}]
 quantization_metadata {mode:"symmetric", bound, scales:{emb0..emb7}}
 model_hash        hex fnv1a64 over payload bytes
+header_hash       hex fnv1a64 over zeroed header bytes + payload bytes
 ```
 
 Legacy aliases `arch`, `arch_version`, `feature_set`, `tensors`,
@@ -35,11 +36,9 @@ never written by v0.10 exporters. Writers always emit the canonical
 names above AND the legacy aliases for backward compatibility.
 Canonical dequant scale source is
 `quantization_metadata.scales`; writers MUST write identical values
-into legacy `scales`. Current readers resolve differently when the
-two maps disagree (C++/Rust: quantization_metadata value by parse
-order; Python reference paths: `scales`), so disagreeing maps are a
-latent divergence trap even though no shipped file has them. A
-strict equality check on load is required at v1.0.
+into legacy `scales`. Loaders reject files where both maps are
+present and disagree on any key or value with `scale mismatch`.
+A file carrying only one of the two maps loads using that map.
 
 ## Tensor order and shapes
 
@@ -56,15 +55,24 @@ bytes (offset 8+header_len to EOF), init 1469598103934665603, prime
 for byte. Files with mismatched hash fail closed. Format 1 files
 carrying `checksum` only for dense/adaptive verify the same way.
 
-Known limitation (measured, all three loaders): the hash covers
-the payload ONLY. Header fields (scales, thresholds, arch ids)
-can be altered without breaking the hash — demonstrated: doubling
-`emb0` scale on an int8 model changes eval output while both C++
-and Rust loaders exit 0. The hash therefore detects transport
-corruption of weights, not semantic integrity of the model. Any
+`header_hash` = lowercase hex of FNV-1a 64 over the concatenation
+of the header bytes with every `model_hash`, `checksum` and
+`header_hash` hex value replaced by 16 zeroes, followed by the
+payload bytes. Writers emit it; loaders verify it when present and
+fail closed on mismatch. Files without it are legacy: they still
+verify `model_hash` and the scale equality rule, but header-only
+tampering is not detected until re-export.
+
+Known limitation (measured, all three loaders): the `model_hash`
+covers the payload ONLY. New files also carry `header_hash` over
+the zeroed header plus payload, so header fields (scales,
+thresholds, arch ids) are covered. Legacy files without
+`header_hash` still detect transport corruption of weights but not
+semantic header tampering — demonstrated: doubling `emb0` scale on
+an int8 legacy model changes eval output while loaders checking
+only `model_hash` exit 0. Re-export to gain the header cover. Any
 workflow that treats equal hash as equal behavior (caches, audit
-trails) is unsound until the header is covered. Required at v1.0:
-hash header+payload, or a second header checksum.
+trails) must compare both hashes.
 
 ## Compatibility
 
