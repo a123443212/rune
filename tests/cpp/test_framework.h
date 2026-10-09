@@ -32,6 +32,7 @@ void testSerialization();
 void testPairHead();
 void testShogi();
 void testXiangqi();
+void testGo();
 void testQuantization();
 void testEvaluator();
 void testModelIO();

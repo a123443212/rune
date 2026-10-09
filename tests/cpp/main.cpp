@@ -32,6 +32,7 @@ int main() {
   testPairHead();
   testShogi();
   testXiangqi();
+  testGo();
   testQuantization();
   testEvaluator();
   testModelIO();

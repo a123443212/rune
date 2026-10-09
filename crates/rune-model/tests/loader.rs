@@ -44,7 +44,7 @@ fn legacy_files_default_to_chess() {
 }
 #[test]
 fn rejects_unknown_game() {
-    let d = write_minimal(r#"{"format":2,"architecture_id":"RUNE-MLP","game":"go"}"#);
+    let d = write_minimal(r#"{"format":2,"architecture_id":"RUNE-MLP","game":"unknown_game_xyz"}"#);
     let r = rune_model::load(&d);
     assert!(matches!(r, Err(rune_model::LoadError::GameMismatch(_))));
 }
@@ -59,7 +59,7 @@ fn known_non_chess_game_passes_gate() {
 fn game_feature_versions() {
     assert_eq!(rune_spec::game_feature_version("chess"), Some("grouped_hkav2_fullthreats_v02"));
     assert_eq!(rune_spec::game_feature_version("shogi"), Some("shogi_raw_v01"));
-    assert_eq!(rune_spec::game_feature_version("go"), None);
+    assert_eq!(rune_spec::game_feature_version("go"), Some("go_planes_v01"));
 }
 #[test]
 fn rejects_truncated() {

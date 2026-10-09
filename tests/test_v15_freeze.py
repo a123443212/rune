@@ -21,14 +21,14 @@ def _rust_const(path, name):
 def test_feature_version_single_source():
     spec = _read("spec/VERSIONS.md")
     assert "grouped_hkav2_fullthreats_v02" in spec
-    assert _rust_const("crates/rune-spec/src/lib.rs", "FEATURE_VERSION") == "grouped_hkav2_fullthreats_v02"
+    assert _rust_const("crates/rune-spec/src/games.rs", "FEATURE_VERSION") == "grouped_hkav2_fullthreats_v02"
     py = _read("training/features/python_features.py")
     assert "grouped_hkav2_fullthreats_v02" in py
 
 
 def test_model_format_version_single_source():
     assert "currently 2" in _read("spec/VERSIONS.md")
-    assert "MODEL_FORMAT_VERSION: u32 = 2" in _read("crates/rune-spec/src/lib.rs")
+    assert "MODEL_FORMAT_VERSION: u32 = 2" in _read("crates/rune-spec/src/header.rs")
 
 
 def test_interaction_graph_version_three_way():
@@ -42,7 +42,7 @@ def test_interaction_graph_version_three_way():
 
 
 def test_tolerance_consts_match_contract():
-    src = _read("crates/rune-spec/src/lib.rs")
+    src = _read("crates/rune-spec/src/tolerance.rs")
     for want in ("MATVEC_ABS: f32 = 1e-5", "HEAD_ABS: f32 = 2e-5", "TANH_ABS: f32 = 2e-6",
                  "RESIDUAL_ABS: f32 = 1e-6", "GATE_FMA_ABS: f32 = 1e-6"):
         assert want in src

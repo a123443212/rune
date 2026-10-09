@@ -17,9 +17,9 @@ START_XFEN = "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR w - - 
 
 
 def test_registry():
-    assert set(games.available()) == {"chess", "shogi", "xiangqi"}
+    assert set(games.available()) == {"chess", "go", "shogi", "xiangqi"}
     with pytest.raises(ValueError):
-        games.get("go")
+        games.get("atari")
 
 
 def test_chess_delegates_to_legacy():

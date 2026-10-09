@@ -1,9 +1,11 @@
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Default)]
 pub struct EvalOutput {
     pub value: f32,
     pub wdl: [f32; 3],
     pub uncertainty: f32,
     pub refine: bool,
+    pub policy: Vec<f32>,
+    pub score_mean: f32,
 }
 
 pub fn canonical_value(raw: f32) -> f32 {

@@ -17,6 +17,8 @@ pub struct EvalResult {
     pub wdl: [f32; 3],
     pub refine: bool,
     pub difficulty: f32,
+    pub policy: Vec<f32>,
+    pub score_mean: f32,
 }
 #[derive(Debug, Clone, Default)]
 pub struct FullTrace {
@@ -33,11 +35,12 @@ pub struct Evaluator {
     mixer: Option<MixerWeights>,
     mh: Option<MultiHeadMixer>,
     heads: Vec<HeadWeights>,
+    pub(crate) resnet: Option<crate::resnet::ResnetWeights>,
     phase: u8,
     arch_id: String,
     game: String,
-    tokens: usize,
-    dim: usize,
+    pub(crate) tokens: usize,
+    pub(crate) dim: usize,
     acc: Accumulator,
     feats: Vec<(u8, u16)>,
     ctx: Vec<f32>,
@@ -65,19 +68,28 @@ impl Evaluator {
             return Err(RuntimeError::FeatureMismatch(m.header.feature_version.clone()));
         }
         let arch = m.header.architecture_id.clone();
+        let is_resnet = arch.starts_with("RUNE-RESNET");
         let supported = arch == "RUNE-SFNN"
             || arch == "RUNE-MLP"
             || arch == "RUNE-ATTN"
             || arch == "RUNE-ATTN-GAB"
             || arch == "RUNE-ATTN-MH4"
-            || arch == "RUNE-REL-02";
+            || arch == "RUNE-REL-02"
+            || is_resnet;
         if !supported {
             return Err(RuntimeError::UnsupportedArch(arch));
         }
         let tokens = m.header.tokens;
         let dim = m.header.token_dim;
         let flex = arch == "RUNE-REL-02";
-        if flex {
+        if is_resnet {
+            if tokens == 0 || tokens > 19 {
+                return Err(RuntimeError::Shape("board".to_string()));
+            }
+            if dim == 0 || dim > 256 {
+                return Err(RuntimeError::Shape("channels".to_string()));
+            }
+        } else if flex {
             if tokens != 6 && tokens != 8 && tokens != 10 {
                 return Err(RuntimeError::Shape("tokens".to_string()));
             }
@@ -94,6 +106,12 @@ impl Evaluator {
         } else {
             spec::VOCAB_SIZES
         };
+        if is_resnet {
+            let tables = Tables::zeros(dim, vocabs);
+            let rw = crate::resnet::ResnetWeights::from_arrays(&m.arrays, &m.header.raw)?;
+            let acc = Accumulator::new(tokens, dim);
+            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), resnet: Some(rw), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
+        }
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..9 {
             let k = format!("emb{}", g);
@@ -252,7 +270,7 @@ impl Evaluator {
             heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, mh, heads, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables, mixer, mh, heads, resnet: None, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
@@ -368,7 +386,7 @@ impl Evaluator {
             mixed = out;
         }
         let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
-        EvalResult { value, wdl, refine: false, difficulty: 0.0 }
+        EvalResult { value, wdl, refine: false, difficulty: 0.0, policy: Vec::new(), score_mean: 0.0 }
     }
     pub fn evaluate_value_only(&self) -> f32 {
         let mut tok = vec![0.0_f32; self.tokens * self.dim];

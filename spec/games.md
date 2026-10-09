@@ -1,9 +1,10 @@
 # Games (multi-game contract)
 
 RUNE is game-agnostic below the feature boundary and game-specific
-above it. The network stack (embeddings, mixer, head) consumes only
-`(group, index)` feature lists plus a context vector; it never sees
-rules. Each game owns its board, notation, extractor, and teacher.
+above it. The token stack (embeddings, mixer, head) consumes only
+`(group, index)` feature lists plus a context vector; the conv stack
+(stem, residual blocks, dual heads) consumes only plane tensors. Neither
+stack sees rules. Each game owns its board, notation, extractor, and teacher.
 
 ## Registered games
 
@@ -12,6 +13,7 @@ rules. Each game owns its board, notation, extractor, and teacher.
 | `chess` | FEN | `grouped_hkav2_fullthreats_v02` | 9 | 17 |
 | `shogi` | SFEN | `shogi_raw_v01` | 9 | 12 |
 | `xiangqi` | FEN (9x10) | `xiangqi_raw_v01` | 9 | 12 |
+| `go` | GRID (`./X/O` rows, `b|w`) | `go_planes_v01` | 9 | 12 |
 
 `shogi_raw_v01` is a raw adapter: board pieces by relative color,
 hands by count, checkers, occupancy, and a global group. It shares
@@ -27,6 +29,11 @@ group with check/flying flags, and same-file major batteries. It
 shares the 8-token layout with chess. Stalemate loses and perpetuals
 are teacher-label concerns, not architecture concerns.
 
+`go_planes_v01` is a raw adapter: relative-color planes plus a
+global group. It feeds the ResNet stack (`RUNE-RESNET-01`, 9/13/19
+boards, policy head `board*board+1`). Liberties, ko history, and komi
+promote through new versions, never by editing this one.
+
 ## Rules
 
 - Every `.rune` file carries `game`. Absent means `chess`.
@@ -34,9 +41,9 @@ are teacher-label concerns, not architecture concerns.
   header field. Unknown `game` fails closed on load.
 - A runtime built for one game rejects other games' models, even
   when architecture and shapes match. Native extractors ship per
-  game: chess, shogi, and xiangqi all evaluate end-to-end in
+  game: chess, shogi, xiangqi, and go all evaluate end-to-end in
   Python, Rust, and C++, each proven by its shared golden fixture
-  (`spec/test-vectors/{shogi,xiangqi}/eval.json` plus the matching
+  (`spec/test-vectors/{shogi,xiangqi,resnet}/eval.json` plus the matching
   model in `spec/test-vectors/models/`).
 - Records carry `game` plus `state` (notation string). Legacy
   records with `fen` and no `game` mean chess.

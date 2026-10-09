@@ -1,0 +1,10 @@
+pub const IR_VERSION: &str = "1.1";
+pub const SPEC_VERSION: &str = "RUNE-11";
+pub const COMPILER_VERSION: &str = "0.12.0";
+pub const PACKING_VERSION: u32 = 1;
+pub const ACCEPTED_IR_VERSIONS: [&str; 2] = ["1.0", "1.1"];
+pub const ACCEPTED_SPEC_VERSIONS: [&str; 2] = ["RUNE-10", "RUNE-11"];
+pub const CLASSIC_REQUIRED_OPS: [&str; 15] = ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Bias", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"];
+pub const RESNET_REQUIRED_OPS: [&str; 8] = ["StemConv", "Conv2D", "ResidualAdd", "Relu", "Value", "WDL", "PolicyLogits", "Policy"];
+pub const RESNET_OPTIONAL_OPS: [&str; 3] = ["GlobalPool", "Flatten", "FeaturePlanes"];
+pub const RESNET_OP_KINDS: [&str; 11] = ["StemConv", "Conv2D", "ResidualAdd", "Relu", "GlobalPool", "Flatten", "FeaturePlanes", "PolicyLogits", "Policy", "Value", "WDL"];

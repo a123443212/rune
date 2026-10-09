@@ -77,9 +77,9 @@ def export_model(model, path, quantization="fp32"):
         "feature_set": spec.get("feature_set", FEATURE_VERSION),
         "tokens": spec["tokens"],
         "token_dim": spec["token_dim"],
-        "attention": spec["attention"],
-        "geometric_bias": spec["geometric_bias"],
-        "head": spec["head"],
+        "attention": spec.get("attention", "none"),
+        "geometric_bias": spec.get("geometric_bias", "none"),
+        "head": spec.get("head", "value_wdl"),
         "quantization": quantization,
         "quantization_metadata": {"mode": "symmetric", "scales": scales},
         "scales": scales,
@@ -91,7 +91,8 @@ def export_model(model, path, quantization="fp32"):
                 "threshold", "t_high", "t_low", "refine_precision",
                 "pruned_pairs", "uncertainty", "stability_head", "head_h1",
                 "head_h2", "cheap_hidden", "ref_h1", "ref_h2", "teacher_id",
-                "teacher_hash", "student_of", "head_buckets", "head_pair"):
+                "teacher_hash", "student_of", "head_buckets", "head_pair",
+                "board_size", "channels", "num_blocks", "policy_size"):
         if key in spec:
             header[key] = spec[key]
     hh = format(fnv1a(payload), "016x")

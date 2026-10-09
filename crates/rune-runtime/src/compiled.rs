@@ -471,6 +471,6 @@ impl CompiledEvaluator {
             mixed = out;
         }
         let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
-        crate::evaluator::EvalResult { value, wdl, refine: false, difficulty: 0.0 }
+        crate::evaluator::EvalResult { value, wdl, refine: false, difficulty: 0.0, policy: Vec::new(), score_mean: 0.0 }
     }
 }

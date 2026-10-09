@@ -205,7 +205,9 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
 mod bench_cmd;
 mod compile_cmd;
 mod diff_cmd;
+mod eval_resnet_cmd;
 mod inspect_cmd;
+mod mcts_cmd;
 mod search_cmd;
 mod search_diff_cmd;
 fn usage() {
@@ -220,6 +222,8 @@ fn usage() {
     println!("rune diff-compiled --generic <path> --compiled <path> --positions <file> --tol <f>");
     println!("rune search --model <path> --fen <fen> --depth <n> --lazy <L0|L1|L2>");
     println!("rune search-diff --model-a <path> --model-b <path> --fen <fen> --depth <n> --tol <f>");
+    println!("rune eval-resnet --model <path> --state <go-state> --size <n>");
+    println!("rune mcts-demo --sims <n> --cpuct <f> --seed <n>");
 }
 fn main() {
     let args: Vec<String> = std::env::args().collect();
@@ -328,6 +332,21 @@ fn main() {
         } else {
             search_cmd::run(&m, &f, d, &l, t)
         }
+    } else if cmd == "eval-resnet" {
+        let m = arg_val(&rest, "--model").unwrap_or_default();
+        let s = arg_val(&rest, "--state").unwrap_or_default();
+        let z = arg_val(&rest, "--size").and_then(|x| x.parse::<usize>().ok()).unwrap_or(0);
+        if m.is_empty() || s.is_empty() {
+            usage();
+            1
+        } else {
+            eval_resnet_cmd::run_eval_resnet(&m, &s, z)
+        }
+    } else if cmd == "mcts-demo" {
+        let sims = arg_val(&rest, "--sims").and_then(|x| x.parse::<usize>().ok()).unwrap_or(200);
+        let cpuct = arg_val(&rest, "--cpuct").and_then(|x| x.parse::<f32>().ok()).unwrap_or(1.25);
+        let seed = arg_val(&rest, "--seed").and_then(|x| x.parse::<u64>().ok()).unwrap_or(1);
+        mcts_cmd::run_mcts_demo(sims, cpuct, seed)
     } else if cmd == "search-diff" {
         let a = arg_val(&rest, "--model-a").unwrap_or_default();
         let b = arg_val(&rest, "--model-b").unwrap_or_default();

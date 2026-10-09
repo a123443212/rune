@@ -32,7 +32,7 @@ pub fn load_compiled_header(path: &Path) -> Result<CompiledHeader> {
         return Err(RuntimeError::InvalidState("not a compiled artifact".to_string()));
     }
     let irv = get_str(&header, "rune_ir_version");
-    if irv != rune_ir::IR_VERSION {
+    if !rune_ir::ACCEPTED_IR_VERSIONS.contains(&irv.as_str()) {
         return Err(RuntimeError::InvalidState(format!("ir version mismatch {}", irv)));
     }
     let isa = get_str(&header, "target_isa");
@@ -93,8 +93,8 @@ pub fn ir_from_header(header: &serde_json::Value) -> Result<RuneIr> {
     let model_v = header.get("model").cloned().unwrap_or(serde_json::Value::Null);
     let _ = model_v;
     let doc = serde_json::json!({
-        "ir_version": header.get("rune_ir_version").cloned().unwrap_or(serde_json::Value::String("1.0".to_string())),
-        "spec_version": "RUNE-10",
+        "ir_version": header.get("rune_ir_version").cloned().unwrap_or(serde_json::Value::String(rune_ir::IR_VERSION.to_string())),
+        "spec_version": header.get("spec_version").cloned().unwrap_or(serde_json::Value::String(rune_ir::SPEC_VERSION.to_string())),
         "model": {
             "architecture": header.get("architecture_id").and_then(|v| v.as_str()).unwrap_or(""),
             "architecture_version": header.get("architecture_version").and_then(|v| v.as_str()).unwrap_or(""),

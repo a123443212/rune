@@ -362,7 +362,7 @@ fn multi_head_matches_golden() {
 fn evaluator_rejects_unknown_game() {
     let p = PathBuf::from("../../spec/test-vectors/models/tiny-mlp-fp32.rune");
     let mut m = rune_model::load(&p).expect("fixture");
-    m.header.game = "go".to_string();
+    m.header.game = "unknown_game_xyz".to_string();
     let r = Evaluator::from_model(&m);
     assert!(matches!(r, Err(rune_runtime::error::RuntimeError::GameMismatch(_))));
 }

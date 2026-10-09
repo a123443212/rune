@@ -3,7 +3,12 @@ pub mod cache;
 pub mod incremental;
 pub mod optimizer;
 pub mod parser;
+pub mod parser_classic;
+pub mod parser_common;
+pub mod parser_resnet;
 pub mod planner;
+pub mod planner_fusion;
+pub mod planner_memory;
 pub mod verifier;
 
 pub use parser::build_from_model;

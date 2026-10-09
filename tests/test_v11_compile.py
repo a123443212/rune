@@ -68,7 +68,7 @@ def test_compiled_header_checks(tmp_path):
     h = read_compiled_header(out)
     assert h["compiled"] is True
     assert h["target_isa"] == "avx2"
-    assert h["rune_ir_version"] == "1.0"
+    assert h["rune_ir_version"] == "1.1"
     assert "kernel_plan" in h
     assert "memory_plan" in h
     assert "source_hash" in h
