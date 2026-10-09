@@ -1,3 +1,4 @@
+use std::cell::RefCell;
 use std::collections::HashMap;
 use std::path::Path;
 use rune_kernel as kernel;
@@ -36,6 +37,7 @@ pub struct Evaluator {
     mh: Option<MultiHeadMixer>,
     heads: Vec<HeadWeights>,
     pub(crate) resnet: Option<crate::resnet::ResnetWeights>,
+    pub(crate) scratch: RefCell<crate::resnet_scratch::Scratch>,
     phase: u8,
     arch_id: String,
     game: String,
@@ -110,7 +112,7 @@ impl Evaluator {
             let tables = Tables::zeros(dim, vocabs);
             let rw = crate::resnet::ResnetWeights::from_arrays(&m.arrays, &m.header.raw)?;
             let acc = Accumulator::new(tokens, dim);
-            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), resnet: Some(rw), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
+            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), resnet: Some(rw), scratch: RefCell::new(crate::resnet_scratch::Scratch::default()), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
         }
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..9 {
@@ -270,7 +272,7 @@ impl Evaluator {
             heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, mh, heads, resnet: None, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables, mixer, mh, heads, resnet: None, scratch: RefCell::new(crate::resnet_scratch::Scratch::default()), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id

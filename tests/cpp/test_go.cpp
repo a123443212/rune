@@ -126,6 +126,10 @@ void testGoResnetDeterministic() {
   GoResnetOutput r1 = forwardGoResnet(wt, sz, planes.data());
   GoResnetOutput r2 = forwardGoResnet(wt, sz, planes.data());
   CHECK_CLOSE(r1.value, r2.value, 1e-9);
+  GoResnetScratch sc;
+  GoResnetOutput r3 = forwardGoResnetFast(wt, sz, planes.data(), sc);
+  CHECK_CLOSE(r1.value, r3.value, 1e-5);
+  for (size_t i = 0; i < r1.policy.size(); ++i) CHECK_CLOSE(r1.policy[i], r3.policy[i], 1e-5);
   CHECK(r1.policy.size() == 82);
   float s = 0.0f;
   for (float v : r1.policy) s += v;

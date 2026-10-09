@@ -35,6 +35,14 @@ pub fn residual_add(a: &[f32], b: &[f32], out: &mut [f32]) {
     }
 }
 
+pub fn residual_add_relu_inplace(base: &[f32], delta: &mut [f32]) {
+    debug_assert!(base.len() == delta.len());
+    for i in 0..base.len() {
+        let s = base[i] + delta[i];
+        delta[i] = if s < 0.0 { 0.0 } else { s };
+    }
+}
+
 pub fn residual_add_relu(a: &[f32], b: &[f32], out: &mut [f32]) {
     debug_assert!(a.len() == b.len());
     debug_assert!(a.len() == out.len());

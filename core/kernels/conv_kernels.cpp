@@ -31,6 +31,80 @@ void conv2dNchw(const float* input, const float* weight, const float* bias, floa
   }
 }
 
+void conv3x3Pad1(const float* input, const float* weight, const float* bias, float* out, int cin,
+                 int cout, int h, int w) {
+  for (int co = 0; co < cout; ++co) {
+    float b = bias ? bias[co] : 0.0f;
+    const float* kw = weight + co * cin * 9;
+    float* oplane = out + co * h * w;
+    for (int oy = 0; oy < h; ++oy) {
+      for (int ox = 0; ox < w; ++ox) {
+        float acc = b;
+        for (int ci = 0; ci < cin; ++ci) {
+          const float* iplane = input + ci * h * w;
+          const float* k = kw + ci * 9;
+          if (oy > 0) {
+            const float* row = iplane + (oy - 1) * w;
+            if (ox > 0) acc += row[ox - 1] * k[0];
+            acc += row[ox] * k[1];
+            if (ox + 1 < w) acc += row[ox + 1] * k[2];
+          }
+          {
+            const float* row = iplane + oy * w;
+            if (ox > 0) acc += row[ox - 1] * k[3];
+            acc += row[ox] * k[4];
+            if (ox + 1 < w) acc += row[ox + 1] * k[5];
+          }
+          if (oy + 1 < h) {
+            const float* row = iplane + (oy + 1) * w;
+            if (ox > 0) acc += row[ox - 1] * k[6];
+            acc += row[ox] * k[7];
+            if (ox + 1 < w) acc += row[ox + 1] * k[8];
+          }
+        }
+        oplane[oy * w + ox] = acc;
+      }
+    }
+  }
+}
+
+void conv3x3Pad1Relu(const float* input, const float* weight, const float* bias, float* out,
+                     int cin, int cout, int h, int w) {
+  for (int co = 0; co < cout; ++co) {
+    float b = bias ? bias[co] : 0.0f;
+    const float* kw = weight + co * cin * 9;
+    float* oplane = out + co * h * w;
+    for (int oy = 0; oy < h; ++oy) {
+      for (int ox = 0; ox < w; ++ox) {
+        float acc = b;
+        for (int ci = 0; ci < cin; ++ci) {
+          const float* iplane = input + ci * h * w;
+          const float* k = kw + ci * 9;
+          if (oy > 0) {
+            const float* row = iplane + (oy - 1) * w;
+            if (ox > 0) acc += row[ox - 1] * k[0];
+            acc += row[ox] * k[1];
+            if (ox + 1 < w) acc += row[ox + 1] * k[2];
+          }
+          {
+            const float* row = iplane + oy * w;
+            if (ox > 0) acc += row[ox - 1] * k[3];
+            acc += row[ox] * k[4];
+            if (ox + 1 < w) acc += row[ox + 1] * k[5];
+          }
+          if (oy + 1 < h) {
+            const float* row = iplane + (oy + 1) * w;
+            if (ox > 0) acc += row[ox - 1] * k[6];
+            acc += row[ox] * k[7];
+            if (ox + 1 < w) acc += row[ox + 1] * k[8];
+          }
+        }
+        oplane[oy * w + ox] = acc < 0.0f ? 0.0f : acc;
+      }
+    }
+  }
+}
+
 void reluInplace(float* buf, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     if (buf[i] < 0.0f) buf[i] = 0.0f;
@@ -41,6 +115,13 @@ void residualAddRelu(const float* a, const float* b, float* out, size_t n) {
   for (size_t i = 0; i < n; ++i) {
     float s = a[i] + b[i];
     out[i] = s < 0.0f ? 0.0f : s;
+  }
+}
+
+void residualAddReluInplace(const float* base, float* delta, size_t n) {
+  for (size_t i = 0; i < n; ++i) {
+    float s = base[i] + delta[i];
+    delta[i] = s < 0.0f ? 0.0f : s;
   }
 }
 

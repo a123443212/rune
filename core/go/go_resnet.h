@@ -2,6 +2,8 @@
 
 #include <vector>
 
+#include "core/go/go_scratch.h"
+
 namespace rune {
 namespace go {
 
@@ -38,6 +40,8 @@ struct GoResnetOutput {
 
 GoResnetOutput forwardGoResnet(const GoResnetWeights& wt, const GoResnetSizes& sz,
                                const float* planes);
+GoResnetOutput forwardGoResnetFast(const GoResnetWeights& wt, const GoResnetSizes& sz,
+                                   const float* planes, GoResnetScratch& sc);
 
 }
 }

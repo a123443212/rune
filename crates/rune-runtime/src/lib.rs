@@ -15,6 +15,7 @@ pub mod mixer_mh;
 pub mod policy_head;
 pub mod relational_cache;
 pub mod resnet;
+pub mod resnet_scratch;
 pub mod shogi;
 pub mod token_delta;
 pub mod xiangqi;

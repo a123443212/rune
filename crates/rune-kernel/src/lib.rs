@@ -1,6 +1,7 @@
 pub mod activations;
 pub mod arena;
 pub mod conv;
+pub mod conv3x3;
 pub mod dense;
 pub mod fused;
 pub mod policy;
@@ -11,7 +12,8 @@ pub mod specialized;
 pub mod util;
 
 pub use activations::{clamp_delta, clipped_relu, hard_sigmoid, relu, relu_inplace, screlu, tokens_clip, tokens_dequant_clip, Gate};
-pub use conv::{conv2d_nchw, global_avg_pool, residual_add, residual_add_relu};
+pub use conv::{conv2d_nchw, global_avg_pool, residual_add, residual_add_relu, residual_add_relu_inplace};
+pub use conv3x3::{conv3x3_pad1, conv3x3_pad1_relu};
 pub use dense::{mat_mul, mat_mul_tt, mat_vec, mat_vec_clipped, mat_vec_scalar};
 pub use policy::{normalize_policy, policy_entropy, softmax};
 pub use scale::{dequantize, quantize_half_away, symmetric_scale};

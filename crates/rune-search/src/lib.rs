@@ -5,6 +5,7 @@ pub mod lazy;
 pub mod mcts;
 pub mod policy;
 pub mod search;
+pub mod select;
 
 pub use contract::EvalOutput;
 pub use game::{GameState, PolicyNet, StateEncoder};

@@ -53,5 +53,46 @@ GoResnetOutput forwardGoResnet(const GoResnetWeights& wt, const GoResnetSizes& s
   return r;
 }
 
+GoResnetOutput forwardGoResnetFast(const GoResnetWeights& wt, const GoResnetSizes& sz,
+                                   const float* planes, GoResnetScratch& sc) {
+  int b = sz.board;
+  int c = sz.channels;
+  int hw = b * b;
+  sc.ensure(b, c, sz.valueH2, sz.policySize);
+  conv::conv3x3Pad1Relu(planes, wt.stemW.data(), wt.stemB.data(), sc.a.data(), 1, c, b, b);
+  float* cur = sc.a.data();
+  float* nxt = sc.b.data();
+  float* tmp = sc.c.data();
+  for (int i = 0; i < sz.blocks; ++i) {
+    conv::conv3x3Pad1Relu(cur, wt.blockW1[static_cast<size_t>(i)].data(),
+                          wt.blockB1[static_cast<size_t>(i)].data(), tmp, c, c, b, b);
+    conv::conv2dNchw(tmp, wt.blockW2[static_cast<size_t>(i)].data(),
+                     wt.blockB2[static_cast<size_t>(i)].data(), nxt, 1, c, c, b, b, 3, 3, 1,
+                     1);
+    conv::residualAddReluInplace(cur, nxt, static_cast<size_t>(c * hw));
+    float* t = cur;
+    cur = nxt;
+    nxt = t;
+  }
+  float* fin = (sz.blocks % 2 == 0) ? sc.a.data() : sc.b.data();
+  conv::globalAvgPool(fin, sc.pooled.data(), 1, c, b, b);
+  ref::matVec(wt.vh1.data(), sc.pooled.data(), wt.bh1.data(), sc.h.data(), sz.valueH2, c);
+  for (int i = 0; i < sz.valueH2; ++i) {
+    if (sc.h[static_cast<size_t>(i)] < 0.0f) sc.h[static_cast<size_t>(i)] = 0.0f;
+    else if (sc.h[static_cast<size_t>(i)] > 1.0f) sc.h[static_cast<size_t>(i)] = 1.0f;
+  }
+  float vv = wt.bv;
+  for (int i = 0; i < sz.valueH2; ++i) vv += wt.wv[static_cast<size_t>(i)] * sc.h[static_cast<size_t>(i)];
+  GoResnetOutput r;
+  r.value = std::tanh(vv);
+  ref::matVec(wt.wwdl.data(), sc.h.data(), wt.bwdl.data(), r.wdl, 3, sz.valueH2);
+  sc.logits.assign(static_cast<size_t>(sz.policySize), 0.0f);
+  ref::matVec(wt.wpol.data(), fin, wt.bpol.data(), sc.logits.data(), sz.policySize, c * hw);
+  r.policy.assign(static_cast<size_t>(sz.policySize), 0.0f);
+  policy::softmax(sc.logits.data(), r.policy.data(), r.policy.size());
+  (void)cur;
+  return r;
+}
+
 }
 }

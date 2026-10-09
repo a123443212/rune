@@ -29,6 +29,7 @@ add_library(rune_core STATIC
   core/go/go_planes.cpp
   core/go/go_evaluator.cpp
   core/go/go_resnet.cpp
+  core/go/go_scratch.cpp
   core/kernels/conv_kernels.cpp
   core/kernels/policy_kernels.cpp
   core/position/position.cpp
@@ -123,6 +124,8 @@ if(RUNE_BUILD_BENCH)
   target_link_libraries(rune_search_diff PRIVATE rune_core)
   add_executable(rune_bench_v13 tools/bench/rune_bench_v13.cpp)
   target_link_libraries(rune_bench_v13 PRIVATE rune_core)
+  add_executable(rune_bench_go tools/bench/rune_bench_go.cpp)
+  target_link_libraries(rune_bench_go PRIVATE rune_core)
 endif()
 
 if(RUNE_BUILD_BINDINGS)
