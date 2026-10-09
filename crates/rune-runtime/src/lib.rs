@@ -11,6 +11,7 @@ pub mod interaction_graph;
 pub mod mixer;
 pub mod mixer_mh;
 pub mod relational_cache;
+pub mod shogi;
 pub mod token_delta;
 pub use error::{Result, RuntimeError};
 pub use evaluator::{EvalResult, Evaluator, FullTrace};

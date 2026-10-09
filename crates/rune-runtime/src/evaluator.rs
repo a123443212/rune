@@ -35,6 +35,7 @@ pub struct Evaluator {
     heads: Vec<HeadWeights>,
     phase: u8,
     arch_id: String,
+    game: String,
     tokens: usize,
     dim: usize,
     acc: Accumulator,
@@ -58,10 +59,9 @@ impl Evaluator {
         Evaluator::from_model(&m)
     }
     pub fn from_model(m: &model::RuneModel) -> Result<Evaluator> {
-        if m.header.game != spec::GAME_CHESS {
-            return Err(RuntimeError::GameMismatch(m.header.game.clone()));
-        }
-        if m.header.feature_version != spec::FEATURE_VERSION {
+        let game = m.header.game.clone();
+        let want_feat = spec::game_feature_version(&game).ok_or_else(|| RuntimeError::GameMismatch(game.clone()))?;
+        if m.header.feature_version != want_feat {
             return Err(RuntimeError::FeatureMismatch(m.header.feature_version.clone()));
         }
         let arch = m.header.architecture_id.clone();
@@ -87,7 +87,7 @@ impl Evaluator {
         } else if tokens != 8 || dim != 32 {
             return Err(RuntimeError::Shape("tokens".to_string()));
         }
-        let vocabs = spec::VOCAB_SIZES;
+        let vocabs = if game == spec::GAME_SHOGI { crate::shogi::SHOGI_VOCABS } else { spec::VOCAB_SIZES };
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..9 {
             let k = format!("emb{}", g);
@@ -127,10 +127,11 @@ impl Evaluator {
             let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
             let (dyn_u, dyn_w, ctx_dim) = if arch == "RUNE-REL-02" {
                 let cd = m.header.raw.get("context_dim").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
+                let want_cd = if game == spec::GAME_SHOGI { crate::shogi::SHOGI_CONTEXT_DIM } else { CONTEXT_DIM };
                 let pair = (m.arrays.get("dynU"), m.arrays.get("dynW"));
                 match pair {
                     (Some(u), Some(w)) => {
-                        if cd == 0 || cd != CONTEXT_DIM || u.len() != tokens * cd || w.len() != tokens * cd {
+                        if cd == 0 || cd != want_cd || u.len() != tokens * cd || w.len() != tokens * cd {
                             return Err(RuntimeError::Shape("dyn".to_string()));
                         }
                         (u.clone(), w.clone(), cd)
@@ -239,10 +240,13 @@ impl Evaluator {
             heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, mh, heads, phase: 1, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables, mixer, mh, heads, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
+    }
+    pub fn game_id(&self) -> &str {
+        &self.game
     }
     pub fn phase(&self) -> u8 {
         self.phase
@@ -260,11 +264,26 @@ impl Evaluator {
         Some(&self.ctx)
     }
     pub fn refresh(&mut self, board: &Board) {
+        if self.game != spec::GAME_CHESS {
+            panic!("chess refresh on {} model", self.game);
+        }
         let f = extract_features(board);
         self.acc.refresh(&self.tables, &f);
         self.feats = f;
         self.ctx = compute_context(board);
         self.phase = board.game_phase();
+    }
+    pub fn refresh_sfen(&mut self, sfen: &str) -> Result<()> {
+        if self.game != spec::GAME_SHOGI {
+            return Err(RuntimeError::InvalidState("sfen refresh on non-shogi model".to_string()));
+        }
+        let b = crate::shogi::ShogiBoard::parse_sfen(sfen)?;
+        let f = crate::shogi::extract_features(&b);
+        self.acc.refresh(&self.tables, &f);
+        self.feats = f;
+        self.ctx = crate::shogi::compute_context(&b);
+        self.phase = crate::shogi::game_phase(b.hand_total(), b.promo_count());
+        Ok(())
     }
     pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)], ctx: &[f32]) {
         let (added, removed) = diff_features(before, after);
@@ -303,6 +322,10 @@ impl Evaluator {
     pub fn evaluate_board(&mut self, board: &Board) -> EvalResult {
         self.refresh(board);
         self.evaluate()
+    }
+    pub fn evaluate_sfen(&mut self, sfen: &str) -> Result<EvalResult> {
+        self.refresh_sfen(sfen)?;
+        Ok(self.evaluate())
     }
     pub fn forward_tokens(&self, tok: &[f32]) -> EvalResult {
         let mut mixed = tok.to_vec();

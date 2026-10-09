@@ -30,6 +30,7 @@ void testAccumulatorIncremental();
 void testAttentionMath();
 void testSerialization();
 void testPairHead();
+void testShogi();
 void testQuantization();
 void testEvaluator();
 void testModelIO();

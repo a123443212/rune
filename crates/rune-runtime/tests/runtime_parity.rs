@@ -359,11 +359,51 @@ fn multi_head_matches_golden() {
     }
 }
 #[test]
-fn evaluator_rejects_non_chess_game() {
+fn evaluator_rejects_unknown_game() {
     let p = PathBuf::from("../../spec/test-vectors/models/tiny-mlp-fp32.rune");
     let mut m = rune_model::load(&p).expect("fixture");
-    m.header.game = "shogi".to_string();
-    m.header.feature_version = "shogi_raw_v01".to_string();
+    m.header.game = "go".to_string();
     let r = Evaluator::from_model(&m);
     assert!(matches!(r, Err(rune_runtime::error::RuntimeError::GameMismatch(_))));
+}
+#[test]
+fn shogi_eval_matches_golden() {
+    use rune_runtime::shogi;
+    let g: serde_json::Value = serde_json::from_str(
+        &fs::read_to_string("../../spec/test-vectors/shogi/eval.json").expect("read shogi golden"),
+    )
+    .expect("parse");
+    assert_eq!(g["game"].as_str().unwrap(), "shogi");
+    let p = PathBuf::from("../../spec/test-vectors/models/shogi-mlp-fp32.rune");
+    let m = rune_model::load(&p).expect("shogi fixture");
+    assert_eq!(m.header.game, "shogi");
+    let mut ev = Evaluator::from_model(&m).expect("shogi evaluator");
+    assert_eq!(ev.game_id(), "shogi");
+    let mut count = 0;
+    for v in g["vectors"].as_array().unwrap() {
+        let sfen = v["sfen"].as_str().unwrap();
+        let b = match shogi::ShogiBoard::parse_sfen(sfen) {
+            Ok(v) => v,
+            Err(e) => panic!("{}: {:?}", sfen, e),
+        };
+        let want: Vec<(u8, u16)> = v["features"].as_array().unwrap().iter().map(|x| {
+            (x[0].as_u64().unwrap() as u8, x[1].as_u64().unwrap() as u16)
+        }).collect();
+        assert_eq!(shogi::extract_features(&b), want, "{}", sfen);
+        let ctx = shogi::compute_context(&b);
+        let want_ctx: Vec<f32> = v["context"].as_array().unwrap().iter().map(|x| x.as_f64().unwrap() as f32).collect();
+        assert_eq!(ctx.len(), want_ctx.len());
+        for (a, e) in ctx.iter().zip(want_ctx.iter()) {
+            assert!((a - e).abs() < 1e-6, "{}", sfen);
+        }
+        assert_eq!(shogi::game_phase(b.hand_total(), b.promo_count()), v["phase"].as_u64().unwrap() as u8);
+        let r = ev.evaluate_sfen(sfen).expect("eval");
+        assert!((r.value - v["value"].as_f64().unwrap() as f32).abs() < 1e-5, "{}", sfen);
+        for i in 0..3 {
+            let d = (r.wdl[i] - v["wdl"][i].as_f64().unwrap() as f32).abs();
+            assert!(d < 1e-5, "{} {}", sfen, i);
+        }
+        count += 1;
+    }
+    assert_eq!(count, 5);
 }

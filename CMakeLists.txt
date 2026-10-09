@@ -18,6 +18,9 @@ add_library(rune_core STATIC
   core/board/board_attacks.cpp
   core/board/move_gen.cpp
   core/board/move_make.cpp
+  core/shogi/shogi_board.cpp
+  core/shogi/shogi_features.cpp
+  core/shogi/shogi_evaluator.cpp
   core/position/position.cpp
   core/features/feature_set.cpp
   core/kernels/ref_kernels.cpp
@@ -69,6 +72,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/main.cpp
     tests/cpp/test_board.cpp
     tests/cpp/test_features.cpp
+    tests/cpp/test_shogi.cpp
     tests/cpp/test_arch.cpp
     tests/cpp/test_model.cpp
     tests/cpp/test_relational.cpp

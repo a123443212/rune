@@ -30,6 +30,7 @@ int main() {
   testAttentionMath();
   testSerialization();
   testPairHead();
+  testShogi();
   testQuantization();
   testEvaluator();
   testModelIO();

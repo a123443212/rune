@@ -22,6 +22,14 @@ EmbeddingTables::EmbeddingTables() {
   }
 }
 
+EmbeddingTables::EmbeddingTables(const int* vocabs) {
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    tables_[g].assign(static_cast<size_t>(vocabs[g]) *
+                          static_cast<size_t>(GroupedFeatureSet::kTokenDim),
+                      0.0f);
+  }
+}
+
 void EmbeddingTables::init(int seed) {
   uint64_t s = static_cast<uint64_t>(seed) * 2 + 1;
   for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {

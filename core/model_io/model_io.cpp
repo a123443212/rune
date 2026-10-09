@@ -7,6 +7,8 @@
 #include <set>
 #include <sstream>
 
+#include "core/shogi/shogi_features.h"
+
 namespace rune {
 
 namespace {
@@ -396,7 +398,24 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     err = "unsupported head_buckets (want 1 or 3)";
     return false;
   }
-  if (out.spec.featureSet != "grouped_hkav2_fullthreats_v02") {
+  bool isShogi = (out.spec.game == "shogi");
+  if (out.spec.game != "chess" && !isShogi) {
+    err = "game mismatch: " + out.spec.game;
+    return false;
+  }
+  if (isShogi) {
+    if (out.spec.featureSet != "shogi_raw_v01") {
+      err = "feature version mismatch: " + out.spec.featureSet;
+      return false;
+    }
+    if (out.spec.quantization != "fp32") {
+      err = "shogi only supports fp32";
+      return false;
+    }
+    int vocabs[9];
+    for (int g = 0; g < 9; ++g) vocabs[g] = shogi::ShogiFeatureSet::vocabSize(g);
+    out.embeddings = EmbeddingTables(vocabs);
+  } else if (out.spec.featureSet != "grouped_hkav2_fullthreats_v02") {
     err = "feature version mismatch: " + out.spec.featureSet;
     return false;
   }
@@ -595,7 +614,8 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
         return false;
       }
       int wantCols = useVar ? embWidths.w[g] : (out.isFlex ? dim : 32);
-      if (t.shape.size() != 2 || t.shape[0] != GroupedFeatureSet::vocabSize(g) ||
+      int wantVocab = isShogi ? shogi::ShogiFeatureSet::vocabSize(g) : GroupedFeatureSet::vocabSize(g);
+      if (t.shape.size() != 2 || t.shape[0] != wantVocab ||
           t.shape[1] != wantCols) {
         err = "embedding shape mismatch " + t.name;
         return false;

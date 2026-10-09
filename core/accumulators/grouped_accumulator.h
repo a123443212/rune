@@ -11,6 +11,7 @@ namespace rune {
 class EmbeddingTables {
  public:
   EmbeddingTables();
+  explicit EmbeddingTables(const int* vocabs);
   void init(int seed);
   float get(int group, int index, int dim) const;
   void set(int group, int index, int dim, float v);

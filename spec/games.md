@@ -24,9 +24,11 @@ by editing this one.
 - `game` is part of the header cover (`header_hash`) like any other
   header field. Unknown `game` fails closed on load.
 - A runtime built for one game rejects other games' models, even
-  when architecture and shapes match. Native per-game extractors
-  land one game at a time; Python training and evaluation already
-  share the stack across all registered games.
+  when architecture and shapes match. Native extractors ship per
+  game: chess and shogi both evaluate end-to-end in Python, Rust,
+  and C++, proven by the shared golden fixture
+  (`spec/test-vectors/shogi/eval.json` plus
+  `spec/test-vectors/models/shogi-mlp-fp32.rune`).
 - Records carry `game` plus `state` (notation string). Legacy
   records with `fen` and no `game` mean chess.
 - New games start as raw adapters over `(square, piece)`-style

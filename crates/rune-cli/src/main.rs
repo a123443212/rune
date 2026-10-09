@@ -58,6 +58,20 @@ fn cmd_eval(model: &str, fen: &str, kernel: &str) -> i32 {
             return 1;
         }
     };
+    if ev.game_id() == "shogi" {
+        let r = match ev.evaluate_sfen(fen) {
+            Ok(v) => v,
+            Err(e) => {
+                eprintln!("bad sfen: {}", e);
+                return 1;
+            }
+        };
+        println!("value {:.6}", r.value);
+        println!("wdl {:.6} {:.6} {:.6}", r.wdl[0], r.wdl[1], r.wdl[2]);
+        println!("arch {}", ev.arch_id());
+        println!("path {}", ev.kernel_path());
+        return 0;
+    }
     let b = match Board::parse_fen(fen) {
         Ok(v) => v,
         Err(e) => {
