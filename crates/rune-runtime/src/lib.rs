@@ -9,6 +9,7 @@ pub mod features;
 pub mod incremental_mixer;
 pub mod interaction_graph;
 pub mod mixer;
+pub mod mixer_mh;
 pub mod relational_cache;
 pub mod token_delta;
 pub use error::{Result, RuntimeError};

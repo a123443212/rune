@@ -1,6 +1,6 @@
 use crate::board::{self, Board, BISHOP, BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE};
 use rune_spec as spec;
-pub const CONTEXT_DIM: usize = 12;
+pub const CONTEXT_DIM: usize = 17;
 pub fn vocab_size(group: usize) -> usize {
     spec::VOCAB_SIZES[group]
 }
@@ -346,29 +346,50 @@ pub fn diff_features(before: &[(u8, u16)], after: &[(u8, u16)]) -> (Vec<(u8, u16
 pub fn compute_context(board: &Board) -> Vec<f32> {
     let us = if board.stm == 0 { WHITE } else { BLACK };
     let them = if board.stm == 0 { BLACK } else { WHITE };
-    let mut pawns = 0;
-    let mut minors = 0;
-    let mut rooks = 0;
-    let mut queens = 0;
-    let mut total = 0;
+    let mut us_pawns = 0;
+    let mut them_pawns = 0;
+    let mut us_minors = 0;
+    let mut them_minors = 0;
+    let mut us_rooks = 0;
+    let mut them_rooks = 0;
+    let mut us_queens = 0;
+    let mut them_queens = 0;
+    let mut us_total = 0;
+    let mut them_total = 0;
     let mut king = 64;
     for sq in 0..64 {
         let cell = match board.sq[sq] {
             Some(c) => c,
             None => continue,
         };
-        total += 1;
-        if cell.kind == PAWN {
-            pawns += 1;
-        }
-        if cell.kind == KNIGHT || cell.kind == BISHOP {
-            minors += 1;
-        }
-        if cell.kind == ROOK {
-            rooks += 1;
-        }
-        if cell.kind == QUEEN {
-            queens += 1;
+        if cell.color == us {
+            us_total += 1;
+            if cell.kind == PAWN {
+                us_pawns += 1;
+            }
+            if cell.kind == KNIGHT || cell.kind == BISHOP {
+                us_minors += 1;
+            }
+            if cell.kind == ROOK {
+                us_rooks += 1;
+            }
+            if cell.kind == QUEEN {
+                us_queens += 1;
+            }
+        } else {
+            them_total += 1;
+            if cell.kind == PAWN {
+                them_pawns += 1;
+            }
+            if cell.kind == KNIGHT || cell.kind == BISHOP {
+                them_minors += 1;
+            }
+            if cell.kind == ROOK {
+                them_rooks += 1;
+            }
+            if cell.kind == QUEEN {
+                them_queens += 1;
+            }
         }
         if cell.kind == KING && cell.color == us {
             king = sq;
@@ -419,12 +440,17 @@ pub fn compute_context(board: &Board) -> Vec<f32> {
     vec![
         clip(board.stm as f32),
         clip(board.game_phase() as f32 / 2.0),
-        clip(pawns as f32 / 16.0),
-        clip(minors as f32 / 8.0),
-        clip(rooks as f32 / 4.0),
-        clip(queens as f32 / 2.0),
+        clip(us_pawns as f32 / 8.0),
+        clip(them_pawns as f32 / 8.0),
+        clip(us_minors as f32 / 8.0),
+        clip(them_minors as f32 / 8.0),
+        clip(us_rooks as f32 / 4.0),
+        clip(them_rooks as f32 / 4.0),
+        clip(us_queens as f32 / 2.0),
+        clip(them_queens as f32 / 2.0),
+        clip(us_total as f32 / 16.0),
+        clip(them_total as f32 / 16.0),
         clip(shield as f32 / 8.0),
-        clip(total as f32 / 32.0),
         clip(board.castle_mask as f32 / 15.0),
         clip(if board.ep_sq >= 0 { 1.0 } else { 0.0 }),
         clip(check as f32),

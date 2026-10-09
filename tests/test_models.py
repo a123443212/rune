@@ -82,6 +82,6 @@ def test_spec_and_export_order_cover_all_params():
         spec = model.model_spec()
         assert spec["tokens"] == 8 and spec["token_dim"] == 32
         arch_t = model.arch_tensors()
-        assert sorted(arch_t.keys()) == sorted(EXPORT_ORDER[arch])
+        assert sorted(arch_t.keys()) == sorted(model.export_order())
         emb = model.embedding_tensors()
         assert len(emb) == 9

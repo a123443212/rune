@@ -8,6 +8,7 @@ use crate::board::Board;
 use crate::error::{Result, RuntimeError};
 use crate::features::{compute_context, diff_features, extract_features, CONTEXT_DIM};
 use crate::mixer::{HeadTrace, HeadWeights, MixerTrace, MixerWeights};
+use crate::mixer_mh::MultiHeadMixer;
 
 pub(crate) const FULL_REFRESH_LIMIT: usize = 64;
 #[derive(Debug, Clone)]
@@ -30,6 +31,7 @@ pub struct FullTrace {
 pub struct Evaluator {
     tables: Tables,
     mixer: Option<MixerWeights>,
+    mh: Option<MultiHeadMixer>,
     heads: Vec<HeadWeights>,
     phase: u8,
     arch_id: String,
@@ -64,6 +66,7 @@ impl Evaluator {
             || arch == "RUNE-MLP"
             || arch == "RUNE-ATTN"
             || arch == "RUNE-ATTN-GAB"
+            || arch == "RUNE-ATTN-MH4"
             || arch == "RUNE-REL-02";
         if !supported {
             return Err(RuntimeError::UnsupportedArch(arch));
@@ -140,6 +143,63 @@ impl Evaluator {
         if buckets != 1 && buckets != 3 {
             return Err(RuntimeError::InvalidState("unsupported head_buckets (want 1 or 3)".to_string()));
         }
+        let mh = if arch == "RUNE-ATTN-MH4" {
+            if tokens != 8 || dim != 32 {
+                return Err(RuntimeError::Shape("tokens".to_string()));
+            }
+            let mut wq = Vec::new();
+            let mut bq = Vec::new();
+            let mut wk = Vec::new();
+            let mut bk = Vec::new();
+            let mut wv = Vec::new();
+            let mut bv = Vec::new();
+            let mut gab = Vec::new();
+            for h in 0..4 {
+                let s = format!("_h{}", h);
+                let q = need_vec(&m.arrays, &format!("wq{}", s))?;
+                let b = need_vec(&m.arrays, &format!("bq{}", s))?;
+                let k = need_vec(&m.arrays, &format!("wk{}", s))?;
+                let kb = need_vec(&m.arrays, &format!("bk{}", s))?;
+                let v = need_vec(&m.arrays, &format!("wv{}", s))?;
+                let vb = need_vec(&m.arrays, &format!("bv{}", s))?;
+                let g = need_vec(&m.arrays, &format!("gab{}", s))?;
+                if q.len() != 8 * 32 || b.len() != 8 || k.len() != 8 * 32 || kb.len() != 8 {
+                    return Err(RuntimeError::Shape("mh mat".to_string()));
+                }
+                if v.len() != 8 * 32 || vb.len() != 8 || g.len() != 64 {
+                    return Err(RuntimeError::Shape("mh mat".to_string()));
+                }
+                wq.push(q);
+                bq.push(b);
+                wk.push(k);
+                bk.push(kb);
+                wv.push(v);
+                bv.push(vb);
+                gab.push(g);
+            }
+            let wo = need_vec(&m.arrays, "wo")?;
+            let bwo = need_vec(&m.arrays, "bwo")?;
+            if wo.len() != 32 * 32 || bwo.len() != 32 {
+                return Err(RuntimeError::Shape("mh wo".to_string()));
+            }
+            Some(MultiHeadMixer {
+                heads: 4,
+                head_dim: 8,
+                tokens,
+                dim,
+                wq,
+                bq,
+                wk,
+                bk,
+                wv,
+                bv,
+                gab,
+                wo,
+                bwo,
+            })
+        } else {
+            None
+        };
         let mut heads: Vec<HeadWeights> = Vec::new();
         for b in 0..buckets {
             let suffix = if buckets == 1 { String::new() } else { format!("_b{}", b) };
@@ -168,7 +228,7 @@ impl Evaluator {
             heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, heads, phase: 1, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables, mixer, mh, heads, phase: 1, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
@@ -240,6 +300,11 @@ impl Evaluator {
             mx.forward(tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
+        if let Some(mh) = &self.mh {
+            let mut out = vec![0.0_f32; self.tokens * self.dim];
+            mh.forward(tok, &mut out);
+            mixed = out;
+        }
         let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
         EvalResult { value, wdl, refine: false, difficulty: 0.0 }
     }
@@ -250,6 +315,11 @@ impl Evaluator {
         if let Some(mx) = &self.mixer {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
             mx.forward(&tok, self.active_ctx(), &mut out, None);
+            mixed = out;
+        }
+        if let Some(mh) = &self.mh {
+            let mut out = vec![0.0_f32; self.tokens * self.dim];
+            mh.forward(&tok, &mut out);
             mixed = out;
         }
         self.head_for(self.phase).forward_value_only(&mixed)

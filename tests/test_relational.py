@@ -119,6 +119,25 @@ def test_rel_param_accounting():
     assert b.model_spec()["gate"] == "clip"
 
 
+def test_context_us_them_split():
+    from training.features.context import CONTEXT_DIM, CONTEXT_NAMES
+
+    assert CONTEXT_DIM == 17
+    assert len(CONTEXT_NAMES) == 17
+    start = context_vector("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1")
+    assert len(start) == 17
+    assert start[2] == start[3] == 1.0
+    assert start[4] == start[5] == 0.5
+    assert start[6] == start[7] == 0.5
+    assert start[8] == start[9] == 0.5
+    assert start[10] == start[11] == 1.0
+    end = context_vector("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1")
+    assert end[2] == end[3] == 0.375
+    assert end[6] == end[7] == 0.25
+    assert end[10] == end[11] == 0.3125
+    assert end[1] == 1.0
+
+
 def test_rel_export_header(tmp_path):
     from training.export.export import export_model, load_exported_arrays
 
@@ -130,7 +149,7 @@ def test_rel_export_header(tmp_path):
     assert header["arch"] == "RUNE-REL-02"
     assert header["gate"] == "hard_sigmoid"
     assert header["alpha"] == 0.5
-    assert header["context_dim"] == 12
+    assert header["context_dim"] == 17
     assert header["tensors"][0]["dtype"] == "int16"
     assert arrays["emb0"].dtype == np.int16
     assert "dynU" in arrays and "dynW" in arrays

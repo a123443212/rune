@@ -44,6 +44,11 @@ def build():
         gen_bucket_golden()
     except Exception as e:
         print("bucket heads skip " + str(e))
+    try:
+        from tools.golden.gen_mh_golden import main as gen_mh_golden
+        gen_mh_golden()
+    except Exception as e:
+        print("multi head skip " + str(e))
     for name in sorted(os.listdir(OUT)):
         h = read_header(os.path.join(OUT, name))
         arch = h.get("architecture_id", h.get("arch"))

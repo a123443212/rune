@@ -6,6 +6,7 @@ use crate::error::{Result, RuntimeError};
 use crate::evaluator::FULL_REFRESH_LIMIT;
 use crate::features::{compute_context, extract_features, CONTEXT_DIM};
 use crate::mixer::{dyn_factors, HeadWeights};
+use crate::mixer_mh::MultiHeadMixer;
 use rune_model as model;
 use std::path::Path;
 
@@ -23,6 +24,7 @@ pub struct CompiledEvaluator {
     ctx_dim: usize,
     gate_hard: bool,
     alpha: f32,
+    mh: Option<MultiHeadMixer>,
     head: Vec<HeadWeights>,
     phase: u8,
     tokens: usize,
@@ -52,7 +54,7 @@ impl CompiledEvaluator {
 
     pub fn from_model(m: &model::RuneModel, header: CompiledHeader) -> Result<CompiledEvaluator> {
         let arch = m.header.architecture_id.clone();
-        if arch != "RUNE-SFNN" && arch != "RUNE-MLP" && arch != "RUNE-ATTN" && arch != "RUNE-ATTN-GAB" && arch != "RUNE-REL-02" {
+        if arch != "RUNE-SFNN" && arch != "RUNE-MLP" && arch != "RUNE-ATTN" && arch != "RUNE-ATTN-GAB" && arch != "RUNE-ATTN-MH4" && arch != "RUNE-REL-02" {
             return Err(RuntimeError::UnsupportedArch(arch));
         }
         let tokens = m.header.tokens;
@@ -168,6 +170,61 @@ impl CompiledEvaluator {
             }
             heads.push(HeadWeights { input: tokens * dim, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
+        let mh = if arch == "RUNE-ATTN-MH4" {
+            if tokens != 8 || dim != 32 {
+                return Err(RuntimeError::Shape("tokens".to_string()));
+            }
+            let mut wq = Vec::new();
+            let mut bq = Vec::new();
+            let mut wk = Vec::new();
+            let mut bk = Vec::new();
+            let mut wv = Vec::new();
+            let mut bv = Vec::new();
+            let mut gab = Vec::new();
+            for h in 0..4 {
+                let s = format!("_h{}", h);
+                wq.push(need_vec(&m.arrays, &format!("wq{}", s))?);
+                bq.push(need_vec(&m.arrays, &format!("bq{}", s))?);
+                wk.push(need_vec(&m.arrays, &format!("wk{}", s))?);
+                bk.push(need_vec(&m.arrays, &format!("bk{}", s))?);
+                wv.push(need_vec(&m.arrays, &format!("wv{}", s))?);
+                bv.push(need_vec(&m.arrays, &format!("bv{}", s))?);
+                gab.push(need_vec(&m.arrays, &format!("gab{}", s))?);
+            }
+            for h in 0..4 {
+                if wq[h].len() != 8 * 32 || bq[h].len() != 8 || wk[h].len() != 8 * 32 {
+                    return Err(RuntimeError::Shape("mh mat".to_string()));
+                }
+                if bk[h].len() != 8 || wv[h].len() != 8 * 32 || bv[h].len() != 8 {
+                    return Err(RuntimeError::Shape("mh mat".to_string()));
+                }
+                if gab[h].len() != 64 {
+                    return Err(RuntimeError::Shape("mh mat".to_string()));
+                }
+            }
+            let wo = need_vec(&m.arrays, "wo")?;
+            let bwo = need_vec(&m.arrays, "bwo")?;
+            if wo.len() != 32 * 32 || bwo.len() != 32 {
+                return Err(RuntimeError::Shape("mh wo".to_string()));
+            }
+            Some(MultiHeadMixer {
+                heads: 4,
+                head_dim: 8,
+                tokens,
+                dim,
+                wq,
+                bq,
+                wk,
+                bk,
+                wv,
+                bv,
+                gab,
+                wo,
+                bwo,
+            })
+        } else {
+            None
+        };
         let arena = Arena::new(header.memory_bytes.max(8192));
         Ok(CompiledEvaluator {
             tables,
@@ -183,6 +240,7 @@ impl CompiledEvaluator {
             ctx_dim,
             gate_hard,
             alpha,
+            mh,
             head: heads,
             phase: 1,
             tokens,
@@ -371,6 +429,11 @@ impl CompiledEvaluator {
         } else if has_mixer {
             self.mix_into(&tok, &mut mixed);
         }
+        if let Some(mh) = &self.mh {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            mh.forward(&tok, &mut out);
+            mixed = out;
+        }
         self.head_for(self.phase).forward_value_only(&mixed)
     }
 
@@ -393,6 +456,11 @@ impl CompiledEvaluator {
             mixed = out;
         } else if has_mixer {
             self.mix_into(&tok, &mut mixed);
+        }
+        if let Some(mh) = &self.mh {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            mh.forward(tok, &mut out);
+            mixed = out;
         }
         let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
         crate::evaluator::EvalResult { value, wdl, refine: false, difficulty: 0.0 }

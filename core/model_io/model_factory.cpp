@@ -1,6 +1,7 @@
 #include "core/model_io/model_factory.h"
 
 #include "core/architectures/attention/attention.h"
+#include "core/architectures/attention/multi_head.h"
 #include "core/architectures/mlp/mlp.h"
 
 namespace rune {
@@ -10,6 +11,7 @@ std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId) {
   if (archId == "RUNE-SFNN") return std::unique_ptr<IArchitecture>(new SfnnBaseline());
   if (archId == "RUNE-ATTN") return std::unique_ptr<IArchitecture>(new RuneAttnModel(false));
   if (archId == "RUNE-ATTN-GAB") return std::unique_ptr<IArchitecture>(new RuneAttnModel(true));
+  if (archId == "RUNE-ATTN-MH4") return std::unique_ptr<IArchitecture>(new RuneAttnMhModel());
   return nullptr;
 }
 

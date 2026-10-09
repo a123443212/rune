@@ -11,6 +11,7 @@ machine-readable form; this text explains it.
 | RUNE-MLP | 8 | 32 | none | none | clip | value_wdl 128->32 |
 | RUNE-ATTN | 8 | 32 | gated_linear | none | clip | value_wdl 128->32 |
 | RUNE-ATTN-GAB | 8 | 32 | gated_linear | learned gab | clip | value_wdl 128->32 |
+| RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip | value_wdl 128->32 |
 | RUNE-REL-02 | 6/8/10 | 24/32/40 | gated_relational | static/dynamic | clip/hard_sigmoid | value_wdl 128->32 |
 | RUNE-03-<variant> | 8 | per-group token_dims | pooled | none | clip | dense head_h1->head_h2 |
 | RUNE-04 | 8 | 8..64 uniform | adaptive cheap+refine | threshold routing | clip | cheap_hidden + ref_h1->ref_h2 |
@@ -26,6 +27,16 @@ hard_sigmoid `clamp(0.2*s+0.5,0,1)`. Mix `Y=S@V` (S is TxT, V is TxD).
 Residual `out=x+alpha*Y`.
 
 No softmax, no scaling by sqrt(d), no layer norm in this generation.
+
+## Multi-head mixer (RUNE-ATTN-MH4, normative order)
+
+4 heads, head dim 8 (4x8=32). Per head h: `Q_h[i]=Wq_h*x[i]+bq_h`,
+`K_h[i]`, `V_h[i]` with shapes [8,32]/[8]. Scores
+`S_h[a][b]=dot(Q_h[a],K_h[b])+gab_h[a][b]`, gate clip01 elementwise,
+`O_h=S_h@V_h`. Concat heads row-major per token to 32 dims,
+`Y=Wo*concat+bwo`, residual `out=x+Y`. Tensors
+`wq_h0..gab_h3, wo, bwo` in head order, then value head tensors
+(plain or `_b0..2` bucketed).
 
 ## Head (normative order)
 

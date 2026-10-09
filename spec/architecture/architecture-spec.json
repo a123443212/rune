@@ -46,6 +46,21 @@
    ]
   },
   {
+   "attention": "multi_head",
+   "bias": "per_head gab",
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->32",
+   "heads": 4,
+   "head_dim": 8,
+   "id": "RUNE-ATTN-MH4",
+   "output_proj": "wo 32->32",
+   "tokens": [
+    8
+   ]
+  },
+  {
    "dims": [
     24,
     32,

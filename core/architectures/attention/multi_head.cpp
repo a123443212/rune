@@ -1,0 +1,228 @@
+#include "core/architectures/attention/multi_head.h"
+
+#include <cmath>
+#include <string>
+
+namespace rune {
+
+namespace {
+
+void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
+  v.assign(n, 0.0f);
+  for (size_t i = 0; i < n; ++i) {
+    s = s * 6364136223846793005ULL + 1442695040888963407ULL;
+    double u = static_cast<double>(s >> 33) / static_cast<double>(0xFFFFFFFFULL);
+    v[i] = static_cast<float>((u - 0.5) * 2.0 * scale);
+  }
+}
+
+}  // namespace
+
+MultiHeadMixer::MultiHeadMixer() {
+  uint64_t s = 777;
+  for (int h = 0; h < kHeads; ++h) {
+    initVec(wq[h], kHeadDim * kDim, s, 0.08f);
+    initVec(bq[h], kHeadDim, s, 0.01f);
+    initVec(wk[h], kHeadDim * kDim, s, 0.08f);
+    initVec(bk[h], kHeadDim, s, 0.01f);
+    initVec(wv[h], kHeadDim * kDim, s, 0.08f);
+    initVec(bv[h], kHeadDim, s, 0.01f);
+    gab[h].assign(kTokens * kTokens, 0.0f);
+  }
+  initVec(wo, kDim * kDim, s, 0.08f);
+  initVec(bwo, kDim, s, 0.01f);
+  scratch_.assign(kHeads * (kTokens * kHeadDim * 3 + kTokens * kTokens * 2) +
+                      kTokens * kDim * 2,
+                  0.0f);
+}
+
+void MultiHeadMixer::forward(const float* x, float* out) const {
+  float* parts = scratch_.data();
+  float* cat = parts + kHeads * (kTokens * kHeadDim * 3 + kTokens * kTokens * 2);
+  float* y = cat + kTokens * kDim;
+  for (int h = 0; h < kHeads; ++h) {
+    float* q = parts + h * (kTokens * kHeadDim * 3 + kTokens * kTokens * 2);
+    float* k = q + kTokens * kHeadDim;
+    float* v = k + kTokens * kHeadDim;
+    float* s = v + kTokens * kHeadDim;
+    float* o = s + kTokens * kTokens;
+    for (int t = 0; t < kTokens; ++t) {
+      simd::matVec(wq[h].data(), x + t * kDim, bq[h].data(), q + t * kHeadDim, kHeadDim, kDim);
+      simd::matVec(wk[h].data(), x + t * kDim, bk[h].data(), k + t * kHeadDim, kHeadDim, kDim);
+      simd::matVec(wv[h].data(), x + t * kDim, bv[h].data(), v + t * kHeadDim, kHeadDim, kDim);
+    }
+    simd::matMulTT(q, k, s, kTokens, kTokens, kHeadDim);
+    for (int i = 0; i < kTokens * kTokens; ++i) {
+      s[i] = simd::clippedRelu(s[i] + gab[h][i]);
+    }
+    simd::matMul(s, v, o, kTokens, kHeadDim, kTokens);
+    float* ph = cat + h * kHeadDim;
+    for (int t = 0; t < kTokens; ++t) {
+      for (int d = 0; d < kHeadDim; ++d) ph[t * kDim + d] = o[t * kHeadDim + d];
+    }
+  }
+  for (int t = 0; t < kTokens; ++t) {
+    simd::matVec(wo.data(), cat + t * kDim, bwo.data(), y + t * kDim, kDim, kDim);
+  }
+  for (int i = 0; i < kTokens * kDim; ++i) out[i] = x[i] + y[i];
+}
+
+size_t MultiHeadMixer::parameterCount() const {
+  size_t n = wo.size() + bwo.size();
+  for (int h = 0; h < kHeads; ++h) {
+    n += wq[h].size() + bq[h].size() + wk[h].size() + bk[h].size() + wv[h].size() +
+         bv[h].size() + gab[h].size();
+  }
+  return n;
+}
+
+RuneAttnMhModel::RuneAttnMhModel() {
+  uint64_t s = 3131;
+  heads_.resize(1);
+  initVec(heads_[0].w1, 128 * 256, s, 0.05f);
+  initVec(heads_[0].b1, 128, s, 0.01f);
+  initVec(heads_[0].w2, 32 * 128, s, 0.05f);
+  initVec(heads_[0].b2, 32, s, 0.01f);
+  initVec(heads_[0].wvo, 1 * 32, s, 0.05f);
+  initVec(heads_[0].bvo, 1, s, 0.01f);
+  initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
+  initVec(heads_[0].bwdl, 3, s, 0.01f);
+  scratch_.assign(256 + 128 + 32, 0.0f);
+}
+
+const HeadBucket& RuneAttnMhModel::headFor(int phase) const {
+  if (heads_.size() > 1) {
+    int b = phase;
+    if (b < 0) b = 0;
+    if (b > 2) b = 2;
+    return heads_[static_cast<size_t>(b)];
+  }
+  return heads_[0];
+}
+
+void RuneAttnMhModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+  const HeadBucket& h = headFor(phase);
+  float* mixed = scratch_.data();
+  float* h1 = scratch_.data() + 256;
+  float* h2 = scratch_.data() + 256 + 128;
+  mixer.forward(tokens, mixed);
+  simd::matVecClipped(h.w1.data(), mixed, h.b1.data(), h1, 128, 256);
+  simd::matVecClipped(h.w2.data(), h1, h.b2.data(), h2, 32, 128);
+  float vv = h.bvo[0];
+  for (int i = 0; i < 32; ++i) vv += h.wvo[i] * h2[i];
+  value = std::tanh(vv);
+  simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, 32);
+}
+
+size_t RuneAttnMhModel::parameterCount() const {
+  size_t n = mixer.parameterCount();
+  for (const HeadBucket& h : heads_) {
+    n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
+         h.bvo.size() + h.wwdl.size() + h.bwdl.size();
+  }
+  return n;
+}
+
+void RuneAttnMhModel::getTensors(std::vector<std::string>& names,
+                                  std::vector<std::vector<int>>& shapes,
+                                  std::vector<const float*>& data) const {
+  names.clear();
+  shapes.clear();
+  data.clear();
+  for (int h = 0; h < MultiHeadMixer::kHeads; ++h) {
+    std::string suffix = "_h" + std::to_string(h);
+    names.insert(names.end(), {"wq" + suffix, "bq" + suffix, "wk" + suffix, "bk" + suffix,
+                               "wv" + suffix, "bv" + suffix, "gab" + suffix});
+    shapes.insert(shapes.end(), {{8, 32}, {8}, {8, 32}, {8}, {8, 32}, {8}, {8, 8}});
+    data.insert(data.end(), {mixer.wq[h].data(), mixer.bq[h].data(), mixer.wk[h].data(),
+                             mixer.bk[h].data(), mixer.wv[h].data(), mixer.bv[h].data(),
+                             mixer.gab[h].data()});
+  }
+  names.insert(names.end(), {"wo", "bwo"});
+  shapes.insert(shapes.end(), {{32, 32}, {32}});
+  data.insert(data.end(), {mixer.wo.data(), mixer.bwo.data()});
+  for (size_t b = 0; b < heads_.size(); ++b) {
+    std::string suffix = heads_.size() > 1 ? "_b" + std::to_string(b) : "";
+    const HeadBucket& h = heads_[b];
+    names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
+                               "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
+    shapes.insert(shapes.end(), {{128, 256}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+    data.insert(data.end(), {h.w1.data(), h.b1.data(), h.w2.data(), h.b2.data(), h.wvo.data(),
+                             h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
+  }
+}
+
+bool RuneAttnMhModel::setTensors(const std::vector<std::string>& names,
+                                  const std::vector<float>& flat) {
+  std::vector<std::string> mixbase;
+  for (int h = 0; h < MultiHeadMixer::kHeads; ++h) {
+    std::string suffix = "_h" + std::to_string(h);
+    mixbase.insert(mixbase.end(), {"wq" + suffix, "bq" + suffix, "wk" + suffix, "bk" + suffix,
+                                   "wv" + suffix, "bv" + suffix, "gab" + suffix});
+  }
+  mixbase.insert(mixbase.end(), {"wo", "bwo"});
+  size_t mixcount = mixbase.size();
+  std::vector<std::string> headbase = {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
+  std::vector<std::string> want = mixbase;
+  if (names.size() > mixcount + headbase.size()) {
+    for (int b = 0; b < 3; ++b) {
+      std::string suffix = "_b" + std::to_string(b);
+      want.insert(want.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
+                               "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
+    }
+  } else {
+    want.insert(want.end(), headbase.begin(), headbase.end());
+  }
+  if (names.size() != want.size()) return false;
+  for (size_t i = 0; i < want.size(); ++i) {
+    if (names[i] != want[i]) return false;
+  }
+  std::vector<std::vector<float>*> slots;
+  for (int h = 0; h < MultiHeadMixer::kHeads; ++h) {
+    slots.insert(slots.end(), {&mixer.wq[h], &mixer.bq[h], &mixer.wk[h], &mixer.bk[h],
+                               &mixer.wv[h], &mixer.bv[h], &mixer.gab[h]});
+  }
+  slots.insert(slots.end(), {&mixer.wo, &mixer.bwo});
+  size_t off = 0;
+  for (auto* slot : slots) {
+    if (off + slot->size() > flat.size()) return false;
+    for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+    off += slot->size();
+  }
+  size_t nbuckets = (want.size() - mixcount) / 8;
+  heads_.clear();
+  for (size_t b = 0; b < nbuckets; ++b) {
+    HeadBucket h;
+    h.w1.assign(128 * 256, 0.0f);
+    h.b1.assign(128, 0.0f);
+    h.w2.assign(32 * 128, 0.0f);
+    h.b2.assign(32, 0.0f);
+    h.wvo.assign(32, 0.0f);
+    h.bvo.assign(1, 0.0f);
+    h.wwdl.assign(3 * 32, 0.0f);
+    h.bwdl.assign(3, 0.0f);
+    std::vector<std::vector<float>*> hs = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    for (auto* slot : hs) {
+      if (off + slot->size() > flat.size()) return false;
+      for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+      off += slot->size();
+    }
+    heads_.push_back(std::move(h));
+  }
+  return off == flat.size();
+}
+
+ModelSpec RuneAttnMhModel::spec() const {
+  ModelSpec s;
+  s.arch = archId();
+  s.archVersion = archVersion();
+  s.attention = "multi_head";
+  s.geometricBias = "per_head";
+  s.head = "value_wdl";
+  s.tokens = MultiHeadMixer::kTokens;
+  s.tokenDim = MultiHeadMixer::kDim;
+  s.headBuckets = static_cast<int>(heads_.size());
+  return s;
+}
+
+}

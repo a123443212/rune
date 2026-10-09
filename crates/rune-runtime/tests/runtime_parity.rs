@@ -198,9 +198,9 @@ fn unsupported_arch_fails_closed() {
 fn context_matches_reference_startpos() {
     let b = Board::startpos();
     let ctx = compute_context(&b);
-    let want = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.625, 1.0, 1.0, 0.0, 0.0, 0.0];
-    assert_eq!(ctx.len(), 12);
-    for i in 0..12 {
+    let want = [0.0, 0.0, 1.0, 1.0, 0.5, 0.5, 0.5, 0.5, 0.5, 0.5, 1.0, 1.0, 0.625, 1.0, 0.0, 0.0, 0.0];
+    assert_eq!(ctx.len(), 17);
+    for i in 0..17 {
         assert!((ctx[i] - want[i]).abs() < 1e-6, "{} got {} want {}", i, ctx[i], want[i]);
     }
 }
@@ -335,5 +335,23 @@ fn bucket_phase_boundaries() {
         assert_eq!(b.game_phase(), want, "{}", fen);
         ev.refresh(&b);
         assert_eq!(ev.phase(), want, "{}", fen);
+    }
+}
+#[test]
+fn multi_head_matches_golden() {
+    let p = PathBuf::from("../../spec/test-vectors/models/small-mh4-fp32.rune");
+    let mut ev = Evaluator::load(&p).expect("load multi-head");
+    let g = vec_file("multi_head.json");
+    assert_eq!(g["feature_version"].as_str().unwrap(), "grouped_hkav2_fullthreats_v02");
+    assert_eq!(g["vectors"].as_array().unwrap().len(), 3);
+    for v in g["vectors"].as_array().unwrap() {
+        let fen = v["fen"].as_str().unwrap();
+        let b = Board::parse_fen(fen).unwrap();
+        let r = ev.evaluate_board(&b);
+        assert!((r.value - v["value"].as_f64().unwrap() as f32).abs() < 1e-5, "{}", fen);
+        for i in 0..3 {
+            let d = (r.wdl[i] - v["wdl"][i].as_f64().unwrap() as f32).abs();
+            assert!(d < 1e-5, "{} {}", fen, i);
+        }
     }
 }

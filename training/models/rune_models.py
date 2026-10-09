@@ -4,7 +4,7 @@ import torch.nn.functional as F
 
 from training.features.python_features import NUM_GROUPS, TOKENS, TOKEN_DIM, VOCAB_SIZES
 
-ARCH_IDS = ["RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB"]
+ARCH_IDS = ["RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-ATTN-MH4"]
 
 EXPORT_ORDER = {
     "RUNE-SFNN": ["w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"],
@@ -128,6 +128,10 @@ class RuneFullModel(nn.Module):
         if arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             self.attn = RuneAttention(use_gab=(arch_id == "RUNE-ATTN-GAB"))
             self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
+        elif arch_id == "RUNE-ATTN-MH4":
+            from training.models.multi_head import RuneMultiHeadMixer
+            self.attn = RuneMultiHeadMixer()
+            self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         elif arch_id == "RUNE-MLP":
             self.attn = None
             self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
@@ -146,6 +150,20 @@ class RuneFullModel(nn.Module):
         return self.head(flat)
 
     def arch_tensors(self):
+        if self.arch_id == "RUNE-ATTN-MH4":
+            d = self.attn.arch_tensors()
+            heads = self.head.heads if self.buckets == 3 else [self.head]
+            for b, h in enumerate(heads):
+                suffix = f"_b{b}" if self.buckets == 3 else ""
+                d["w1" + suffix] = h.fc1.weight.detach()
+                d["b1" + suffix] = h.fc1.bias.detach()
+                d["w2" + suffix] = h.fc2.weight.detach()
+                d["b2" + suffix] = h.fc2.bias.detach()
+                d["wvo" + suffix] = h.fcv.weight.detach()
+                d["bvo" + suffix] = h.fcv.bias.detach()
+                d["wwdl" + suffix] = h.fcwdl.weight.detach()
+                d["bwdl" + suffix] = h.fcwdl.bias.detach()
+            return d
         if self.arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             d = {
                 "wq": self.attn.wq.weight.detach(),
@@ -186,7 +204,12 @@ class RuneFullModel(nn.Module):
         return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(NUM_GROUPS)}
 
     def export_order(self):
-        order = list(EXPORT_ORDER[self.arch_id])
+        if self.arch_id == "RUNE-ATTN-MH4":
+            from training.models.multi_head import RuneMultiHeadMixer
+            order = RuneMultiHeadMixer.export_order() + [
+                "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
+        else:
+            order = list(EXPORT_ORDER[self.arch_id])
         if self.buckets == 3:
             head_keys = ("w1", "b1", "w2", "b2", "wvo", "bvo", "wv", "bv", "wwdl", "bwdl")
             base = [k for k in order if k not in head_keys]
@@ -208,6 +231,9 @@ class RuneFullModel(nn.Module):
         if self.arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             attention = "gated_linear"
             gab = "learned" if self.arch_id == "RUNE-ATTN-GAB" else "none"
+        if self.arch_id == "RUNE-ATTN-MH4":
+            attention = "multi_head"
+            gab = "per_head"
         return {
             "arch": self.arch_id,
             "arch_version": "0.1.0",

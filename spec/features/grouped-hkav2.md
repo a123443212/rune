@@ -84,14 +84,16 @@ group-8 rows to the token-0 slot, never to a ninth token.
 Count non-pawn non-king pieces N. Phase = 0 if N>=12, 1 if N>=6,
 else 2.
 
-## Context vector (normative, CONTEXT_DIM=12)
+## Context vector (normative, CONTEXT_DIM=17)
 
-`[stm, phase/2, pawns/16, minors/8, rooks/4, queens/2, shield/8,
-total/32, castle_mask/15, ep_set, in_check, halfmove/100]`
-with every entry clamped to [0,1]. Counts are absolute over both
-colors. `shield` counts own non-king pieces around the `us` king.
-`ep_set` is 1 when an en-passant square is set. `in_check` is 1
-when any enemy piece attacks `kus` (0 when the king is absent).
+`[stm, phase/2, us_pawns/8, them_pawns/8, us_minors/8, them_minors/8,
+us_rooks/4, them_rooks/4, us_queens/2, them_queens/2, us_total/16,
+them_total/16, shield/8, castle_mask/15, ep_set, in_check, halfmove/100]`
+with every entry clamped to [0,1]. Counts split by side to move:
+`us_*` counts own pieces, `them_*` counts enemy pieces. `shield`
+counts own non-king pieces around the `us` king. `ep_set` is 1
+when an en-passant square is set. `in_check` is 1 when any enemy
+piece attacks `kus` (0 when the king is absent).
 
 ## Test coverage required
 

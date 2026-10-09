@@ -45,6 +45,7 @@ add_library(rune_core STATIC
   core/architectures/base/architecture.cpp
   core/architectures/mlp/mlp.cpp
   core/architectures/attention/attention.cpp
+  core/architectures/attention/multi_head.cpp
   core/architectures/relational/context.cpp
   core/architectures/relational/relational.cpp
   core/architectures/dense/var_accum.cpp
@@ -74,6 +75,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_dense.cpp
     tests/cpp/test_adaptive.cpp
     tests/cpp/test_v10.cpp
+    tests/cpp/test_multihead.cpp
     tests/cpp/test_v11.cpp
     tests/cpp/test_v12.cpp
     tests/cpp/test_v13.cpp

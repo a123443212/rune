@@ -1,7 +1,7 @@
 pub const RUNTIME_SPEC: &str = "RUNE-10";
 pub const MODEL_FORMAT_VERSION: u32 = 2;
 pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v02";
-pub const CONTEXT_DIM: usize = 12;
+pub const CONTEXT_DIM: usize = 17;
 pub const NUM_GROUPS: usize = 9;
 pub const TOKEN_DIM_DEFAULT: usize = 32;
 pub const VOCAB_SIZES: [usize; 9] = [256, 256, 256, 128, 128, 512, 512, 64, 4560];

@@ -1,4 +1,5 @@
 #include "tests/cpp/test_framework.h"
+#include "tests/cpp/test_multihead.h"
 #include "tests/cpp/test_v10.h"
 #include "tests/cpp/test_v11.h"
 #include "tests/cpp/test_v12.h"
@@ -56,6 +57,7 @@ int main() {
   testUncertaintyModelIO();
   testUncertaintyParamAccounting();
   runV10Tests();
+  runMultiHeadTests();
   runV11Tests();
   runV12Tests();
   runV13Tests();
