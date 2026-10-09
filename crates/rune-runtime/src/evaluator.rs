@@ -117,7 +117,10 @@ impl Evaluator {
             if gab.len() != tokens * tokens {
                 return Err(RuntimeError::Shape("gab".to_string()));
             }
-            let gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
+            let gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
+                None => rune_kernel::Gate::Clip,
+                Some(s) => rune_kernel::Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
+            };
             let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
             let (dyn_u, dyn_w, ctx_dim) = if arch == "RUNE-REL-02" {
                 let cd = m.header.raw.get("context_dim").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
@@ -135,7 +138,7 @@ impl Evaluator {
             } else {
                 (Vec::new(), Vec::new(), 0)
             };
-            Some(MixerWeights { tokens, dim, wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate_hard, alpha })
+            Some(MixerWeights { tokens, dim, wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate, alpha })
         } else {
             None
         };

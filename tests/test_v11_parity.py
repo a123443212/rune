@@ -36,14 +36,14 @@ def test_compiled_matches_generic_on_fixtures():
         dim = int(header.get("token_dim", 32))
         if tokens != 8 or dim != 32:
             continue
-        gate_hard = header.get("gate", "clip") == "hard_sigmoid"
+        gate = header.get("gate", "clip")
         alpha = float(header.get("alpha", 1.0))
         h1 = int(header.get("head_h1", 128))
         rng = np.random.RandomState(5)
         flat = np.clip(rng.randn(tokens * dim).astype(np.float32) * 0.3, 0, 1)
         try:
-            r1 = forward_generic(arrays, tokens, dim, h1, gate_hard, alpha, flat)
-            r2 = forward_generic(arrays, tokens, dim, h1, gate_hard, alpha, flat)
+            r1 = forward_generic(arrays, tokens, dim, h1, gate, alpha, flat)
+            r2 = forward_generic(arrays, tokens, dim, h1, gate, alpha, flat)
         except KeyError:
             continue
         assert abs(r1["value"] - r2["value"]) < 1e-9

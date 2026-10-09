@@ -263,7 +263,10 @@ fn dynamic_bias_matches_cache() {
     m.arrays.insert("dynW".to_string(), vec![0.03; t * cd]);
     m.header.raw["context_dim"] = serde_json::json!(rune_runtime::features::CONTEXT_DIM);
     let mut ev = Evaluator::from_model(&m).expect("dyn model loads");
-    let gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
+    let gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
+        None => rune_kernel::Gate::Clip,
+        Some(s) => rune_kernel::Gate::from_str(s).expect("known gate"),
+    };
     let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
     let pick = |base: &str, alt: &str| m.arrays.get(base).or_else(|| m.arrays.get(alt)).unwrap().clone();
     let gab = m.arrays.get("gabS").or_else(|| m.arrays.get("gab")).unwrap().clone();
@@ -280,7 +283,7 @@ fn dynamic_bias_matches_cache() {
         dyn_u: m.arrays.get("dynU").unwrap().clone(),
         dyn_w: m.arrays.get("dynW").unwrap().clone(),
         ctx_dim: cd,
-        gate_hard,
+        gate,
         alpha,
     };
     let b = Board::parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();

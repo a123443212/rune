@@ -9,6 +9,11 @@ def hard_sigmoid(s):
     return np.minimum(np.maximum(0.2 * s + 0.5, 0.0), 1.0)
 
 
+def screlu(s):
+    c = np.minimum(np.maximum(s, 0.0), 1.0)
+    return c * c
+
+
 def matvec_generic(mat, vec, bias):
     return mat.dot(vec) + bias
 
@@ -36,9 +41,16 @@ def qkv_fused(wq, bq, wk, bk, wv, bv, x):
     return q, k, v
 
 
-def score_bias_gate(q, k, gab, hard=False):
+def score_bias_gate(q, k, gab, gate="clip"):
     s = q.dot(k.T) + gab
-    g = hard_sigmoid(s) if hard else clip01(s)
+    if gate == "hard_sigmoid":
+        g = hard_sigmoid(s)
+    elif gate == "screlu":
+        g = screlu(s)
+    elif gate == "clip":
+        g = clip01(s)
+    else:
+        raise ValueError(f"unknown gate {gate}")
     return s, g
 
 
@@ -58,7 +70,7 @@ def dot_tanh(wvo, bvo, h2):
     return math.tanh(float(np.dot(w, h) + float(np.asarray(bvo).reshape(-1)[0])))
 
 
-def forward_generic(arrays, tokens, dim, h1n, gate_hard, alpha, flat):
+def forward_generic(arrays, tokens, dim, h1n, gate, alpha, flat):
     x = flat.reshape(tokens, dim)
     wq = arrays["wq"].reshape(dim, dim)
     bq = arrays["bq"]
@@ -68,7 +80,7 @@ def forward_generic(arrays, tokens, dim, h1n, gate_hard, alpha, flat):
     bv = arrays["bvv"] if "bvv" in arrays else arrays["bv"]
     gab = arrays["gabS"].reshape(tokens, tokens) if "gabS" in arrays else arrays["gab"].reshape(tokens, tokens)
     q, k, v = qkv_fused(wq, bq, wk, bk, wv, bv, x)
-    s, g = score_bias_gate(q, k, gab, gate_hard)
+    s, g = score_bias_gate(q, k, gab, gate)
     mixed = mix_residual(g, v, x, alpha)
     flat2 = mixed.reshape(-1)
     w1 = arrays["w1"].reshape(h1n, tokens * dim)
@@ -84,5 +96,5 @@ def forward_generic(arrays, tokens, dim, h1n, gate_hard, alpha, flat):
     return {"q": q, "k": k, "v": v, "scores": s, "gate": g, "mixed": mixed, "h1": h1, "h2": h2, "value": val, "wdl": wdl}
 
 
-def forward_compiled(arrays, tokens, dim, h1n, gate_hard, alpha, flat):
-    return forward_generic(arrays, tokens, dim, h1n, gate_hard, alpha, flat)
+def forward_compiled(arrays, tokens, dim, h1n, gate, alpha, flat):
+    return forward_generic(arrays, tokens, dim, h1n, gate, alpha, flat)

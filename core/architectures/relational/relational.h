@@ -11,11 +11,6 @@
 
 namespace rune {
 
-enum class GateFn { Clip, HardSigmoid };
-
-bool gateFromString(const std::string& name, GateFn& out);
-const char* gateName(GateFn fn);
-
 struct RelationalConfig {
   int tokens = 8;
   int dim = 32;

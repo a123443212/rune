@@ -51,7 +51,7 @@ int main(int argc, char** argv) {
   float tmp[256];
   float out[256];
   double uQkv = benchUs([&](int) { fused::qkvFused8x32(w, b, w, b, w, b, tok, q, k, v); }, iters);
-  double uScore = benchUs([&](int) { fused::scoreBiasGate8x8(q, k, gab, false, s, g); }, iters);
+  double uScore = benchUs([&](int) { fused::scoreBiasGate8x8(q, k, gab, GateFn::Clip, s, g); }, iters);
   double uMix = benchUs([&](int) { fused::mixResidual8x32(g, v, tok, 1.0f, tmp, out); }, iters);
   RuneAttnModel attn(true);
   GroupedMlp mlp;

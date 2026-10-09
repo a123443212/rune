@@ -14,7 +14,7 @@ pub struct IncrWeights {
     pub dyn_u: Vec<f32>,
     pub dyn_w: Vec<f32>,
     pub ctx_dim: usize,
-    pub gate_hard: bool,
+    pub gate: kernel::Gate,
     pub alpha: f32,
 }
 
@@ -61,11 +61,8 @@ pub struct RelationalCache {
     incremental_updates: usize,
 }
 
-fn gate_fn(hard: bool, x: f32) -> f32 {
-    if hard {
-        return kernel::hard_sigmoid(x);
-    }
-    kernel::clipped_relu(x)
+fn gate_fn(gate: kernel::Gate, x: f32) -> f32 {
+    gate.apply(x)
 }
 
 impl RelationalCache {
@@ -176,7 +173,7 @@ impl RelationalCache {
                     val += kernel::clamp_delta(du[a] * dw[b]);
                 }
                 s[a * t + b] = val;
-                g[a * t + b] = gate_fn(self.w.gate_hard, val);
+                g[a * t + b] = gate_fn(self.w.gate, val);
             }
         }
         kernel::mat_mul(g, vv, y, t, d, t);
@@ -244,7 +241,7 @@ impl RelationalCache {
             self.dw.copy_from_slice(&fdw);
         }
         let (du, dw) = (self.du.clone(), self.dw.clone());
-        let (gate_hard, alpha) = (self.w.gate_hard, self.w.alpha);
+        let (gate, alpha) = (self.w.gate, self.w.alpha);
         let (q, k, s, g, gab) = (&self.q, &self.k, &mut self.s, &mut self.g, &self.w.gab);
         let gab_ref = gab;
         for a in 0..t {
@@ -261,7 +258,7 @@ impl RelationalCache {
                     val += kernel::clamp_delta(du[a] * dw[b]);
                 }
                 s[a * t + b] = val;
-                g[a * t + b] = gate_fn(gate_hard, val);
+                g[a * t + b] = gate_fn(gate, val);
             }
         }
         let vv = self.v.clone();
@@ -379,7 +376,7 @@ mod cache_tests {
             dyn_u: Vec::new(),
             dyn_w: Vec::new(),
             ctx_dim: 0,
-            gate_hard: false,
+            gate: kernel::Gate::Clip,
             alpha: 1.0,
         }
     }
@@ -459,7 +456,7 @@ mod cache_tests {
             (nums(1), nums(2), nums(3), nums(4), nums(5), nums(6), nums(7));
         let (x0, x1, exp_full) = (nums(8), nums(9), nums(10));
         let changed: Vec<usize> = lines[12].split_whitespace().map(|x| x.parse().unwrap()).collect();
-        let w = IncrWeights { tokens: t, dim: d, wq, bq, wk, bk, wv, bv, gab, dyn_u: Vec::new(), dyn_w: Vec::new(), ctx_dim: 0, gate_hard: false, alpha };
+        let w = IncrWeights { tokens: t, dim: d, wq, bq, wk, bk, wv, bv, gab, dyn_u: Vec::new(), dyn_w: Vec::new(), ctx_dim: 0, gate: kernel::Gate::Clip, alpha };
         let mut c = RelationalCache::configure(w, thr);
         c.rebuild(&x0, None);
         c.update(&x1, None, &changed);

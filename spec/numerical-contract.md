@@ -35,6 +35,13 @@ in the last ulp, so: reference uses separate mul then add, SIMD may
 use fma only inside tolerant mode with eps 1e-6. Exact vectors avoid
 the boundary.
 
+## screlu(s)
+
+Exact. `c = clip01(s)`, then `c*c` in float32 round-to-nearest-even.
+NaN propagates through the clip. SIMD may fuse the square only inside
+tolerant mode with eps 1e-6. Output range is [0,1], so downstream
+matMul bounds match clip01.
+
 ## matVec / matMul / QK^T
 
 Tolerant, eps 1e-5 absolute per element for T*D <= 320 and K <= 64,

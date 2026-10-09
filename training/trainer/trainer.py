@@ -107,7 +107,8 @@ class Trainer:
             self.is_adaptive = True
             self.is_search = True
         else:
-            self.model = build_model(config["arch"])
+            p0 = config.get("rel_params", {})
+            self.model = build_model(config["arch"], gate=p0.get("gate", "clip"))
             self.needs_context = False
             self.is_adaptive = False
             self.is_search = False

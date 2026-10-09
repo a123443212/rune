@@ -33,7 +33,7 @@ pub struct MixerWeights {
     pub dyn_u: Vec<f32>,
     pub dyn_w: Vec<f32>,
     pub ctx_dim: usize,
-    pub gate_hard: bool,
+    pub gate: kernel::Gate,
     pub alpha: f32,
 }
 #[derive(Debug, Clone, Default)]
@@ -75,7 +75,7 @@ impl MixerWeights {
                 if dyn_on {
                     val += kernel::clamp_delta(du[a] * dw[b]);
                 }
-                g[a * t + b] = if self.gate_hard { kernel::hard_sigmoid(val) } else { kernel::clipped_relu(val) };
+                g[a * t + b] = self.gate.apply(val);
             }
         }
         let mut y = vec![0.0_f32; t * d];

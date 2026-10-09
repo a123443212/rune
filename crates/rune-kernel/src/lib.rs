@@ -24,6 +24,40 @@ pub fn hard_sigmoid(s: f32) -> f32 {
     }
     t
 }
+pub fn screlu(s: f32) -> f32 {
+    let c = clipped_relu(s);
+    c * c
+}
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum Gate {
+    Clip,
+    HardSigmoid,
+    Screlu,
+}
+impl Gate {
+    pub fn from_str(s: &str) -> Option<Gate> {
+        match s {
+            "clip" => Some(Gate::Clip),
+            "hard_sigmoid" => Some(Gate::HardSigmoid),
+            "screlu" => Some(Gate::Screlu),
+            _ => None,
+        }
+    }
+    pub fn name(self) -> &'static str {
+        match self {
+            Gate::Clip => "clip",
+            Gate::HardSigmoid => "hard_sigmoid",
+            Gate::Screlu => "screlu",
+        }
+    }
+    pub fn apply(self, x: f32) -> f32 {
+        match self {
+            Gate::Clip => clipped_relu(x),
+            Gate::HardSigmoid => hard_sigmoid(x),
+            Gate::Screlu => screlu(x),
+        }
+    }
+}
 pub fn clamp_delta(v: f32) -> f32 {
     if v < -0.25 {
         return -0.25;

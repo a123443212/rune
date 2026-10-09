@@ -12,7 +12,7 @@ class RuneAttentionBlock {
   static constexpr int kTokens = 8;
   static constexpr int kDim = 32;
 
-  explicit RuneAttentionBlock(bool useGab);
+  explicit RuneAttentionBlock(bool useGab, GateFn gate = GateFn::Clip);
 
   void forward(const float* x, float* out) const;
   size_t parameterCount() const;
@@ -22,13 +22,14 @@ class RuneAttentionBlock {
 
  private:
   bool useGab_;
+  GateFn gate_;
   mutable std::vector<float> scratch_;
 };
 
 class RuneAttnModel : public IArchitecture {
  public:
   RuneAttnModel();
-  explicit RuneAttnModel(bool useGab);
+  explicit RuneAttnModel(bool useGab, GateFn gate = GateFn::Clip);
 
   void forward(const float* tokens, float& value, float* wdl, int phase) const override;
   size_t parameterCount() const override;
@@ -46,6 +47,7 @@ class RuneAttnModel : public IArchitecture {
  private:
   const HeadBucket& headFor(int phase) const;
   bool useGab_;
+  GateFn gate_;
   mutable std::vector<float> scratch_;
 };
 

@@ -15,33 +15,7 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
   }
 }
 
-float applyGate(GateFn fn, float s) {
-  if (fn == GateFn::HardSigmoid) {
-    float v = 0.2f * s + 0.5f;
-    if (v < 0.0f) return 0.0f;
-    if (v > 1.0f) return 1.0f;
-    return v;
-  }
-  if (s < 0.0f) return 0.0f;
-  if (s > 1.0f) return 1.0f;
-  return s;
-}
-
 }  // namespace
-
-bool gateFromString(const std::string& name, GateFn& out) {
-  if (name == "clip") {
-    out = GateFn::Clip;
-    return true;
-  }
-  if (name == "hard_sigmoid") {
-    out = GateFn::HardSigmoid;
-    return true;
-  }
-  return false;
-}
-
-const char* gateName(GateFn fn) { return fn == GateFn::HardSigmoid ? "hard_sigmoid" : "clip"; }
 
 RelationalMixer::RelationalMixer() {
   RelationalConfig cfg;

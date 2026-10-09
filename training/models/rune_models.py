@@ -18,6 +18,15 @@ def clip01(x):
     return torch.clamp(x, 0.0, 1.0)
 
 
+def apply_gate(name, s):
+    if name == "hard_sigmoid":
+        return torch.clamp(0.2 * s + 0.5, 0.0, 1.0)
+    if name == "screlu":
+        c = torch.clamp(s, 0.0, 1.0)
+        return c * c
+    return torch.clamp(s, 0.0, 1.0)
+
+
 class GroupedEmbedder(nn.Module):
     def __init__(self):
         super().__init__()
@@ -95,9 +104,12 @@ class BucketedHead(nn.Module):
 
 
 class RuneAttention(nn.Module):
-    def __init__(self, use_gab):
+    def __init__(self, use_gab, gate="clip"):
         super().__init__()
+        if gate not in ("clip", "hard_sigmoid", "screlu"):
+            raise ValueError(f"unknown gate {gate}")
         self.use_gab = use_gab
+        self.gate = gate
         self.wq = nn.Linear(TOKEN_DIM, TOKEN_DIM)
         self.wk = nn.Linear(TOKEN_DIM, TOKEN_DIM)
         self.wv = nn.Linear(TOKEN_DIM, TOKEN_DIM)
@@ -110,13 +122,13 @@ class RuneAttention(nn.Module):
         s = q @ k.transpose(-1, -2)
         if self.use_gab:
             s = s + self.gab
-        a = torch.clamp(s, 0.0, 1.0)
+        a = apply_gate(self.gate, s)
         y = a @ v
         return x + y
 
 
 class RuneFullModel(nn.Module):
-    def __init__(self, arch_id, buckets=1):
+    def __init__(self, arch_id, buckets=1, gate="clip"):
         super().__init__()
         if arch_id not in ARCH_IDS:
             raise ValueError(f"unknown arch {arch_id}")
@@ -124,9 +136,10 @@ class RuneFullModel(nn.Module):
             raise ValueError(f"head buckets must be 1 or 3, got {buckets}")
         self.arch_id = arch_id
         self.buckets = buckets
+        self.gate = gate
         self.embedder = GroupedEmbedder()
         if arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
-            self.attn = RuneAttention(use_gab=(arch_id == "RUNE-ATTN-GAB"))
+            self.attn = RuneAttention(use_gab=(arch_id == "RUNE-ATTN-GAB"), gate=gate)
             self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         elif arch_id == "RUNE-ATTN-MH4":
             from training.models.multi_head import RuneMultiHeadMixer
@@ -244,9 +257,10 @@ class RuneFullModel(nn.Module):
             "geometric_bias": gab,
             "head": "value_wdl",
             "head_buckets": self.buckets,
+            "gate": self.gate if self.attn is not None and self.arch_id != "RUNE-ATTN-MH4" else "clip",
             "quantization": quantization,
         }
 
 
-def build_model(arch_id):
-    return RuneFullModel(arch_id)
+def build_model(arch_id, gate="clip"):
+    return RuneFullModel(arch_id, gate=gate)

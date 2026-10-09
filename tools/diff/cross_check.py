@@ -7,6 +7,17 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 import numpy as np
 from training.export.export import load_exported_arrays
 from training.features.python_features import extract_features
+def gate_fn(name, s):
+    if name == "hard_sigmoid":
+        return np.clip(0.2 * s + 0.5, 0, 1)
+    if name == "screlu":
+        c = np.clip(s, 0, 1)
+        return c * c
+    if name != "clip":
+        raise ValueError(f"unknown gate {name}")
+    return np.clip(s, 0, 1)
+
+
 def py_value(model, fen):
     header, arrays = load_exported_arrays(model)
     feats = extract_features(fen)
@@ -21,7 +32,7 @@ def py_value(model, fen):
         K = tok @ arrays["wk"].T + arrays["bk"]
         V = tok @ arrays["wvv"].T + arrays["bvv"]
         S = Q @ K.T + arrays["gab"]
-        mixed = tok + np.clip(S, 0, 1) @ V
+        mixed = tok + gate_fn(header.get("gate", "clip"), S) @ V
     elif arch == "RUNE-REL-02":
         if header.get("geometric_bias") == "dynamic":
             raise RuntimeError("dynamic relational bias needs board context")
@@ -30,10 +41,7 @@ def py_value(model, fen):
         V = tok @ arrays["wvv"].T + arrays["bvv"]
         gab = arrays.get("gabS", arrays.get("gab"))
         S = Q @ K.T + gab
-        if header.get("gate", "clip") == "hard_sigmoid":
-            G = np.clip(0.2 * S + 0.5, 0, 1)
-        else:
-            G = np.clip(S, 0, 1)
+        G = gate_fn(header.get("gate", "clip"), S)
         alpha = float(header.get("alpha", 1.0))
         mixed = tok + alpha * (G @ V)
     else:

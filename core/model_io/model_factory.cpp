@@ -6,11 +6,11 @@
 
 namespace rune {
 
-std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId) {
+std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId, GateFn gate) {
   if (archId == "RUNE-MLP") return std::unique_ptr<IArchitecture>(new GroupedMlp());
   if (archId == "RUNE-SFNN") return std::unique_ptr<IArchitecture>(new SfnnBaseline());
-  if (archId == "RUNE-ATTN") return std::unique_ptr<IArchitecture>(new RuneAttnModel(false));
-  if (archId == "RUNE-ATTN-GAB") return std::unique_ptr<IArchitecture>(new RuneAttnModel(true));
+  if (archId == "RUNE-ATTN") return std::unique_ptr<IArchitecture>(new RuneAttnModel(false, gate));
+  if (archId == "RUNE-ATTN-GAB") return std::unique_ptr<IArchitecture>(new RuneAttnModel(true, gate));
   if (archId == "RUNE-ATTN-MH4") return std::unique_ptr<IArchitecture>(new RuneAttnMhModel());
   return nullptr;
 }

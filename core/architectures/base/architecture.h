@@ -66,4 +66,10 @@ struct HeadBucket {
 uint64_t fnv1aHash(const std::string& s);
 uint64_t fnv1aHash(const uint8_t* data, size_t n);
 
+enum class GateFn { Clip, HardSigmoid, Screlu };
+
+bool gateFromString(const std::string& name, GateFn& out);
+const char* gateName(GateFn fn);
+float applyGate(GateFn fn, float s);
+
 }

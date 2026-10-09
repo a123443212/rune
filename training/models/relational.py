@@ -5,13 +5,16 @@ from training.features.context import CONTEXT_DIM
 from training.features.python_features import NUM_GROUPS, VOCAB_SIZES
 from training.models.token_layout import check_layout
 
-GATE_FNS = ("clip", "hard_sigmoid")
+GATE_FNS = ("clip", "hard_sigmoid", "screlu")
 DYN_CAP = 0.25
 
 
 def apply_gate(name, s):
     if name == "hard_sigmoid":
         return torch.clamp(0.2 * s + 0.5, 0.0, 1.0)
+    if name == "screlu":
+        c = torch.clamp(s, 0.0, 1.0)
+        return c * c
     return torch.clamp(s, 0.0, 1.0)
 
 

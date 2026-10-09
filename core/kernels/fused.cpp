@@ -15,12 +15,12 @@ void qkvFused8x32(const float* wq, const float* bq, const float* wk, const float
     small::matVecFixed<32, 32>(wv, x + t * 32, bv, v + t * 32);
   }
 }
-void scoreBiasGate8x8(const float* q, const float* k, const float* gab, bool hard, float* scores, float* gate) {
+void scoreBiasGate8x8(const float* q, const float* k, const float* gab, GateFn gate, float* scores, float* gateOut) {
   small::scoreFixed<8, 32>(q, k, scores);
   for (int i = 0; i < 64; ++i) {
     float b = scores[i] + gab[i];
     scores[i] = b;
-    gate[i] = hard ? ref::hardSigmoid(b) : ref::clippedRelu(b);
+    gateOut[i] = applyGate(gate, b);
   }
 }
 void mixResidual8x32(const float* g, const float* v, const float* x, float alpha, float* tmp, float* out) {

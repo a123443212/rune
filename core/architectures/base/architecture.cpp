@@ -35,4 +35,44 @@ std::string ModelSpec::canonicalString() const {
 
 uint64_t ModelSpec::configHash() const { return fnv1aHash(canonicalString()); }
 
+bool gateFromString(const std::string& name, GateFn& out) {
+  if (name == "clip") {
+    out = GateFn::Clip;
+    return true;
+  }
+  if (name == "hard_sigmoid") {
+    out = GateFn::HardSigmoid;
+    return true;
+  }
+  if (name == "screlu") {
+    out = GateFn::Screlu;
+    return true;
+  }
+  return false;
+}
+
+const char* gateName(GateFn fn) {
+  if (fn == GateFn::HardSigmoid) return "hard_sigmoid";
+  if (fn == GateFn::Screlu) return "screlu";
+  return "clip";
+}
+
+float applyGate(GateFn fn, float s) {
+  if (fn == GateFn::HardSigmoid) {
+    float v = 0.2f * s + 0.5f;
+    if (v < 0.0f) return 0.0f;
+    if (v > 1.0f) return 1.0f;
+    return v;
+  }
+  if (fn == GateFn::Screlu) {
+    float c = s;
+    if (c < 0.0f) c = 0.0f;
+    if (c > 1.0f) c = 1.0f;
+    return c * c;
+  }
+  if (s < 0.0f) return 0.0f;
+  if (s > 1.0f) return 1.0f;
+  return s;
+}
+
 }

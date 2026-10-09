@@ -18,7 +18,7 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
 
 }  // namespace
 
-RuneAttentionBlock::RuneAttentionBlock(bool useGab) : useGab_(useGab) {
+RuneAttentionBlock::RuneAttentionBlock(bool useGab, GateFn gate) : useGab_(useGab), gate_(gate) {
   uint64_t s = useGab ? 999 : 555;
   initVec(wq, 32 * 32, s, 0.08f);
   initVec(bq, 32, s, 0.01f);
@@ -44,7 +44,7 @@ void RuneAttentionBlock::forward(const float* x, float* out) const {
   simd::matMulTT(q, k, s, 8, 8, 32);
   for (int i = 0; i < 64; ++i) {
     float val = s[i] + (useGab_ ? gab[i] : 0.0f);
-    s[i] = simd::clippedRelu(val);
+    s[i] = applyGate(gate_, val);
   }
   simd::matMul(s, v, y, 8, 32, 8);
   for (int i = 0; i < 256; ++i) out[i] = x[i] + y[i];
@@ -58,7 +58,7 @@ size_t RuneAttentionBlock::parameterCount() const {
 
 RuneAttnModel::RuneAttnModel() : RuneAttnModel(false) {}
 
-RuneAttnModel::RuneAttnModel(bool useGab) : attn(useGab), useGab_(useGab) {
+RuneAttnModel::RuneAttnModel(bool useGab, GateFn gate) : attn(useGab, gate), useGab_(useGab), gate_(gate) {
   uint64_t s = useGab ? 4242 : 3131;
   heads_.resize(1);
   initVec(heads_[0].w1, 128 * 256, s, 0.05f);
@@ -179,6 +179,7 @@ ModelSpec RuneAttnModel::spec() const {
   s.archVersion = archVersion();
   s.attention = "gated_linear";
   s.geometricBias = useGab_ ? "learned" : "none";
+  s.gate = gateName(gate_);
   s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }

@@ -537,7 +537,12 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     out.flexEmbeddings.configure(bs.dim);
     flexEmb = &out.flexEmbeddings;
   } else {
-    out.arch = createArchitecture(arch);
+    GateFn gate = GateFn::Clip;
+    if (!gateFromString(out.spec.gate, gate)) {
+      err = "unknown gate " + out.spec.gate;
+      return false;
+    }
+    out.arch = createArchitecture(arch, gate);
     if (!out.arch) {
       err = "unknown arch " + arch;
       return false;

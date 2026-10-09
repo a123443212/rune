@@ -1,4 +1,4 @@
-use rune_kernel::{arena::Arena, fused};
+use rune_kernel::{arena::Arena, fused, Gate};
 use crate::accumulator::{token_of, Tables};
 use crate::board::Board;
 use crate::compiled_loader::CompiledHeader;
@@ -22,7 +22,7 @@ pub struct CompiledEvaluator {
     dyn_u: Vec<f32>,
     dyn_w: Vec<f32>,
     ctx_dim: usize,
-    gate_hard: bool,
+    gate: Gate,
     alpha: f32,
     mh: Option<MultiHeadMixer>,
     head: Vec<HeadWeights>,
@@ -81,7 +81,7 @@ impl CompiledEvaluator {
             tables.data[g].copy_from_slice(arr);
         }
         let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-REL-02";
-        let (wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate_hard, alpha);
+        let (wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate, alpha);
         if has_mixer {
             wq = need_vec(&m.arrays, "wq")?;
             bq = need_vec(&m.arrays, "bq")?;
@@ -122,7 +122,10 @@ impl CompiledEvaluator {
             dyn_u = pair.0;
             dyn_w = pair.1;
             ctx_dim = pair.2;
-            gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
+            gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
+                None => Gate::Clip,
+                Some(s) => Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
+            };
             alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
         } else {
             let n = dim * dim;
@@ -136,7 +139,7 @@ impl CompiledEvaluator {
             dyn_u = Vec::new();
             dyn_w = Vec::new();
             ctx_dim = 0;
-            gate_hard = false;
+            gate = Gate::Clip;
             alpha = 1.0;
         }
         let buckets = m.header.raw.get("head_buckets").and_then(|x| x.as_u64()).unwrap_or(1);
@@ -238,7 +241,7 @@ impl CompiledEvaluator {
             dyn_u,
             dyn_w,
             ctx_dim,
-            gate_hard,
+            gate,
             alpha,
             mh,
             head: heads,
@@ -349,7 +352,7 @@ impl CompiledEvaluator {
                 if dyn_on {
                     v += rune_kernel::clamp_delta(du[a] * dw[b]);
                 }
-                g[a * t + b] = if self.gate_hard { rune_kernel::hard_sigmoid(v) } else { rune_kernel::clipped_relu(v) };
+                g[a * t + b] = self.gate.apply(v);
             }
         }
         let mut y = vec![0.0f32; t * d];
@@ -423,7 +426,7 @@ impl CompiledEvaluator {
             let mut tmp = vec![0.0f32; 256];
             let mut out = vec![0.0f32; 256];
             fused::qkv_fused_8x32(&self.wq, &self.bq, &self.wk, &self.bk, &self.wv, &self.bv, &tok, &mut q, &mut k, &mut vv);
-            fused::score_bias_gate_8x8(&q, &k, &self.gab, self.gate_hard, &mut s, &mut g);
+            fused::score_bias_gate_8x8(&q, &k, &self.gab, self.gate, &mut s, &mut g);
             fused::mix_residual_8x32(&g, &vv, &tok, self.alpha, &mut tmp, &mut out);
             mixed = out;
         } else if has_mixer {
@@ -451,7 +454,7 @@ impl CompiledEvaluator {
             let mut tmp = vec![0.0f32; 256];
             let mut out = vec![0.0f32; 256];
             fused::qkv_fused_8x32(&self.wq, &self.bq, &self.wk, &self.bk, &self.wv, &self.bv, tok, &mut q, &mut k, &mut vv);
-            fused::score_bias_gate_8x8(&q, &k, &self.gab, self.gate_hard, &mut s, &mut g);
+            fused::score_bias_gate_8x8(&q, &k, &self.gab, self.gate, &mut s, &mut g);
             fused::mix_residual_8x32(&g, &vv, tok, self.alpha, &mut tmp, &mut out);
             mixed = out;
         } else if has_mixer {

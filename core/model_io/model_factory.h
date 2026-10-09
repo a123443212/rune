@@ -10,7 +10,8 @@
 
 namespace rune {
 
-std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId);
+std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId,
+                                                   GateFn gate = GateFn::Clip);
 
 struct FlexBuildSpec {
   int tokens = 8;

@@ -12,28 +12,20 @@ pub fn qkv_fused_8x32(wq: &[f32], bq: &[f32], wk: &[f32], bk: &[f32], wv: &[f32]
     }
 }
 
-pub fn score_bias_gate_8x8(q: &[f32], k: &[f32], gab: &[f32], gate_hard: bool, scores: &mut [f32], gate: &mut [f32]) {
+pub fn score_bias_gate_8x8(q: &[f32], k: &[f32], gab: &[f32], gate: crate::Gate, scores: &mut [f32], gate_out: &mut [f32]) {
     mat_mul_tt(q, k, scores, 8, 8, 32);
     for i in 0..64 {
         let b = scores[i] + gab[i];
         scores[i] = b;
-        gate[i] = if gate_hard {
-            super::hard_sigmoid(b)
-        } else {
-            super::clipped_relu(b)
-        };
+        gate_out[i] = gate.apply(b);
     }
 }
 
-pub fn score_bias_gate_inplace(q: &[f32], k: &[f32], gab: &[f32], gate_hard: bool, buf: &mut [f32]) {
+pub fn score_bias_gate_inplace(q: &[f32], k: &[f32], gab: &[f32], gate: crate::Gate, buf: &mut [f32]) {
     mat_mul_tt(q, k, buf, 8, 8, 32);
     for i in 0..64 {
         let b = buf[i] + gab[i];
-        buf[i] = if gate_hard {
-            super::hard_sigmoid(b)
-        } else {
-            super::clipped_relu(b)
-        };
+        buf[i] = gate.apply(b);
     }
 }
 

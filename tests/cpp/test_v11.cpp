@@ -57,7 +57,7 @@ static void testScoreGate() {
   for (int i = 0; i < 64; ++i) gab[i] = 0.01f;
   float s[64];
   float g[64];
-  fused::scoreBiasGate8x8(q, k, gab, false, s, g);
+  fused::scoreBiasGate8x8(q, k, gab, GateFn::Clip, s, g);
   float s2[64];
   ref::matMulTT(q, k, s2, 8, 8, 32);
   for (int i = 0; i < 64; ++i) CHECK(std::fabs(s[i] - (s2[i] + gab[i])) < 1e-4);

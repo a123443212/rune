@@ -28,7 +28,7 @@ fn mixer_composition_matches_golden_with_live_gates() {
         dyn_u: Vec::new(),
         dyn_w: Vec::new(),
         ctx_dim: 0,
-        gate_hard: false,
+        gate: rune_kernel::Gate::Clip,
         alpha: 1.0,
     };
     let input = f32s(&v["input"]);

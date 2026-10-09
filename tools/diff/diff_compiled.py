@@ -8,8 +8,8 @@ from training.compiler.reference import forward_generic
 from training.export.export import load_exported_arrays
 
 
-def stage_report(arrays, tokens, dim, h1, gate_hard, alpha, flat, eps):
-    r = forward_generic(arrays, tokens, dim, h1, gate_hard, alpha, flat)
+def stage_report(arrays, tokens, dim, h1, gate, alpha, flat, eps):
+    r = forward_generic(arrays, tokens, dim, h1, gate, alpha, flat)
     lines = []
     lines.append("tokens %d dim %d h1 %d" % (tokens, dim, h1))
     lines.append("value %.9f" % r["value"])
@@ -31,16 +31,16 @@ def main():
     tokens = int(hg.get("tokens", 8))
     dim = int(hg.get("token_dim", 32))
     h1 = int(hg.get("head_h1", 128))
-    gate_hard = hg.get("gate", "clip") == "hard_sigmoid"
+    gate = hg.get("gate", "clip")
     alpha = float(hg.get("alpha", 1.0))
     rng = np.random.RandomState(0)
     maxd = 0.0
     rep = {"generic": args.generic, "compiled": args.compiled, "stages": []}
     for trial in range(5):
         flat = np.clip(rng.randn(tokens * dim).astype(np.float32) * 0.3, 0, 1)
-        r1 = forward_generic(ag, tokens, dim, h1, gate_hard, alpha, flat)
+        r1 = forward_generic(ag, tokens, dim, h1, gate, alpha, flat)
         try:
-            r2 = forward_generic(ac, tokens, dim, h1, gate_hard, alpha, flat)
+            r2 = forward_generic(ac, tokens, dim, h1, gate, alpha, flat)
         except KeyError as e:
             print("compiled missing tensor %s" % e)
             return 2
