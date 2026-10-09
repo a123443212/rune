@@ -1,95 +1,110 @@
 # RUNE — Relational Unified Neural Evaluator
 
-Research framework for CPU-efficient neural chess evaluation:
-sparse grouped features, incremental accumulators, compact
-architectures, adaptive computation, and a high-throughput data
-engine — developed version by version, each gated on measured
-evidence, never on novelty.
+Research framework for CPU-efficient neural chess evaluation.
+One idea, many generations: small sparse-feature networks with
+incremental updates, developed version by version, each gated on
+measured evidence, never on novelty.
 
-House rules (stable across all versions):
+This file states only what does not change. Anything with a version
+number, a size, or a "latest" in it lives elsewhere — see Map below.
+If this file ever names one, that is a bug: fix this file, not reality.
 
-- No claim without a matched-condition experiment behind it.
-- Per-metric reporting; no composite scores, no hidden capacity wins.
+## Contract
+
+These hold for every generation. Changing one is a breaking change,
+not a new experiment.
+
+- Three subsystems meet only through artifacts: datasets
+  (`.rune-data` plus manifests) and models (`.rune` plus hashes).
+  No subsystem reaches into another's internals.
+- Evaluation values are **side-to-move-relative**. Records stamp
+  their perspective; mismatches are rejected, never coerced.
+- Determinism: same input plus config plus seed yields the same
+  bytes, proven by manifest, dataset, and model hashes.
+- Loaders fail closed on anything they do not recognize. Exact
+  tolerances live in `spec/`, never in prose.
+- No claim without a matched-condition experiment behind it:
+  one changed variable at a time against a re-run control.
+- Per-metric reporting. No composite scores, no hidden capacity wins.
 - Smaller, simpler, faster wins ties against cleverer.
 - Failed experiments are logged, never deleted.
+- Teacher supervision is never free: generation, labeling, and
+  storage costs are reported alongside any claim built on them.
 
-## Subsystems
+## Map
 
-| Direction | Role | Lives in |
-| --------- | ---- | -------- |
-| C++ | Chess runtime and inference (board, features, accumulators, architectures, SIMD, model I/O, benchmarks, tests) | `core/`, `benchmarks/`, `bindings/`, `tests/cpp` |
-| Python / PyTorch | Training and research (features mirror, models, losses, datasets, trainer, export, screening, analysis, match harness) | `training/`, `tools/`, `tests/test_*.py` |
-| Rust | Unified Cargo workspace: inference runtime (spec, model, kernel, runtime, search, IR, compiler, CLI) and data engine (parse, validate, dedup, filter, shard, serve batches, `.rune-data` format) | `crates/`, `tools/data_bridge/` |
+Do not document the current state here — it rots. Derive it:
 
-The three meet only through artifacts: datasets (`.rune-data`,
-manifests) and models (`.rune`, checksums). No subsystem reaches
-into another's internals.
+```bash
+git log --oneline -10        # what changed lately; newest is current
+ls configs                   # experiment generations; newest dir is current
+cat spec/VERSIONS.md         # what the version numbers mean
+ls spec/test-vectors         # golden fixtures every implementation must satisfy
+```
 
-## Versions
+Source layout, by role rather than by name:
 
-Work proceeds as `rune-vNN` generations. Each generation owns:
+- Native runtime and inference: board, features, accumulators,
+  architectures, SIMD, model I/O, benchmarks, and its tests.
+- Training and research in Python and PyTorch: feature mirrors,
+  models, losses, datasets, trainer, export, screening, analysis,
+  match harness, and its tests.
+- A single Rust workspace holding both the inference runtime
+  (spec, model, kernel, runtime, search, IR, compiler, CLI) and
+  the data engine (parse, validate, dedup, filter, shard, batches).
 
-- `configs/vNN/` — experiment configs for that generation
-- `spec/` — normative contracts (runtime, features, model format,
-  quantization, IR) plus golden test vectors in `spec/test-vectors/`
-- `spec/VERSIONS.md` — which version numbers exist and what they cover
+## Build and test
 
-There is no separate docs tree: history lives in `git log --oneline`.
-To find the current state, read the newest generation's config in
-`configs/` and the matching spec, or check `git log --oneline`.
-Any document that names a "latest version" instead of pointing
-here is stale by definition.
-
-## Build
+Each subsystem builds with its own toolchain and tests itself.
+Concrete target names change; these shapes do not:
 
 ```bash
 cmake -S . -B build && cmake --build build -j4
-./build/rune_tests          # C++ suite (needs no extra setup)
+ctest --test-dir build
 
 pip install -r requirements.txt
-pytest tests/               # Python suite (some tests need the bindings below)
+pytest tests/
 
 cargo build --workspace
-cargo test --workspace --locked   # single Rust workspace: runtime + data engine
+cargo test --workspace --locked
 ```
 
-Two Rust binaries come out of the workspace:
+Built CLIs document themselves. When in doubt, ask them:
 
 ```bash
-cargo run -p rune-cli -- eval --model <model.rune> --fen "<fen>"
-cargo run -p rune-data-cli -- --help   # data engine: ingest, validate, shard, ...
+cargo run -p <cli-crate> -- --help
+python <tool-script> --help
 ```
 
-Python bindings (`rune_bindings`) need CPython headers. Without
-root, fetch and unpack them locally instead of `apt install`:
-
-```bash
-apt-get download libpython3.14-dev   # adjust version to `python3 --version`
-dpkg-deb -x libpython3.14-dev_*_amd64.deb /tmp/pyheaders
-# then compile with -I/tmp/pyheaders/usr/include/python3.14
-# -I/tmp/pyheaders/usr/include (see repo history for the full g++ line)
-```
+Native Python bindings need CPython headers matching
+`python3 --version`. Without root, fetch and unpack the matching
+headers package locally instead of installing system-wide.
 
 ## Reproduce an experiment
 
-```bash
-python tools/dataset/build_real_pool.py --out data/pool.jsonl --games 200
-python tools/dataset/label_engine.py --pool data/pool.jsonl --out data/labeled.jsonl \
-    --engine /path/to/stockfish --depth 12 --copy-to-ground-truth
-python tools/screening/run_screening.py --config configs/vNN/<leg>.yaml --pool data/labeled.jsonl
-./target/release/rune-data benchmark --pool data/pool.jsonl
-```
+Every generation follows the same stages. Find the current
+generation's config dir via Map, then walk the stages:
 
-Every run records config, seed, dataset/teacher/model hashes,
-hyperparameters, and position counts in `metrics.json`; see the
-matching config in `configs/` and `spec/VERSIONS.md` for
-interpretation rules.
+1. Build a position pool from games.
+2. Label it with an engine teacher at recorded depths,
+   deterministically, keeping provenance and hashes.
+3. Train and screen from the generation config: same seed,
+   same data, one variable per leg against a re-run control.
+4. Shard the set with the data engine: validate, dedup,
+   filter, shard, manifest.
+5. Export the model and verify payload and header hashes.
+6. Play engine matches at fixed nodes and at fixed time.
 
-## Key conventions (decided once, followed everywhere)
+Every run records config, seed, dataset, teacher, and model
+hashes, hyperparameters, and position counts in `metrics.json`.
+Interpretation rules live with the generation config, not here.
 
-- Evaluation values are **side-to-move-relative** (negamax).
-  Records stamp `value_perspective`; mismatches are rejected, never coerced.
-- Determinism: same input + config + seed = same bytes
-  (manifest/dataset/model hashes prove it).
-- Teacher supervision is never free: generation, labeling, and
-  storage costs are reported alongside any claim built on them.
+## Conventions
+
+Decided once, followed everywhere. Details and tolerances are
+normative in `spec/`; this list is only an index:
+
+- Negamax values, stamped perspective, reject on mismatch.
+- Deterministic bytes from input plus config plus seed.
+- Priced teachers: report generation, labeling, and storage.
+- Evidence-gated versions: novelty alone promotes nothing.

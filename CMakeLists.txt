@@ -81,7 +81,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_v13.cpp
   )
   target_link_libraries(rune_tests PRIVATE rune_core)
-  add_test(NAME rune_cpp_tests COMMAND rune_tests)
+  add_test(NAME rune_cpp_tests COMMAND rune_tests WORKING_DIRECTORY ${CMAKE_SOURCE_DIR})
 endif()
 
 if(RUNE_BUILD_BENCH)
