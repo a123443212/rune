@@ -177,6 +177,10 @@ impl CompiledEvaluator {
             if tokens != 8 || dim != 32 {
                 return Err(RuntimeError::Shape("tokens".to_string()));
             }
+            let mh_gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
+                None => Gate::Clip,
+                Some(s) => Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
+            };
             let mut wq = Vec::new();
             let mut bq = Vec::new();
             let mut wk = Vec::new();
@@ -224,6 +228,7 @@ impl CompiledEvaluator {
                 gab,
                 wo,
                 bwo,
+                gate: mh_gate,
             })
         } else {
             None

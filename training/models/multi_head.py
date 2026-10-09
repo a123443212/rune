@@ -13,13 +13,25 @@ def clip01(x):
     return torch.clamp(x, 0.0, 1.0)
 
 
+def apply_gate(name, s):
+    if name == "hard_sigmoid":
+        return torch.clamp(0.2 * s + 0.5, 0.0, 1.0)
+    if name == "screlu":
+        c = torch.clamp(s, 0.0, 1.0)
+        return c * c
+    return torch.clamp(s, 0.0, 1.0)
+
+
 class RuneMultiHeadMixer(nn.Module):
-    def __init__(self, num_heads=NUM_HEADS, head_dim=HEAD_DIM):
+    def __init__(self, num_heads=NUM_HEADS, head_dim=HEAD_DIM, gate="clip"):
         super().__init__()
         if num_heads * head_dim != TOKEN_DIM:
             raise ValueError("heads * head_dim must equal token dim")
+        if gate not in ("clip", "hard_sigmoid", "screlu"):
+            raise ValueError(f"unknown gate {gate}")
         self.num_heads = num_heads
         self.head_dim = head_dim
+        self.gate = gate
         self.q = nn.ModuleList([nn.Linear(TOKEN_DIM, head_dim) for _ in range(num_heads)])
         self.k = nn.ModuleList([nn.Linear(TOKEN_DIM, head_dim) for _ in range(num_heads)])
         self.v = nn.ModuleList([nn.Linear(TOKEN_DIM, head_dim) for _ in range(num_heads)])
@@ -34,7 +46,7 @@ class RuneMultiHeadMixer(nn.Module):
             k = self.k[h](x)
             v = self.v[h](x)
             s = q @ k.transpose(-1, -2) + self.gab[h]
-            a = clip01(s)
+            a = apply_gate(self.gate, s)
             parts.append(a @ v)
         y = torch.cat(parts, dim=-1)
         return x + self.wo(y)

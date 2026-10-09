@@ -20,6 +20,7 @@ pub struct MultiHeadMixer {
     pub gab: Vec<Vec<f32>>,
     pub wo: Vec<f32>,
     pub bwo: Vec<f32>,
+    pub gate: kernel::Gate,
 }
 
 impl MultiHeadMixer {
@@ -47,7 +48,7 @@ impl MultiHeadMixer {
             for a in 0..t {
                 for b in 0..t {
                     let val = s[a * t + b] + self.gab[h][a * t + b];
-                    g[a * t + b] = kernel::clipped_relu(val);
+                    g[a * t + b] = self.gate.apply(val);
                 }
             }
             let mut o = vec![0.0_f32; t * hd];

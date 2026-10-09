@@ -11,7 +11,7 @@ std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId, Gat
   if (archId == "RUNE-SFNN") return std::unique_ptr<IArchitecture>(new SfnnBaseline());
   if (archId == "RUNE-ATTN") return std::unique_ptr<IArchitecture>(new RuneAttnModel(false, gate));
   if (archId == "RUNE-ATTN-GAB") return std::unique_ptr<IArchitecture>(new RuneAttnModel(true, gate));
-  if (archId == "RUNE-ATTN-MH4") return std::unique_ptr<IArchitecture>(new RuneAttnMhModel());
+  if (archId == "RUNE-ATTN-MH4") return std::unique_ptr<IArchitecture>(new RuneAttnMhModel(gate));
   return nullptr;
 }
 

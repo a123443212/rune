@@ -44,6 +44,17 @@ def py_value(model, fen):
         G = gate_fn(header.get("gate", "clip"), S)
         alpha = float(header.get("alpha", 1.0))
         mixed = tok + alpha * (G @ V)
+    elif arch == "RUNE-ATTN-MH4":
+        parts = []
+        for h in range(4):
+            sfx = f"_h{h}"
+            Q = tok @ arrays["wq" + sfx].T + arrays["bq" + sfx]
+            K = tok @ arrays["wk" + sfx].T + arrays["bk" + sfx]
+            V = tok @ arrays["wv" + sfx].T + arrays["bv" + sfx]
+            S = Q @ K.T + arrays["gab" + sfx]
+            parts.append(gate_fn(header.get("gate", "clip"), S) @ V)
+        cat = np.concatenate(parts, axis=-1)
+        mixed = tok + cat @ arrays["wo"].T + arrays["bwo"]
     else:
         mixed = tok
     flat = mixed.reshape(-1)

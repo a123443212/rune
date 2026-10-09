@@ -143,7 +143,7 @@ class RuneFullModel(nn.Module):
             self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         elif arch_id == "RUNE-ATTN-MH4":
             from training.models.multi_head import RuneMultiHeadMixer
-            self.attn = RuneMultiHeadMixer()
+            self.attn = RuneMultiHeadMixer(gate=gate)
             self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         elif arch_id == "RUNE-MLP":
             self.attn = None
@@ -257,7 +257,7 @@ class RuneFullModel(nn.Module):
             "geometric_bias": gab,
             "head": "value_wdl",
             "head_buckets": self.buckets,
-            "gate": self.gate if self.attn is not None and self.arch_id != "RUNE-ATTN-MH4" else "clip",
+            "gate": self.gate if self.attn is not None else "clip",
             "quantization": quantization,
         }
 

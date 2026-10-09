@@ -150,6 +150,10 @@ impl Evaluator {
             if tokens != 8 || dim != 32 {
                 return Err(RuntimeError::Shape("tokens".to_string()));
             }
+            let gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
+                None => rune_kernel::Gate::Clip,
+                Some(s) => rune_kernel::Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
+            };
             let mut wq = Vec::new();
             let mut bq = Vec::new();
             let mut wk = Vec::new();
@@ -199,6 +203,7 @@ impl Evaluator {
                 gab,
                 wo,
                 bwo,
+                gate,
             })
         } else {
             None

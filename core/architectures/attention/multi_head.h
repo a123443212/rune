@@ -15,7 +15,7 @@ class MultiHeadMixer {
   static constexpr int kHeads = 4;
   static constexpr int kHeadDim = 8;
 
-  MultiHeadMixer();
+  MultiHeadMixer(GateFn gate = GateFn::Clip);
 
   void forward(const float* x, float* out) const;
   size_t parameterCount() const;
@@ -31,12 +31,13 @@ class MultiHeadMixer {
   std::vector<float> bwo;
 
  private:
+  GateFn gate_;
   mutable std::vector<float> scratch_;
 };
 
 class RuneAttnMhModel : public IArchitecture {
  public:
-  RuneAttnMhModel();
+  RuneAttnMhModel(GateFn gate = GateFn::Clip);
 
   void forward(const float* tokens, float& value, float* wdl, int phase) const override;
   size_t parameterCount() const override;
@@ -53,6 +54,7 @@ class RuneAttnMhModel : public IArchitecture {
 
  private:
   const HeadBucket& headFor(int phase) const;
+  GateFn gate_;
   mutable std::vector<float> scratch_;
 };
 

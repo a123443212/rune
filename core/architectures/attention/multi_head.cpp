@@ -18,7 +18,7 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
 
 }  // namespace
 
-MultiHeadMixer::MultiHeadMixer() {
+MultiHeadMixer::MultiHeadMixer(GateFn gate) : gate_(gate) {
   uint64_t s = 777;
   for (int h = 0; h < kHeads; ++h) {
     initVec(wq[h], kHeadDim * kDim, s, 0.08f);
@@ -53,7 +53,7 @@ void MultiHeadMixer::forward(const float* x, float* out) const {
     }
     simd::matMulTT(q, k, s, kTokens, kTokens, kHeadDim);
     for (int i = 0; i < kTokens * kTokens; ++i) {
-      s[i] = simd::clippedRelu(s[i] + gab[h][i]);
+      s[i] = applyGate(gate_, s[i] + gab[h][i]);
     }
     simd::matMul(s, v, o, kTokens, kHeadDim, kTokens);
     float* ph = cat + h * kHeadDim;
@@ -76,7 +76,7 @@ size_t MultiHeadMixer::parameterCount() const {
   return n;
 }
 
-RuneAttnMhModel::RuneAttnMhModel() {
+RuneAttnMhModel::RuneAttnMhModel(GateFn gate) : mixer(gate), gate_(gate) {
   uint64_t s = 3131;
   heads_.resize(1);
   initVec(heads_[0].w1, 128 * 256, s, 0.05f);
@@ -218,6 +218,7 @@ ModelSpec RuneAttnMhModel::spec() const {
   s.archVersion = archVersion();
   s.attention = "multi_head";
   s.geometricBias = "per_head";
+  s.gate = gateName(gate_);
   s.head = "value_wdl";
   s.tokens = MultiHeadMixer::kTokens;
   s.tokenDim = MultiHeadMixer::kDim;
