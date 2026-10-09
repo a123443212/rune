@@ -1,0 +1,1 @@
+./build/rune_tests

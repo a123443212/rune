@@ -5,25 +5,25 @@ machine-readable form; this text explains it.
 
 ## Supported runtime architectures
 
-| arch id | tokens | dim | attention | bias | gate | head |
-| ------- | ------ | --- | --------- | ---- | ---- | ---- |
-| RUNE-SFNN | 8 | 32 | none | none | clip | sfnn 256->32 |
-| RUNE-MLP | 8 | 32 | none | none | clip | value_wdl 128->32 |
-| RUNE-ATTN | 8 | 32 | gated_linear | none | clip | value_wdl 128->32 |
-| RUNE-ATTN-GAB | 8 | 32 | gated_linear | learned gab | clip | value_wdl 128->32 |
-| RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip | value_wdl 128->32 |
-| RUNE-REL-02 | 6/8/10 | 24/32/40 | gated_relational | static/dynamic | clip/hard_sigmoid | value_wdl 128->32 |
-| RUNE-03-<variant> | 8 | per-group token_dims | pooled | none | clip | dense head_h1->head_h2 |
-| RUNE-04 | 8 | 8..64 uniform | adaptive cheap+refine | threshold routing | clip | cheap_hidden + ref_h1->ref_h2 |
-| RUNE-05 | 8 | 8..64 uniform | adaptive + uncertainty | threshold routing | clip | RUNE-04 + uncertainty head |
+| arch id | tokens | dim | attention | bias | gate | head | status |
+| ------- | ------ | --- | --------- | ---- | ---- | ---- | ------ |
+| RUNE-SFNN | 8 | 32 | none | none | clip | sfnn 256->32 | active |
+| RUNE-MLP | 8 | 32 | none | none | clip | value_wdl 128->32 | active |
+| RUNE-ATTN | 8 | 32 | gated_linear | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-ATTN-GAB | 8 | 32 | gated_linear | learned gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-REL-02 | 6/8/10 | 24/32/40 | gated_relational | static/dynamic | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-03-<variant> | 8 | per-group token_dims | pooled | none | clip | dense head_h1->head_h2 | frozen, screening only |
+| RUNE-04 | 8 | 8..64 uniform | adaptive cheap+refine | threshold routing | clip | cheap_hidden + ref_h1->ref_h2 | frozen, screening only |
+| RUNE-05 | 8 | 8..64 uniform | adaptive + uncertainty | threshold routing | clip | RUNE-04 + uncertainty head | frozen, screening only |
 
 ## Mixer (relational / attention, normative order)
 
 Per token i: `Q[i]=Wq*x[i]+bq`, `K[i]=Wk*x[i]+bk`, `V[i]=Wv*x[i]+bv`
 with row-major matVec. Scores `S[a][b]=dot(Q[a],K[b])+gabS[a][b]`
 plus optional dynamic bias `delta=dot(dynU[a],ctx)*dot(dynW[b],ctx)`
-clamped to [-0.25,+0.25]. Gate elementwise: clip01 or
-hard_sigmoid `clamp(0.2*s+0.5,0,1)`. Mix `Y=S@V` (S is TxT, V is TxD).
+clamped to [-0.25,+0.25]. Gate elementwise per model gate:
+clip01, hard_sigmoid `clamp(0.2*s+0.5,0,1)`, or screlu `clip01(s)^2`. Mix `Y=S@V` (S is TxT, V is TxD).
 Residual `out=x+alpha*Y`.
 
 No softmax, no scaling by sqrt(d), no layer norm in this generation.
@@ -32,7 +32,7 @@ No softmax, no scaling by sqrt(d), no layer norm in this generation.
 
 4 heads, head dim 8 (4x8=32). Per head h: `Q_h[i]=Wq_h*x[i]+bq_h`,
 `K_h[i]`, `V_h[i]` with shapes [8,32]/[8]. Scores
-`S_h[a][b]=dot(Q_h[a],K_h[b])+gab_h[a][b]`, gate clip01 elementwise,
+`S_h[a][b]=dot(Q_h[a],K_h[b])+gab_h[a][b]`, gate elementwise per model gate,
 `O_h=S_h@V_h`. Concat heads row-major per token to 32 dims,
 `Y=Wo*concat+bwo`, residual `out=x+Y`. Tensors
 `wq_h0..gab_h3, wo, bwo` in head order, then value head tensors

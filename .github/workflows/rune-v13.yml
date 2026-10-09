@@ -1,0 +1,28 @@
+name: rune-v13
+on:
+  push:
+  pull_request:
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: bash scripts/cpp_configure.sh
+      - name: build
+        run: bash scripts/cpp_build.sh
+      - name: cpp tests
+        run: bash scripts/cpp_test.sh
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: bash scripts/python_deps.sh
+      - name: v13 tests
+        run: bash scripts/python_test_v13.sh
+
+

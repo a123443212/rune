@@ -1,0 +1,67 @@
+name: rune-v16
+on:
+  push:
+  pull_request:
+jobs:
+  cpp:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: configure
+        run: bash scripts/cpp_configure.sh
+      - name: build
+        run: bash scripts/cpp_build.sh
+      - name: cpp tests
+        run: bash scripts/cpp_test.sh
+      - name: mh4 eval smoke
+        run: bash scripts/cpp_eval_mh4.sh
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: toolchain
+        uses: dtolnay/rust-toolchain@stable
+      - name: rust workspace
+        run: bash scripts/rust_test.sh
+      - name: mh4 eval smoke
+        run: bash scripts/rust_eval_mh4.sh
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: deps
+        run: bash scripts/python_deps.sh
+      - name: v16 unit tests
+        run: bash scripts/python_test_v16.sh
+      - name: spec gate
+        run: bash scripts/spec_gate.sh
+      - name: regen mh4 golden
+        run: bash scripts/golden_mh4.sh
+      - name: golden diff
+        run: bash scripts/golden_diff.sh
+  triangle:
+    runs-on: ubuntu-latest
+    needs: [cpp, rust, python]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - uses: dtolnay/rust-toolchain@stable
+      - name: deps
+        run: bash scripts/python_deps.sh
+      - name: configure
+        run: bash scripts/cpp_configure.sh
+      - name: build eval
+        run: bash scripts/triangle_build_eval.sh
+      - name: build cli
+        run: bash scripts/rust_build.sh
+      - name: positions
+        run: bash scripts/positions_head.sh
+      - name: three-way mh4
+        run: bash scripts/triangle_check_mh4.sh
+      - name: three-way gab
+        run: bash scripts/triangle_check_gab.sh
