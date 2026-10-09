@@ -35,6 +35,19 @@ Flatten mixed tokens row-major to length T*D. `h1=clip01(W1*flat+b1)`,
 Uncertainty/stability heads, when present, are extra linear rows
 after wdl and must be compared separately.
 
+## Head buckets (normative)
+
+A model carries 1 or 3 heads (`head_buckets` header field, default
+1). With 3 buckets, bucket `b` is selected by game phase
+(`phase = 0/1/2` from the feature spec): `b = clamp(phase, 0, 2)`.
+Bucket `b` owns full head tensors named `w1_b{b}`, `b1_b{b}`,
+`w2_b{b}`, `b2_b{b}`, `wvo_b{b}`, `bvo_b{b}`, `wwdl_b{b}`, `bwdl_b{b}`,
+applied in the normative head order above. Models without bucketed
+tensors behave as bucket count 1 shared across phases. Export order
+places bucketed head tensors after the arch tensors in bucket order
+`b = 0, 1, 2`. Bucket selection is part of evaluation: same weights
+in all buckets must reproduce single-head outputs exactly.
+
 ## Routing (RUNE-04/05, normative)
 
 Cheap path always runs. Difficulty score from cheap pooling is
@@ -45,6 +58,8 @@ decision must be bit-deterministic given identical input bytes.
 
 ## Export order
 
-`emb0..emb7` then arch tensors in `export_order` per arch id.
+`emb0..emb8` then arch tensors in `export_order` per arch id,
+then bucketed head tensors (`*_b0`, `*_b1`, `*_b2`) when
+`head_buckets` is 3.
 Order is part of the file hash. Runtimes must reject out-of-order
 or missing tensor names.

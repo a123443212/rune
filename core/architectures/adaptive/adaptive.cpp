@@ -258,7 +258,8 @@ bool AdaptiveModel::routeSearch(SearchRoute route, float difficulty, float uncer
   return needDiff || needUnc || (stability >= t.stabT);
 }
 
-void AdaptiveModel::forward(const float* tokens, float& value, float* wdl) const {
+void AdaptiveModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+  (void)phase;
   std::vector<float> cheap(total_);
   float diff = 0.0f;
   float cv = 0.0f;

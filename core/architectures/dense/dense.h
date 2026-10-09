@@ -28,7 +28,7 @@ class DenseModel : public IArchitecture {
   DenseModel();
 
   bool configure(const DenseBuildSpec& spec, std::string& err);
-  void forward(const float* tokens, float& value, float* wdl) const override;
+  void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override { return parameterCount() * 4; }
   const char* archId() const override { return archId_.c_str(); }

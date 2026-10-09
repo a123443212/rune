@@ -126,6 +126,7 @@ void VarQuantTables::quantizeFrom(const VarEmbeddings& src, VarScales& scales) {
       }
     }
   }
+  scales.token[8] = scales.token[0];
 }
 
 int VarQuantTables::get(int group, int flat) const { return tables_[group][flat]; }

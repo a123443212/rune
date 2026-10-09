@@ -302,3 +302,38 @@ fn dynamic_bias_matches_cache() {
     let r = ev.evaluate();
     assert!((r.value - tr.value).abs() < 1e-7);
 }
+#[test]
+fn bucket_heads_match_golden() {
+    let p = PathBuf::from("../../spec/test-vectors/models/small-gab-b3-fp32.rune");
+    let mut ev = Evaluator::load(&p).expect("load bucketed");
+    assert_eq!(ev.head_count(), 3);
+    let g = vec_file("bucket_heads.json");
+    assert_eq!(g["feature_version"].as_str().unwrap(), "grouped_hkav2_fullthreats_v02");
+    for v in g["vectors"].as_array().unwrap() {
+        let fen = v["fen"].as_str().unwrap();
+        let b = Board::parse_fen(fen).unwrap();
+        let r = ev.evaluate_board(&b);
+        assert_eq!(ev.phase(), v["phase"].as_u64().unwrap() as u8, "{}", fen);
+        assert!((r.value - v["value"].as_f64().unwrap() as f32).abs() < 1e-5, "{}", fen);
+        for i in 0..3 {
+            let d = (r.wdl[i] - v["wdl"][i].as_f64().unwrap() as f32).abs();
+            assert!(d < 1e-5, "{} {}", fen, i);
+        }
+    }
+}
+#[test]
+fn bucket_phase_boundaries() {
+    let p = PathBuf::from("../../spec/test-vectors/models/small-gab-b3-fp32.rune");
+    let mut ev = Evaluator::load(&p).expect("load bucketed");
+    let cases = [
+        ("4k3/8/8/8/8/8/8/NNNKNNNN w - - 0 1", 1),
+        ("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1", 2),
+        ("rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1", 0),
+    ];
+    for (fen, want) in cases {
+        let b = Board::parse_fen(fen).unwrap();
+        assert_eq!(b.game_phase(), want, "{}", fen);
+        ev.refresh(&b);
+        assert_eq!(ev.phase(), want, "{}", fen);
+    }
+}

@@ -54,7 +54,7 @@ class AdaptiveModel : public IArchitecture {
   AdaptiveModel();
 
   bool configure(const AdaptiveBuildSpec& spec, std::string& err);
-  void forward(const float* tokens, float& value, float* wdl) const override;
+  void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
   void cheapForward(const float* acc, float* cheapFlat, float& value, float* wdl,
                     float& difficulty) const;
   void refineForward(const float* cheapFlat, float& value, float* wdl) const;

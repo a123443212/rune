@@ -30,7 +30,7 @@ std::string ModelSpec::canonicalString() const {
          std::to_string(tokenDim) + "|" + attention + "|" + geometricBias + "|" + head + "|" +
          quantization + "|" + variant + "|[" + dims + "]|" + pooling + "|" +
          (gateOn ? "gate" : "nogate") + "|" + (poolClip ? "clip" : "noclip") +
-         "|sw" + std::to_string(sharedWidth);
+         "|sw" + std::to_string(sharedWidth) + "|hb" + std::to_string(headBuckets);
 }
 
 uint64_t ModelSpec::configHash() const { return fnv1aHash(canonicalString()); }

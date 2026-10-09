@@ -23,13 +23,14 @@ pub struct CompiledEvaluator {
     ctx_dim: usize,
     gate_hard: bool,
     alpha: f32,
-    head: HeadWeights,
+    head: Vec<HeadWeights>,
+    phase: u8,
     tokens: usize,
     dim: usize,
     acc: Vec<f32>,
     feats: Vec<(u8, u16)>,
     ctx: Vec<f32>,
-    stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>)>,
+    stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>, u8)>,
     arena: Arena,
     header: CompiledHeader,
     arch_id: String,
@@ -136,26 +137,37 @@ impl CompiledEvaluator {
             gate_hard = false;
             alpha = 1.0;
         }
-        let w1 = need_vec(&m.arrays, "w1")?;
-        let b1 = need_vec(&m.arrays, "b1")?;
-        let w2 = need_vec(&m.arrays, "w2")?;
-        let b2 = need_vec(&m.arrays, "b2")?;
-        let wvo = need_vec(&m.arrays, "wvo").or_else(|_| need_vec(&m.arrays, "wv"))?;
-        let bvo = m.arrays.get("bvo").or_else(|| m.arrays.get("bv")).and_then(|v| v.first().copied()).unwrap_or(0.0);
-        let wwdl = need_vec(&m.arrays, "wwdl")?;
-        let bwdl = need_vec(&m.arrays, "bwdl")?;
-        let h1 = b1.len();
-        let h2 = b2.len();
-        if w1.len() != h1 * tokens * dim || w2.len() != h2 * h1 {
-            return Err(RuntimeError::Shape("head mat".to_string()));
+        let buckets = m.header.raw.get("head_buckets").and_then(|x| x.as_u64()).unwrap_or(1);
+        if buckets != 1 && buckets != 3 {
+            return Err(RuntimeError::InvalidState("unsupported head_buckets (want 1 or 3)".to_string()));
         }
-        if wvo.len() != h2 {
-            return Err(RuntimeError::Shape("wvo".to_string()));
+        let mut heads: Vec<HeadWeights> = Vec::new();
+        for b in 0..buckets {
+            let suffix = if buckets == 1 { String::new() } else { format!("_b{}", b) };
+            let w1 = need_vec(&m.arrays, &format!("w1{}", suffix))?;
+            let b1 = need_vec(&m.arrays, &format!("b1{}", suffix))?;
+            let w2 = need_vec(&m.arrays, &format!("w2{}", suffix))?;
+            let b2 = need_vec(&m.arrays, &format!("b2{}", suffix))?;
+            let wvo = need_vec(&m.arrays, &format!("wvo{}", suffix))
+                .or_else(|_| need_vec(&m.arrays, &format!("wv{}", suffix)))?;
+            let bvo = m.arrays.get(&format!("bvo{}", suffix))
+                .or_else(|| m.arrays.get(&format!("bv{}", suffix)))
+                .and_then(|v| v.first().copied()).unwrap_or(0.0);
+            let wwdl = need_vec(&m.arrays, &format!("wwdl{}", suffix))?;
+            let bwdl = need_vec(&m.arrays, &format!("bwdl{}", suffix))?;
+            let h1 = b1.len();
+            let h2 = b2.len();
+            if w1.len() != h1 * tokens * dim || w2.len() != h2 * h1 {
+                return Err(RuntimeError::Shape("head mat".to_string()));
+            }
+            if wvo.len() != h2 {
+                return Err(RuntimeError::Shape("wvo".to_string()));
+            }
+            if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
+                return Err(RuntimeError::Shape("wdl".to_string()));
+            }
+            heads.push(HeadWeights { input: tokens * dim, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
-        if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
-            return Err(RuntimeError::Shape("wdl".to_string()));
-        }
-        let head = HeadWeights { input: tokens * dim, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl };
         let arena = Arena::new(header.memory_bytes.max(8192));
         Ok(CompiledEvaluator {
             tables,
@@ -171,7 +183,8 @@ impl CompiledEvaluator {
             ctx_dim,
             gate_hard,
             alpha,
-            head,
+            head: heads,
+            phase: 1,
             tokens,
             dim,
             acc: vec![0.0; tokens * dim],
@@ -196,10 +209,15 @@ impl CompiledEvaluator {
         self.arena.bytes()
     }
 
+    fn head_for(&self, phase: u8) -> &HeadWeights {
+        let b = (phase as usize).min(self.head.len().saturating_sub(1));
+        &self.head[b]
+    }
     pub fn refresh(&mut self, board: &Board) {
         let f = extract_features(board);
         self.refresh_features(&f);
         self.ctx = compute_context(board);
+        self.phase = board.game_phase();
     }
 
     pub fn refresh_features(&mut self, feats: &[(u8, u16)]) {
@@ -318,13 +336,14 @@ impl CompiledEvaluator {
         self.evaluate()
     }
     pub fn push(&mut self) {
-        self.stack.push((self.acc.clone(), self.feats.clone(), self.ctx.clone()));
+        self.stack.push((self.acc.clone(), self.feats.clone(), self.ctx.clone(), self.phase));
     }
     pub fn pop(&mut self) {
-        let (snap, feats, ctx) = self.stack.pop().expect("pop without push");
+        let (snap, feats, ctx, phase) = self.stack.pop().expect("pop without push");
         self.acc = snap;
         self.feats = feats;
         self.ctx = ctx;
+        self.phase = phase;
     }
     pub fn search_depth(&self) -> usize {
         self.stack.len()
@@ -352,7 +371,7 @@ impl CompiledEvaluator {
         } else if has_mixer {
             self.mix_into(&tok, &mut mixed);
         }
-        self.head.forward_value_only(&mixed)
+        self.head_for(self.phase).forward_value_only(&mixed)
     }
 
     pub fn forward_tokens_compiled(&mut self, tok: &[f32]) -> crate::evaluator::EvalResult {
@@ -375,7 +394,7 @@ impl CompiledEvaluator {
         } else if has_mixer {
             self.mix_into(&tok, &mut mixed);
         }
-        let (value, wdl, _) = self.head.forward(&mixed);
+        let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
         crate::evaluator::EvalResult { value, wdl, refine: false, difficulty: 0.0 }
     }
 }

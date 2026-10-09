@@ -127,41 +127,57 @@ bool RelationalModel::configure(const RelationalConfig& cfg, std::string& err) {
   if (!mixer.configure(cfg, err)) return false;
   int in = cfg.tokens * cfg.dim;
   uint64_t s = 5150 + cfg.tokens * 100 + cfg.dim;
-  initVec(w1, 128 * in, s, 0.05f);
-  initVec(b1, 128, s, 0.01f);
-  initVec(w2, 32 * 128, s, 0.05f);
-  initVec(b2, 32, s, 0.01f);
-  initVec(wvo, 1 * 32, s, 0.05f);
-  initVec(bvo, 1, s, 0.01f);
-  initVec(wwdl, 3 * 32, s, 0.05f);
-  initVec(bwdl, 3, s, 0.01f);
+  heads_.resize(1);
+  initVec(heads_[0].w1, 128 * in, s, 0.05f);
+  initVec(heads_[0].b1, 128, s, 0.01f);
+  initVec(heads_[0].w2, 32 * 128, s, 0.05f);
+  initVec(heads_[0].b2, 32, s, 0.01f);
+  initVec(heads_[0].wvo, 1 * 32, s, 0.05f);
+  initVec(heads_[0].bvo, 1, s, 0.01f);
+  initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
+  initVec(heads_[0].bwdl, 3, s, 0.01f);
   scratch_.assign(in + 128 + 32, 0.0f);
   return true;
 }
 
-void RelationalModel::forward(const float* tokens, float& value, float* wdl) const {
-  float ctx[ContextSpec::kDim] = {0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-  forwardWithContext(tokens, ctx, value, wdl);
+const HeadBucket& RelationalModel::headFor(int phase) const {
+  if (heads_.size() > 1) {
+    int b = phase;
+    if (b < 0) b = 0;
+    if (b > 2) b = 2;
+    return heads_[static_cast<size_t>(b)];
+  }
+  return heads_[0];
+}
+
+void RelationalModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+  float ctx[ContextSpec::kDim] = {};
+  forwardWithContext(tokens, ctx, value, wdl, phase);
 }
 
 void RelationalModel::forwardWithContext(const float* tokens, const float* ctx, float& value,
-                                         float* wdl) const {
+                                         float* wdl, int phase) const {
+  const HeadBucket& h = headFor(phase);
   int in = mixer.config().tokens * mixer.config().dim;
   float* mixed = scratch_.data();
   float* h1 = scratch_.data() + in;
   float* h2 = scratch_.data() + in + 128;
   mixer.forward(tokens, ctx, mixed);
-  simd::matVecClipped(w1.data(), mixed, b1.data(), h1, 128, in);
-  simd::matVecClipped(w2.data(), h1, b2.data(), h2, 32, 128);
-  float vv = bvo[0];
-  for (int i = 0; i < 32; ++i) vv += wvo[i] * h2[i];
+  simd::matVecClipped(h.w1.data(), mixed, h.b1.data(), h1, 128, in);
+  simd::matVecClipped(h.w2.data(), h1, h.b2.data(), h2, 32, 128);
+  float vv = h.bvo[0];
+  for (int i = 0; i < 32; ++i) vv += h.wvo[i] * h2[i];
   value = std::tanh(vv);
-  simd::matVec(wwdl.data(), h2, bwdl.data(), wdl, 3, 32);
+  simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, 32);
 }
 
 size_t RelationalModel::parameterCount() const {
-  return mixer.parameterCount() + w1.size() + b1.size() + w2.size() + b2.size() + wvo.size() +
-         bvo.size() + wwdl.size() + bwdl.size();
+  size_t n = mixer.parameterCount();
+  for (const HeadBucket& h : heads_) {
+    n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
+         h.bvo.size() + h.wwdl.size() + h.bwdl.size();
+  }
+  return n;
 }
 
 void RelationalModel::getTensors(std::vector<std::string>& names,
@@ -182,10 +198,23 @@ void RelationalModel::getTensors(std::vector<std::string>& names,
     data.push_back(mixer.dynU.data());
     data.push_back(mixer.dynW.data());
   }
-  names.insert(names.end(), {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"});
-  shapes.insert(shapes.end(), {{128, in}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
-  data.insert(data.end(), {w1.data(), b1.data(), w2.data(), b2.data(), wvo.data(), bvo.data(),
-                           wwdl.data(), bwdl.data()});
+  if (heads_.size() > 1) {
+    for (size_t b = 0; b < heads_.size(); ++b) {
+      std::string suffix = "_b" + std::to_string(b);
+      const HeadBucket& h = heads_[b];
+      names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
+                                 "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
+      shapes.insert(shapes.end(), {{128, in}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+      data.insert(data.end(), {h.w1.data(), h.b1.data(), h.w2.data(), h.b2.data(), h.wvo.data(),
+                               h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
+    }
+  } else {
+    names.insert(names.end(), {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"});
+    shapes.insert(shapes.end(), {{128, in}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+    data.insert(data.end(), {heads_[0].w1.data(), heads_[0].b1.data(), heads_[0].w2.data(),
+                             heads_[0].b2.data(), heads_[0].wvo.data(), heads_[0].bvo.data(),
+                             heads_[0].wwdl.data(), heads_[0].bwdl.data()});
+  }
 }
 
 bool RelationalModel::setTensors(const std::vector<std::string>& names,
@@ -195,7 +224,18 @@ bool RelationalModel::setTensors(const std::vector<std::string>& names,
     want.push_back("dynU");
     want.push_back("dynW");
   }
-  for (const char* n : {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"}) want.push_back(n);
+  size_t nbuckets = 1;
+  if (names.size() > want.size() + 8) {
+    nbuckets = 3;
+    for (int b = 0; b < 3; ++b) {
+      std::string suffix = "_b" + std::to_string(b);
+      for (const char* n : {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"}) {
+        want.push_back(std::string(n) + suffix);
+      }
+    }
+  } else {
+    for (const char* n : {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"}) want.push_back(n);
+  }
   if (names.size() != want.size()) return false;
   for (size_t i = 0; i < want.size(); ++i) {
     if (names[i] != want[i]) return false;
@@ -206,7 +246,26 @@ bool RelationalModel::setTensors(const std::vector<std::string>& names,
     slots.push_back(&mixer.dynU);
     slots.push_back(&mixer.dynW);
   }
-  slots.insert(slots.end(), {&w1, &b1, &w2, &b2, &wvo, &bvo, &wwdl, &bwdl});
+  int in = mixer.config().tokens * mixer.config().dim;
+  heads_.clear();
+  for (size_t b = 0; b < nbuckets; ++b) {
+    HeadBucket h;
+    h.w1.assign(128 * in, 0.0f);
+    h.b1.assign(128, 0.0f);
+    h.w2.assign(32 * 128, 0.0f);
+    h.b2.assign(32, 0.0f);
+    h.wvo.assign(32, 0.0f);
+    h.bvo.assign(1, 0.0f);
+    h.wwdl.assign(3 * 32, 0.0f);
+    h.bwdl.assign(3, 0.0f);
+    heads_.push_back(std::move(h));
+  }
+  for (size_t b = 0; b < nbuckets; ++b) {
+    HeadBucket& h = heads_[b];
+    std::vector<std::vector<float>*> hs = {&h.w1, &h.b1, &h.w2, &h.b2,
+                                           &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    for (auto* slot : hs) slots.push_back(slot);
+  }
   size_t off = 0;
   for (auto* slot : slots) {
     if (off + slot->size() > flat.size()) return false;
@@ -226,6 +285,7 @@ ModelSpec RelationalModel::spec() const {
   s.geometricBias = mixer.config().dynamicBias ? "dynamic" : "static";
   s.gate = gateName(mixer.config().gate);
   s.alpha = mixer.config().alpha;
+  s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }
 
@@ -255,6 +315,7 @@ void RelationalEvaluator::refresh(const Board& board) {
   GroupedFeatureSet::extract(board, feats);
   acc_.refresh(feats);
   computeContext(board, ctx_);
+  phase_ = board.gamePhase();
 }
 
 void RelationalEvaluator::updateIncremental(const Board& board,
@@ -262,12 +323,13 @@ void RelationalEvaluator::updateIncremental(const Board& board,
                                             const std::vector<ActiveFeature>& removed) {
   acc_.applyDiff(added, removed);
   computeContext(board, ctx_);
+  phase_ = board.gamePhase();
 }
 
 EvalResultFlex RelationalEvaluator::evaluate() const {
   acc_.tokens(tokenBuf_.data());
   EvalResultFlex r;
-  model_->forwardWithContext(tokenBuf_.data(), ctx_, r.value, r.wdl);
+  model_->forwardWithContext(tokenBuf_.data(), ctx_, r.value, r.wdl, phase_);
   return r;
 }
 

@@ -32,7 +32,7 @@ class VarEmbeddings {
 };
 
 struct VarScales {
-  float token[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+  float token[GroupedFeatureSet::kNumGroups] = {1, 1, 1, 1, 1, 1, 1, 1, 1};
 };
 
 class VarQuantTables {

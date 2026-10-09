@@ -70,7 +70,8 @@ bool DenseModel::configure(const DenseBuildSpec& spec, std::string& err) {
   return true;
 }
 
-void DenseModel::forward(const float* tokens, float& value, float* wdl) const {
+void DenseModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+  (void)phase;
   int in = widths_.total();
   int h1 = headH1_;
   int h2 = headH2_;

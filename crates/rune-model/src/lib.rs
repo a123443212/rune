@@ -26,7 +26,7 @@ pub struct ModelHeader {
 pub struct RuneModel {
     pub header: ModelHeader,
     pub arrays: HashMap<String, Vec<f32>>,
-    pub scales_f32: [f32; 8],
+    pub scales_f32: [f32; 9],
     pub payload_bytes: Vec<u8>,
 }
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -240,8 +240,8 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     if off != payload.len() {
         return Err(LoadError::BadHeader("trailing payload bytes".to_string()));
     }
-    let mut sarr = [1.0_f32; 8];
-    for g in 0..8 {
+    let mut sarr = [1.0_f32; 9];
+    for g in 0..9 {
         let k = format!("emb{}", g);
         if let Some(s) = scales.get(&k) {
             sarr[g] = *s;

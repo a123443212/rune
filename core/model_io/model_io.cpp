@@ -261,6 +261,7 @@ void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.gateOn = extractBool(header, "gate_on", false);
   spec.headH1 = static_cast<int>(extractInt(header, "head_h1", 128));
   spec.headH2 = static_cast<int>(extractInt(header, "head_h2", 32));
+  spec.headBuckets = static_cast<int>(extractInt(header, "head_buckets", 1));
   spec.tokenDims.clear();
   std::vector<int> td;
   if (parseIntList(header, "token_dims", td)) spec.tokenDims = td;
@@ -298,6 +299,10 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     return false;
   }
   fillSpec(header, out.spec);
+  if (out.spec.headBuckets != 1 && out.spec.headBuckets != 3) {
+    err = "unsupported head_buckets (want 1 or 3)";
+    return false;
+  }
   if (out.spec.featureSet != "grouped_hkav2_fullthreats_v02") {
     err = "feature version mismatch: " + out.spec.featureSet;
     return false;

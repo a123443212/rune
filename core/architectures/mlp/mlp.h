@@ -15,7 +15,7 @@ class GroupedMlp : public IArchitecture {
 
   GroupedMlp();
 
-  void forward(const float* tokens, float& value, float* wdl) const override;
+  void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override;
   const char* archId() const override { return "RUNE-MLP"; }
@@ -25,9 +25,10 @@ class GroupedMlp : public IArchitecture {
   bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) override;
   ModelSpec spec() const override;
 
-  std::vector<float> w1, b1, w2, b2, wv, bv, wwdl, bwdl;
+  std::vector<HeadBucket> heads_;
 
  private:
+  const HeadBucket& headFor(int phase) const;
   mutable std::vector<float> scratch_;
 };
 
@@ -39,7 +40,7 @@ class SfnnBaseline : public IArchitecture {
 
   SfnnBaseline();
 
-  void forward(const float* tokens, float& value, float* wdl) const override;
+  void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override;
   const char* archId() const override { return "RUNE-SFNN"; }
@@ -49,9 +50,10 @@ class SfnnBaseline : public IArchitecture {
   bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) override;
   ModelSpec spec() const override;
 
-  std::vector<float> w1, b1, w2, b2, wv, bv, wwdl, bwdl;
+  std::vector<HeadBucket> heads_;
 
  private:
+  const HeadBucket& headFor(int phase) const;
   mutable std::vector<float> scratch_;
 };
 

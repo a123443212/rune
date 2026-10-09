@@ -30,14 +30,15 @@ pub struct FullTrace {
 pub struct Evaluator {
     tables: Tables,
     mixer: Option<MixerWeights>,
-    head: HeadWeights,
+    heads: Vec<HeadWeights>,
+    phase: u8,
     arch_id: String,
     tokens: usize,
     dim: usize,
     acc: Accumulator,
     feats: Vec<(u8, u16)>,
     ctx: Vec<f32>,
-    stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>)>,
+    stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>, u8)>,
 }
 fn need_vec(arrays: &HashMap<String, Vec<f32>>, name: &str) -> Result<Vec<f32>> {
     arrays.get(name).cloned().ok_or_else(|| RuntimeError::TensorMissing(name.to_string()))
@@ -135,40 +136,48 @@ impl Evaluator {
         } else {
             None
         };
-        let (h1n, h2n, w1n, b1n) = if arch == "RUNE-SFNN" {
-            ("w1", "b1", 256usize, 256usize)
-        } else {
-            ("w1", "b1", 128usize, 128usize)
-        };
-        let _ = (h1n, b1n);
-        let w1 = need_vec(&m.arrays, "w1")?;
-        let b1 = need_vec(&m.arrays, "b1")?;
-        let w2 = need_vec(&m.arrays, "w2")?;
-        let b2 = need_vec(&m.arrays, "b2")?;
-        let wvo = need_vec(&m.arrays, "wvo").or_else(|_| need_vec(&m.arrays, "wv"))?;
-        let bvo = scalar_of(&m.arrays, "bvo").or_else(|_| scalar_of(&m.arrays, "bv"))?;
-        let wwdl = need_vec(&m.arrays, "wwdl")?;
-        let bwdl = need_vec(&m.arrays, "bwdl")?;
-        let h1 = b1.len();
-        let h2 = b2.len();
-        let input = tokens * dim;
-        if w1.len() != h1 * input || w2.len() != h2 * h1 {
-            return Err(RuntimeError::Shape("head mat".to_string()));
+        let buckets = m.header.raw.get("head_buckets").and_then(|x| x.as_u64()).unwrap_or(1);
+        if buckets != 1 && buckets != 3 {
+            return Err(RuntimeError::InvalidState("unsupported head_buckets (want 1 or 3)".to_string()));
         }
-        if wvo.len() != h2 {
-            return Err(RuntimeError::Shape("wvo".to_string()));
+        let mut heads: Vec<HeadWeights> = Vec::new();
+        for b in 0..buckets {
+            let suffix = if buckets == 1 { String::new() } else { format!("_b{}", b) };
+            let w1 = need_vec(&m.arrays, &format!("w1{}", suffix))?;
+            let b1 = need_vec(&m.arrays, &format!("b1{}", suffix))?;
+            let w2 = need_vec(&m.arrays, &format!("w2{}", suffix))?;
+            let b2 = need_vec(&m.arrays, &format!("b2{}", suffix))?;
+            let wvo = need_vec(&m.arrays, &format!("wvo{}", suffix))
+                .or_else(|_| need_vec(&m.arrays, &format!("wv{}", suffix)))?;
+            let bvo = scalar_of(&m.arrays, &format!("bvo{}", suffix))
+                .or_else(|_| scalar_of(&m.arrays, &format!("bv{}", suffix)))?;
+            let wwdl = need_vec(&m.arrays, &format!("wwdl{}", suffix))?;
+            let bwdl = need_vec(&m.arrays, &format!("bwdl{}", suffix))?;
+            let h1 = b1.len();
+            let h2 = b2.len();
+            let input = tokens * dim;
+            if w1.len() != h1 * input || w2.len() != h2 * h1 {
+                return Err(RuntimeError::Shape("head mat".to_string()));
+            }
+            if wvo.len() != h2 {
+                return Err(RuntimeError::Shape("wvo".to_string()));
+            }
+            if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
+                return Err(RuntimeError::Shape("wdl".to_string()));
+            }
+            heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
         }
-        if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
-            return Err(RuntimeError::Shape("wdl".to_string()));
-        }
-        let _ = w1n;
-        let _ = h2n;
-        let head = HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl };
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, head, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables, mixer, heads, phase: 1, arch_id: arch, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
+    }
+    pub fn phase(&self) -> u8 {
+        self.phase
+    }
+    pub fn head_count(&self) -> usize {
+        self.heads.len()
     }
     pub fn ctx_of(&self) -> &[f32] {
         &self.ctx
@@ -184,6 +193,7 @@ impl Evaluator {
         self.acc.refresh(&self.tables, &f);
         self.feats = f;
         self.ctx = compute_context(board);
+        self.phase = board.game_phase();
     }
     pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)], ctx: &[f32]) {
         let (added, removed) = diff_features(before, after);
@@ -197,14 +207,19 @@ impl Evaluator {
         self.feats = after.to_vec();
         self.ctx = ctx.to_vec();
     }
+    fn head_for(&self, phase: u8) -> &HeadWeights {
+        let b = (phase as usize).min(self.heads.len().saturating_sub(1));
+        &self.heads[b]
+    }
     pub fn push(&mut self) {
-        self.stack.push((self.acc.snapshot(), self.feats.clone(), self.ctx.clone()));
+        self.stack.push((self.acc.snapshot(), self.feats.clone(), self.ctx.clone(), self.phase));
     }
     pub fn pop(&mut self) {
-        let (snap, feats, ctx) = self.stack.pop().expect("pop without push");
+        let (snap, feats, ctx, phase) = self.stack.pop().expect("pop without push");
         self.acc.restore(&snap);
         self.feats = feats;
         self.ctx = ctx;
+        self.phase = phase;
     }
     pub fn search_depth(&self) -> usize {
         self.stack.len()
@@ -225,7 +240,7 @@ impl Evaluator {
             mx.forward(tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
-        let (value, wdl, _) = self.head.forward(&mixed);
+        let (value, wdl, _) = self.head_for(self.phase).forward(&mixed);
         EvalResult { value, wdl, refine: false, difficulty: 0.0 }
     }
     pub fn evaluate_value_only(&self) -> f32 {
@@ -237,7 +252,7 @@ impl Evaluator {
             mx.forward(&tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
-        self.head.forward_value_only(&mixed)
+        self.head_for(self.phase).forward_value_only(&mixed)
     }
     pub fn trace(&self) -> FullTrace {
         let mut tok = vec![0.0_f32; self.tokens * self.dim];
@@ -256,7 +271,7 @@ impl Evaluator {
             mixed = out;
             tr.mixer = mtr;
         }
-        let (v, w, h) = self.head.forward(&mixed);
+        let (v, w, h) = self.head_for(self.phase).forward(&mixed);
         tr.head = h;
         tr.value = v;
         tr.wdl = w;

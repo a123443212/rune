@@ -24,11 +24,12 @@ void writeHeaderFields(std::ostringstream& h, const ModelSpec& spec, const std::
   h << ",\"alpha\":" << spec.alpha;
   h << ",\"context_dim\":" << ContextSpec::kDim;
   h << ",\"scales\":{";
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     if (g > 0) h << ",";
     h << "\"emb" << g << "\":" << scales[g];
   }
   h << "}";
+  h << ",\"head_buckets\":" << spec.headBuckets;
 }
 
 void writeTensorList(std::ostringstream& h, const std::vector<std::string>& names,
@@ -41,7 +42,7 @@ void writeTensorList(std::ostringstream& h, const std::vector<std::string>& name
     first = false;
     h << "{\"name\":\"" << n << "\",\"shape\":" << shape << ",\"dtype\":\"" << dtype << "\"}";
   };
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     int v = GroupedFeatureSet::vocabSize(g);
     emit("emb" + std::to_string(g), "[" + std::to_string(v) + "," + std::to_string(dim) + "]",
          embDtype);
@@ -69,7 +70,7 @@ bool saveRuneFile(const std::string& path, const ModelSpec& spec, const Embeddin
   QuantEmbeddingTables qe;
   Quant16Tables q16;
   QuantScales sc;
-  for (int g = 0; g < 8; ++g) sc.embedding[g] = 1.0f;
+  for (int g = 0; g < 9; ++g) sc.embedding[g] = 1.0f;
   std::string embDtype = "float32";
   if (quantization == "int8") {
     qe.quantizeFrom(embeddings, sc);
@@ -79,8 +80,8 @@ bool saveRuneFile(const std::string& path, const ModelSpec& spec, const Embeddin
     q16.quantizeFrom(embeddings, sc);
     embDtype = "int16";
   }
-  float scales[8];
-  for (int g = 0; g < 8; ++g) scales[g] = sc.embedding[g];
+  float scales[9];
+  for (int g = 0; g < 9; ++g) scales[g] = sc.embedding[g];
   std::ostringstream h;
   writeHeaderFields(h, spec, quantization, scales);
   writeTensorList(h, names, shapes, embDtype, 32);
@@ -94,7 +95,7 @@ bool saveRuneFile(const std::string& path, const ModelSpec& spec, const Embeddin
   uint32_t hlen = static_cast<uint32_t>(header.size());
   f.write(reinterpret_cast<const char*>(&hlen), 4);
   f.write(header.data(), header.size());
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     const std::vector<float>& d = embeddings.groupData(g);
     if (quantization == "int8") {
       const std::vector<int8_t>& q = qe.groupData(g);
@@ -126,14 +127,14 @@ bool saveFlexRuneFile(const std::string& path, const ModelSpec& spec,           
   FlexQuantTables qt;
   qt.configure(dim, quantization == "int16");
   FlexScales sc;
-  for (int g = 0; g < 8; ++g) sc.embedding[g] = 1.0f;
+  for (int g = 0; g < 9; ++g) sc.embedding[g] = 1.0f;
   std::string embDtype = "float32";
   if (quantization == "int8" || quantization == "int16") {
     qt.quantizeFrom(embeddings, layout, sc);
     embDtype = quantization;
   }
-  float scales[8];
-  for (int g = 0; g < 8; ++g) scales[g] = sc.embedding[g];
+  float scales[9];
+  for (int g = 0; g < 9; ++g) scales[g] = sc.embedding[g];
   std::ostringstream h;
   writeHeaderFields(h, spec, quantization, scales);
   writeTensorList(h, names, shapes, embDtype, dim);
@@ -147,7 +148,7 @@ bool saveFlexRuneFile(const std::string& path, const ModelSpec& spec,           
   uint32_t hlen = static_cast<uint32_t>(header.size());
   f.write(reinterpret_cast<const char*>(&hlen), 4);
   f.write(header.data(), header.size());
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     const std::vector<float>& d = embeddings.groupData(g);
     if (quantization == "int8") {
       for (float v : d) {
@@ -201,6 +202,7 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   int sw = spec.sharedWidth;
   VarWidths gw;
   for (int g = 0; g < 8; ++g) gw.w[g] = (spec.pooling == "shared") ? sw : spec.tokenDims[g];
+  gw.w[8] = (spec.pooling == "shared") ? sw : spec.tokenDims[0];
   VarQuantTables qt;
   qt.configure(gw, quantization == "int16");
   VarScales sc;
@@ -210,9 +212,10 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
     embDtype = quantization;
   } else {
     for (int g = 0; g < 8; ++g) sc.token[g] = 1.0f;
+    sc.token[8] = 1.0f;
   }
   std::string payload;
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     int w = gw.w[g];
     size_t count = static_cast<size_t>(GroupedFeatureSet::vocabSize(g)) * w;
     const std::vector<float>& d = embeddings.groupData(g);
@@ -270,11 +273,12 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   h << ",\"head_h1\":" << spec.headH1;
   h << ",\"head_h2\":" << spec.headH2;
   h << ",\"scales\":{";
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     if (g > 0) h << ",";
     h << "\"emb" << g << "\":" << sc.token[g];
   }
   h << "}";
+  h << ",\"head_buckets\":" << spec.headBuckets;
   h << ",\"tensors\":[";
   bool first = true;
   auto emit = [&](const std::string& n, const std::string& shape, const std::string& dtype) {
@@ -282,7 +286,7 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
     first = false;
     h << "{\"name\":\"" << n << "\",\"shape\":" << shape << ",\"dtype\":\"" << dtype << "\"}";
   };
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     int v = GroupedFeatureSet::vocabSize(g);
     emit("emb" + std::to_string(g), "[" + std::to_string(v) + "," + std::to_string(gw.w[g]) + "]",
          embDtype);
@@ -322,6 +326,7 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
   int dim = spec.tokenDim;
   VarWidths gw;
   for (int g = 0; g < 8; ++g) gw.w[g] = (spec.cheapPooling == "shared") ? 32 : dim;
+  gw.w[8] = (spec.cheapPooling == "shared") ? 32 : dim;
   VarQuantTables qt;
   qt.configure(gw, quantization == "int16");
   VarScales sc;
@@ -331,9 +336,10 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
     embDtype = quantization;
   } else {
     for (int g = 0; g < 8; ++g) sc.token[g] = 1.0f;
+    sc.token[8] = 1.0f;
   }
   std::string payload;
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     int w = gw.w[g];
     size_t count = static_cast<size_t>(GroupedFeatureSet::vocabSize(g)) * w;
     const std::vector<float>& d = embeddings.groupData(g);
@@ -395,17 +401,18 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
   }
   h << "]";
   h << ",\"token_dims\":[";
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     if (g > 0) h << ",";
     h << dim;
   }
   h << "]";
   h << ",\"scales\":{";
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     if (g > 0) h << ",";
     h << "\"emb" << g << "\":" << sc.token[g];
   }
   h << "}";
+  h << ",\"head_buckets\":" << spec.headBuckets;
   h << ",\"tensors\":[";
   bool first = true;
   auto emit = [&](const std::string& n, const std::string& shape, const std::string& dtype) {
@@ -413,7 +420,7 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
     first = false;
     h << "{\"name\":\"" << n << "\",\"shape\":" << shape << ",\"dtype\":\"" << dtype << "\"}";
   };
-  for (int g = 0; g < 8; ++g) {
+  for (int g = 0; g < 9; ++g) {
     int v = GroupedFeatureSet::vocabSize(g);
     emit("emb" + std::to_string(g), "[" + std::to_string(v) + "," + std::to_string(gw.w[g]) + "]",
          embDtype);

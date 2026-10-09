@@ -47,8 +47,8 @@ class RelationalModel : public IArchitecture {
   RelationalModel();
 
   bool configure(const RelationalConfig& cfg, std::string& err);
-  void forward(const float* tokens, float& value, float* wdl) const override;
-  void forwardWithContext(const float* tokens, const float* ctx, float& value, float* wdl) const;
+  void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
+  void forwardWithContext(const float* tokens, const float* ctx, float& value, float* wdl, int phase = 1) const;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override { return parameterCount() * 4; }
   const char* archId() const override { return "RUNE-REL-02"; }
@@ -60,9 +60,10 @@ class RelationalModel : public IArchitecture {
   const RelationalConfig& config() const { return mixer.config(); }
 
   RelationalMixer mixer;
-  std::vector<float> w1, b1, w2, b2, wvo, bvo, wwdl, bwdl;
+  std::vector<HeadBucket> heads_;
 
  private:
+  const HeadBucket& headFor(int phase) const;
   mutable std::vector<float> scratch_;
 };
 
@@ -91,6 +92,7 @@ class RelationalEvaluator {
   TokenLayout* layout_ = nullptr;
   RelationalModel* model_ = nullptr;
   float ctx_[ContextSpec::kDim];
+  int phase_ = 1;
   mutable std::vector<float> tokenBuf_;
 };
 

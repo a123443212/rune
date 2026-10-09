@@ -30,6 +30,7 @@ class Evaluator {
   const IArchitecture* arch_;
   GroupedAccumulator acc_;
   float tokenBuf_[8 * 32];
+  int phase_ = 1;
 };
 
 }

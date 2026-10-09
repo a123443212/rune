@@ -11,6 +11,7 @@ void Evaluator::refresh(const Board& board) {
   std::vector<ActiveFeature> feats;
   GroupedFeatureSet::extract(board, feats);
   acc_.refresh(feats);
+  phase_ = board.gamePhase();
 }
 
 void Evaluator::updateIncremental(const std::vector<ActiveFeature>& added,
@@ -21,7 +22,7 @@ void Evaluator::updateIncremental(const std::vector<ActiveFeature>& added,
 EvalResult Evaluator::evaluate() const {
   acc_.tokens(const_cast<float*>(tokenBuf_));
   EvalResult r;
-  arch_->forward(tokenBuf_, r.value, r.wdl);
+  arch_->forward(tokenBuf_, r.value, r.wdl, phase_);
   return r;
 }
 

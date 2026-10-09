@@ -30,7 +30,7 @@ class RuneAttnModel : public IArchitecture {
   RuneAttnModel();
   explicit RuneAttnModel(bool useGab);
 
-  void forward(const float* tokens, float& value, float* wdl) const override;
+  void forward(const float* tokens, float& value, float* wdl, int phase) const override;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override;
   const char* archId() const override { return useGab_ ? "RUNE-ATTN-GAB" : "RUNE-ATTN"; }
@@ -41,9 +41,10 @@ class RuneAttnModel : public IArchitecture {
   ModelSpec spec() const override;
 
   RuneAttentionBlock attn;
-  std::vector<float> w1, b1, w2, b2, wvo, bvo, wwdl, bwdl;
+  std::vector<HeadBucket> heads_;
 
  private:
+  const HeadBucket& headFor(int phase) const;
   bool useGab_;
   mutable std::vector<float> scratch_;
 };

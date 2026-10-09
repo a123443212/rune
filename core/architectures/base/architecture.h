@@ -39,6 +39,7 @@ struct ModelSpec {
   int refH1 = 128;
   int refH2 = 32;
   int sharedWidth = 32;
+  int headBuckets = 1;
 
   std::string canonicalString() const;
   uint64_t configHash() const;
@@ -47,7 +48,7 @@ struct ModelSpec {
 class IArchitecture {
  public:
   virtual ~IArchitecture() = default;
-  virtual void forward(const float* tokens, float& value, float* wdl) const = 0;
+  virtual void forward(const float* tokens, float& value, float* wdl, int phase = 1) const = 0;
   virtual size_t parameterCount() const = 0;
   virtual size_t modelSizeBytes() const = 0;
   virtual const char* archId() const = 0;
@@ -56,6 +57,10 @@ class IArchitecture {
                           std::vector<const float*>& data) const = 0;
   virtual bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) = 0;
   virtual ModelSpec spec() const = 0;
+};
+
+struct HeadBucket {
+  std::vector<float> w1, b1, w2, b2, wvo, bvo, wwdl, bwdl;
 };
 
 uint64_t fnv1aHash(const std::string& s);

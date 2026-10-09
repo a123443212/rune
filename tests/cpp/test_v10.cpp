@@ -1,5 +1,6 @@
 #include "tests/cpp/test_v10.h"
 #include "tests/cpp/test_framework.h"
+#include <cctype>
 #include <cmath>
 #include <cstdint>
 #include <fstream>
@@ -276,6 +277,54 @@ static void testMakeUnmakeParity() {
   CHECK(f0.size() == f2.size());
   for (size_t i = 0; i < f0.size(); ++i) CHECK(f0[i] == f2[i]);
 }
+static double scanNumber(const std::string& s, size_t& p) {
+  while (p < s.size() && (s[p] == ' ' || s[p] == '\n' || s[p] == '\r' || s[p] == '\t' ||
+                          s[p] == ':' || s[p] == ',' || s[p] == '[')) ++p;
+  size_t e = p;
+  while (e < s.size() && (std::isdigit(s[e]) || s[e] == '.' || s[e] == '-' || s[e] == '+' ||
+                          s[e] == 'e' || s[e] == 'E')) ++e;
+  double v = std::stod(s.substr(p, e - p));
+  p = e;
+  return v;
+}
+static void testBucketHeadsGolden() {
+  std::ifstream f("spec/test-vectors/v10/bucket_heads.json");
+  CHECK(!!f);
+  std::string s((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  RuneFile rf;
+  std::string err;
+  CHECK(loadRuneFile("spec/test-vectors/models/small-gab-b3-fp32.rune", rf, err));
+  CHECK(rf.spec.headBuckets == 3);
+  size_t p = 0;
+  int count = 0;
+  while (true) {
+    size_t fp = s.find("\"fen\"", p);
+    if (fp == std::string::npos) break;
+    size_t q0 = s.find('"', fp + 5) + 1;
+    size_t q1 = s.find('"', q0);
+    std::string fen = s.substr(q0, q1 - q0);
+    size_t pp = s.find("\"phase\"", q1);
+    size_t pv = pp + 8;
+    int phase = static_cast<int>(scanNumber(s, pv));
+    size_t vp = s.find("\"value\"", pv);
+    size_t vv = vp + 8;
+    double value = scanNumber(s, vv);
+    size_t wp = s.find("\"wdl\"", vv);
+    size_t wv = wp + 6;
+    double wdl[3];
+    for (int i = 0; i < 3; ++i) wdl[i] = scanNumber(s, wv);
+    p = wv;
+    Board b;
+    CHECK(b.setFen(fen));
+    CHECK(b.gamePhase() == phase);
+    Evaluator ev(&rf.embeddings, rf.arch.get());
+    auto r = ev.evaluateBoard(b);
+    CHECK(std::fabs(r.value - value) < 1e-5);
+    for (int i = 0; i < 3; ++i) CHECK(std::fabs(r.wdl[i] - wdl[i]) < 1e-5);
+    ++count;
+  }
+  CHECK(count == 7);
+}
 void runV10Tests() {
   testQuantHalfAway();
   testStartposFeatures();
@@ -285,4 +334,5 @@ void runV10Tests() {
   testDenseQuantCloseness();
   testMalformedLoader();
   testMakeUnmakeParity();
+  testBucketHeadsGolden();
 }

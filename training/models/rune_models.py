@@ -70,6 +70,30 @@ class SfnnHead(nn.Module):
         return value, wdl
 
 
+class BucketedHead(nn.Module):
+    def __init__(self, head_fn=ValueWdlHead):
+        super().__init__()
+        self.heads = nn.ModuleList([head_fn(), head_fn(), head_fn()])
+
+    def phases_from_ids(self, group_ids, group_mask):
+        g7 = group_ids[7].clamp(0, 63)
+        valid = (group_mask[7] > 0.5) & (g7 >= 34) & (g7 <= 36)
+        cand = torch.where(valid, g7, torch.full_like(g7, 34))
+        return (cand.amax(dim=1) - 34).clamp(0, 2).long()
+
+    def forward(self, flat, phase):
+        value = torch.empty(flat.size(0), dtype=flat.dtype, device=flat.device)
+        wdl = torch.empty(flat.size(0), 3, dtype=flat.dtype, device=flat.device)
+        for b in range(3):
+            rows = (phase == b).nonzero(as_tuple=True)[0]
+            if rows.numel() == 0:
+                continue
+            v, w = self.heads[b](flat[rows])
+            value[rows] = v
+            wdl[rows] = w
+        return value, wdl
+
+
 class RuneAttention(nn.Module):
     def __init__(self, use_gab):
         super().__init__()
@@ -92,32 +116,38 @@ class RuneAttention(nn.Module):
 
 
 class RuneFullModel(nn.Module):
-    def __init__(self, arch_id):
+    def __init__(self, arch_id, buckets=1):
         super().__init__()
         if arch_id not in ARCH_IDS:
             raise ValueError(f"unknown arch {arch_id}")
+        if buckets not in (1, 3):
+            raise ValueError(f"head buckets must be 1 or 3, got {buckets}")
         self.arch_id = arch_id
+        self.buckets = buckets
         self.embedder = GroupedEmbedder()
         if arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             self.attn = RuneAttention(use_gab=(arch_id == "RUNE-ATTN-GAB"))
-            self.head = ValueWdlHead()
+            self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         elif arch_id == "RUNE-MLP":
             self.attn = None
-            self.head = ValueWdlHead()
+            self.head = BucketedHead(ValueWdlHead) if buckets == 3 else ValueWdlHead()
         else:
             self.attn = None
-            self.head = SfnnHead()
+            self.head = BucketedHead(SfnnHead) if buckets == 3 else SfnnHead()
 
     def forward(self, group_ids, group_mask):
         x = self.embedder(group_ids, group_mask)
         if self.attn is not None:
             x = self.attn(x)
         flat = x.reshape(x.size(0), -1)
+        if self.buckets == 3:
+            phase = self.head.phases_from_ids(group_ids, group_mask)
+            return self.head(flat, phase)
         return self.head(flat)
 
     def arch_tensors(self):
         if self.arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
-            return {
+            d = {
                 "wq": self.attn.wq.weight.detach(),
                 "bq": self.attn.wq.bias.detach(),
                 "wk": self.attn.wk.weight.detach(),
@@ -125,31 +155,46 @@ class RuneFullModel(nn.Module):
                 "wvv": self.attn.wv.weight.detach(),
                 "bvv": self.attn.wv.bias.detach(),
                 "gab": self.attn.gab.detach(),
-                "w1": self.head.fc1.weight.detach(),
-                "b1": self.head.fc1.bias.detach(),
-                "w2": self.head.fc2.weight.detach(),
-                "b2": self.head.fc2.bias.detach(),
-                "wvo": self.head.fcv.weight.detach(),
-                "bvo": self.head.fcv.bias.detach(),
-                "wwdl": self.head.fcwdl.weight.detach(),
-                "bwdl": self.head.fcwdl.bias.detach(),
             }
-        return {
-            "w1": self.head.fc1.weight.detach(),
-            "b1": self.head.fc1.bias.detach(),
-            "w2": self.head.fc2.weight.detach(),
-            "b2": self.head.fc2.bias.detach(),
-            "wv": self.head.fcv.weight.detach(),
-            "bv": self.head.fcv.bias.detach(),
-            "wwdl": self.head.fcwdl.weight.detach(),
-            "bwdl": self.head.fcwdl.bias.detach(),
-        }
+            heads = self.head.heads if self.buckets == 3 else [self.head]
+            for b, h in enumerate(heads):
+                suffix = f"_b{b}" if self.buckets == 3 else ""
+                d["w1" + suffix] = h.fc1.weight.detach()
+                d["b1" + suffix] = h.fc1.bias.detach()
+                d["w2" + suffix] = h.fc2.weight.detach()
+                d["b2" + suffix] = h.fc2.bias.detach()
+                d["wvo" + suffix] = h.fcv.weight.detach()
+                d["bvo" + suffix] = h.fcv.bias.detach()
+                d["wwdl" + suffix] = h.fcwdl.weight.detach()
+                d["bwdl" + suffix] = h.fcwdl.bias.detach()
+            return d
+        d = {}
+        heads = self.head.heads if self.buckets == 3 else [self.head]
+        for b, h in enumerate(heads):
+            suffix = f"_b{b}" if self.buckets == 3 else ""
+            d["w1" + suffix] = h.fc1.weight.detach()
+            d["b1" + suffix] = h.fc1.bias.detach()
+            d["w2" + suffix] = h.fc2.weight.detach()
+            d["b2" + suffix] = h.fc2.bias.detach()
+            d["wv" + suffix] = h.fcv.weight.detach()
+            d["bv" + suffix] = h.fcv.bias.detach()
+            d["wwdl" + suffix] = h.fcwdl.weight.detach()
+            d["bwdl" + suffix] = h.fcwdl.bias.detach()
+        return d
 
     def embedding_tensors(self):
         return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(NUM_GROUPS)}
 
     def export_order(self):
-        return list(EXPORT_ORDER[self.arch_id])
+        order = list(EXPORT_ORDER[self.arch_id])
+        if self.buckets == 3:
+            head_keys = ("w1", "b1", "w2", "b2", "wvo", "bvo", "wv", "bv", "wwdl", "bwdl")
+            base = [k for k in order if k not in head_keys]
+            out = list(base)
+            for b in range(3):
+                out += [f"{k}_b{b}" for k in order if k in head_keys]
+            return out
+        return order
 
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())
@@ -172,6 +217,7 @@ class RuneFullModel(nn.Module):
             "attention": attention,
             "geometric_bias": gab,
             "head": "value_wdl",
+            "head_buckets": self.buckets,
             "quantization": quantization,
         }
 

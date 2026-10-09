@@ -92,7 +92,7 @@ def export_model(model, path, quantization="fp32"):
                 "threshold", "t_high", "t_low", "refine_precision",
                 "pruned_pairs", "uncertainty", "stability_head", "head_h1",
                 "head_h2", "cheap_hidden", "ref_h1", "ref_h2", "teacher_id",
-                "teacher_hash", "student_of"):
+                "teacher_hash", "student_of", "head_buckets"):
         if key in spec:
             header[key] = spec[key]
     hh = format(fnv1a(payload), "016x")

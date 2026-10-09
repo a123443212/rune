@@ -39,6 +39,11 @@ def build():
         export_model(ma, os.path.join(OUT, "adaptive-fp32.rune"), quantization="fp32")
     except Exception as e:
         print("adaptive skip " + str(e))
+    try:
+        from tools.golden.gen_bucket_golden import main as gen_bucket_golden
+        gen_bucket_golden()
+    except Exception as e:
+        print("bucket heads skip " + str(e))
     for name in sorted(os.listdir(OUT)):
         h = read_header(os.path.join(OUT, name))
         arch = h.get("architecture_id", h.get("arch"))
