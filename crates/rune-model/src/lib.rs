@@ -14,6 +14,7 @@ pub struct ModelHeader {
     pub architecture_id: String,
     pub architecture_version: String,
     pub feature_version: String,
+    pub game: String,
     pub tokens: usize,
     pub token_dim: usize,
     pub quantization: String,
@@ -39,6 +40,7 @@ pub enum LoadError {
     UnsupportedFormat(u32),
     UnsupportedArch(String),
     UnsupportedQuant(String),
+    GameMismatch(String),
     FeatureMismatch(String),
     TensorMismatch(String),
     ShapeMismatch(String),
@@ -56,6 +58,7 @@ impl std::fmt::Display for LoadError {
             LoadError::UnsupportedFormat(v) => write!(f, "unsupported format {}", v),
             LoadError::UnsupportedArch(s) => write!(f, "unsupported architecture {}", s),
             LoadError::UnsupportedQuant(s) => write!(f, "unsupported quantization {}", s),
+            LoadError::GameMismatch(s) => write!(f, "game mismatch {}", s),
             LoadError::FeatureMismatch(s) => write!(f, "feature version mismatch {}", s),
             LoadError::TensorMismatch(s) => write!(f, "tensor mismatch {}", s),
             LoadError::ShapeMismatch(s) => write!(f, "shape mismatch {}", s),
@@ -140,8 +143,10 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
         return Err(LoadError::BadHeader("missing architecture id".to_string()));
     }
     let arch_ver = get_str(&hv, "architecture_version", "arch_version");
+    let game = hv.get("game").and_then(|x| x.as_str()).unwrap_or(spec::GAME_CHESS).to_string();
+    let want_feat = spec::game_feature_version(&game).ok_or_else(|| LoadError::GameMismatch(game.clone()))?;
     let feat = get_str(&hv, "feature_version", "feature_set");
-    if feat != spec::FEATURE_VERSION {
+    if feat != want_feat {
         return Err(LoadError::FeatureMismatch(feat));
     }
     let quant = hv.get("quantization").and_then(|x| x.as_str()).unwrap_or("fp32").to_string();
@@ -309,6 +314,7 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
         architecture_id: arch_id,
         architecture_version: arch_ver,
         feature_version: feat,
+        game,
         tokens,
         token_dim,
         quantization: quant,

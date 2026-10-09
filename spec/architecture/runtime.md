@@ -40,9 +40,20 @@ No softmax, no scaling by sqrt(d), no layer norm in this generation.
 
 ## Head (normative order)
 
-Flatten mixed tokens row-major to length T*D. `h1=clip01(W1*flat+b1)`,
-`h2=clip01(W2*h1+b2)`, `value=tanh(dot(wvo,h2)+bvo)`,
-`wdl=Wwdl*h2+bwdl` linear (logits, no softmax inside runtime).
+Flatten mixed tokens row-major to length T*D. Single path (default,
+`head_pair=false`): `h1=clip01(W1*flat+b1)`, `h2=clip01(W2*h1+b2)`,
+`value=tanh(dot(wvo,h2)+bvo)`, `wdl=Wwdl*h2+bwdl` linear (logits, no
+softmax inside runtime).
+
+Pair path (opt-in, `head_pair=true`, `head="value_wdl_pair"`,
+`arch_version` 0.2.0 / 0.2.1 for REL-02): `pre=W1*flat+b1` (no clip),
+`c=clip01(pre)`, `s=c*c` (screlu, exact `c*c` float32
+round-to-nearest-even per numerical contract), `h1pair=concat(c,s)`
+row-major `[clip|sqr]` length 2*H1, `h2=clip01(W2*h1pair+b2)` where
+`W2` is `[H2, 2*H1]`, then value/wdl as above. Loaders infer the path
+from `w2` element count (`H2*H1` single vs `H2*H1*2` pair) and must
+reject any other width. Both paths are bit-deterministic given
+identical input bytes; cross-path equality is not required.
 Uncertainty/stability heads, when present, are extra linear rows
 after wdl and must be compared separately.
 

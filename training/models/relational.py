@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 
 from training.features.context import CONTEXT_DIM
-from training.features.python_features import NUM_GROUPS, VOCAB_SIZES
+from training.features.python_features import VOCAB_SIZES
 from training.models.token_layout import check_layout
 
 GATE_FNS = ("clip", "hard_sigmoid", "screlu")
@@ -19,12 +19,14 @@ def apply_gate(name, s):
 
 
 class FlexEmbedder(nn.Module):
-    def __init__(self, tokens=8, dim=32):
+    def __init__(self, tokens=8, dim=32, vocab_sizes=None):
         super().__init__()
-        self.layout = check_layout(tokens, dim)
+        vocabs = list(vocab_sizes) if vocab_sizes is not None else list(VOCAB_SIZES)
+        self.vocabs = vocabs
+        self.layout = check_layout(tokens, dim, vocabs)
         self.tokens = tokens
         self.dim = dim
-        self.tables = nn.ModuleList([nn.Embedding(v, dim) for v in VOCAB_SIZES])
+        self.tables = nn.ModuleList([nn.Embedding(v, dim) for v in vocabs])
         for emb in self.tables:
             nn.init.uniform_(emb.weight, -0.01, 0.01)
 
@@ -33,7 +35,7 @@ class FlexEmbedder(nn.Module):
         for sources in self.layout:
             acc = 0.0
             for g, lo, hi in sources:
-                ids = group_ids[g].clamp(0, VOCAB_SIZES[g] - 1)
+                ids = group_ids[g].clamp(0, self.vocabs[g] - 1)
                 sel = ((group_ids[g] >= lo) & (group_ids[g] < hi)).float() * group_mask[g]
                 acc = acc + (self.tables[g](ids) * sel.unsqueeze(-1)).sum(dim=1)
             toks.append(acc)
@@ -41,22 +43,24 @@ class FlexEmbedder(nn.Module):
 
 
 class RelationalMixer(nn.Module):
-    def __init__(self, tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False):
+    def __init__(self, tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False, ctx_dim=None):
         super().__init__()
         if gate not in GATE_FNS:
             raise ValueError(f"unknown gate {gate}")
+        cd = ctx_dim if ctx_dim is not None else CONTEXT_DIM
         self.tokens = tokens
         self.dim = dim
         self.gate = gate
         self.alpha = alpha
         self.dynamic_bias = dynamic_bias
+        self.ctx_dim = cd
         self.wq = nn.Linear(dim, dim)
         self.wk = nn.Linear(dim, dim)
         self.wv = nn.Linear(dim, dim)
         self.gab_static = nn.Parameter(torch.zeros(tokens, tokens))
         if dynamic_bias:
-            self.dyn_u = nn.Parameter(torch.zeros(tokens, CONTEXT_DIM))
-            self.dyn_w = nn.Parameter(torch.zeros(tokens, CONTEXT_DIM))
+            self.dyn_u = nn.Parameter(torch.zeros(tokens, cd))
+            self.dyn_w = nn.Parameter(torch.zeros(tokens, cd))
         else:
             self.dyn_u = None
             self.dyn_w = None
@@ -76,31 +80,44 @@ class RelationalMixer(nn.Module):
 
 
 class RelationalHead(nn.Module):
-    def __init__(self, tokens=8, dim=32):
+    def __init__(self, tokens=8, dim=32, pair=False):
         super().__init__()
+        self.pair = pair
         self.fc1 = nn.Linear(tokens * dim, 128)
-        self.fc2 = nn.Linear(128, 32)
+        self.fc2 = nn.Linear(256 if pair else 128, 32)
         self.fcv = nn.Linear(32, 1)
         self.fcwdl = nn.Linear(32, 3)
 
     def forward(self, flat):
-        h1 = torch.clamp(self.fc1(flat), 0.0, 1.0)
+        pre = self.fc1(flat)
+        c = torch.clamp(pre, 0.0, 1.0)
+        if self.pair:
+            h1 = torch.cat([c, c * c], dim=-1)
+        else:
+            h1 = c
         h2 = torch.clamp(self.fc2(h1), 0.0, 1.0)
         value = torch.tanh(self.fcv(h2)).squeeze(-1)
         return value, self.fcwdl(h2)
 
 
 class RuneRelational(nn.Module):
-    def __init__(self, tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False):
+    def __init__(self, tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False, pair=False,
+                 game="chess", vocab_sizes=None, ctx_dim=None):
         super().__init__()
+        from training.games import get as get_game
+        self.game = get_game(game)
         self.tokens = tokens
         self.dim = dim
         self.gate = gate
         self.alpha = alpha
         self.dynamic_bias = dynamic_bias
-        self.embedder = FlexEmbedder(tokens, dim)
-        self.mixer = RelationalMixer(tokens, dim, gate, alpha, dynamic_bias)
-        self.head = RelationalHead(tokens, dim)
+        self.pair = pair
+        vocabs = list(vocab_sizes) if vocab_sizes is not None else list(self.game.vocabs)
+        cd = ctx_dim if ctx_dim is not None else self.game.context_dim
+        self.ctx_dim = cd
+        self.embedder = FlexEmbedder(tokens, dim, vocabs)
+        self.mixer = RelationalMixer(tokens, dim, gate, alpha, dynamic_bias, ctx_dim=cd)
+        self.head = RelationalHead(tokens, dim, pair=pair)
 
     def forward(self, group_ids, group_mask, ctx):
         x = self.embedder(group_ids, group_mask)
@@ -139,7 +156,7 @@ class RuneRelational(nn.Module):
         return order + ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
 
     def embedding_tensors(self):
-        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(NUM_GROUPS)}
+        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(len(self.embedder.tables))}
 
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())
@@ -149,20 +166,24 @@ class RuneRelational(nn.Module):
 
     def model_spec(self, quantization="fp32"):
         return {
+            "game": self.game.game_id,
             "arch": "RUNE-REL-02",
-            "arch_version": "0.2.0",
-            "feature_set": "grouped_hkav2_fullthreats_v02",
+            "arch_version": "0.2.1" if self.pair else "0.2.0",
+            "feature_set": self.game.feature_version,
             "tokens": self.tokens,
             "token_dim": self.dim,
             "attention": "gated_relational",
             "geometric_bias": "dynamic" if self.dynamic_bias else "static",
-            "head": "value_wdl",
+            "head": "value_wdl_pair" if self.pair else "value_wdl",
+            "head_pair": self.pair,
             "quantization": quantization,
             "gate": self.gate,
             "alpha": self.alpha,
-            "context_dim": CONTEXT_DIM,
+            "context_dim": self.ctx_dim,
         }
 
 
-def build_rel_model(tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False):
-    return RuneRelational(tokens, dim, gate, alpha, dynamic_bias)
+def build_rel_model(tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False, pair=False,
+                    game="chess", vocab_sizes=None, ctx_dim=None):
+    return RuneRelational(tokens, dim, gate, alpha, dynamic_bias, pair=pair,
+                          game=game, vocab_sizes=vocab_sizes, ctx_dim=ctx_dim)

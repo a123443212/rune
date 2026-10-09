@@ -58,6 +58,9 @@ impl Evaluator {
         Evaluator::from_model(&m)
     }
     pub fn from_model(m: &model::RuneModel) -> Result<Evaluator> {
+        if m.header.game != spec::GAME_CHESS {
+            return Err(RuntimeError::GameMismatch(m.header.game.clone()));
+        }
         if m.header.feature_version != spec::FEATURE_VERSION {
             return Err(RuntimeError::FeatureMismatch(m.header.feature_version.clone()));
         }
@@ -224,7 +227,7 @@ impl Evaluator {
             let h1 = b1.len();
             let h2 = b2.len();
             let input = tokens * dim;
-            if w1.len() != h1 * input || w2.len() != h2 * h1 {
+            if w1.len() != h1 * input || (w2.len() != h2 * h1 && w2.len() != h2 * h1 * 2) {
                 return Err(RuntimeError::Shape("head mat".to_string()));
             }
             if wvo.len() != h2 {

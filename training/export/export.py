@@ -35,13 +35,11 @@ def quantize_array(arr, bits=8):
 
 
 def collect_tensors(model, quantization="fp32"):
-    from training.features.python_features import NUM_GROUPS
-
     arch_tensors = model.arch_tensors()
     emb_tensors = model.embedding_tensors()
-    order = ["emb" + str(g) for g in range(NUM_GROUPS)] + model.export_order()
+    order = [f"emb{g}" for g in range(len(emb_tensors))] + model.export_order()
     arrays = {}
-    for g in range(NUM_GROUPS):
+    for g in range(len(emb_tensors)):
         arrays[f"emb{g}"] = emb_tensors[f"emb{g}"].numpy()
     for k, v in arch_tensors.items():
         arrays[k] = np.asarray(v.numpy(), dtype=np.float32)
@@ -70,6 +68,7 @@ def export_model(model, path, quantization="fp32"):
             payload += arr.astype("<f4").tobytes()
     header = {
         "format": FORMAT_VERSION,
+        "game": spec.get("game", "chess"),
         "architecture_id": spec["arch"],
         "architecture_version": spec["arch_version"],
         "feature_version": spec.get("feature_set", FEATURE_VERSION),
@@ -92,7 +91,7 @@ def export_model(model, path, quantization="fp32"):
                 "threshold", "t_high", "t_low", "refine_precision",
                 "pruned_pairs", "uncertainty", "stability_head", "head_h1",
                 "head_h2", "cheap_hidden", "ref_h1", "ref_h2", "teacher_id",
-                "teacher_hash", "student_of", "head_buckets"):
+                "teacher_hash", "student_of", "head_buckets", "head_pair"):
         if key in spec:
             header[key] = spec[key]
     hh = format(fnv1a(payload), "016x")

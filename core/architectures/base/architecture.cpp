@@ -26,7 +26,7 @@ std::string ModelSpec::canonicalString() const {
     if (i > 0) dims += ",";
     dims += std::to_string(tokenDims[i]);
   }
-  return arch + "|" + archVersion + "|" + featureSet + "|t" + std::to_string(tokens) + "x" +
+  return arch + "|" + archVersion + "|" + game + "|" + featureSet + "|t" + std::to_string(tokens) + "x" +
          std::to_string(tokenDim) + "|" + attention + "|" + geometricBias + "|" + head + "|" +
          quantization + "|" + variant + "|[" + dims + "]|" + pooling + "|" +
          (gateOn ? "gate" : "nogate") + "|" + (poolClip ? "clip" : "noclip") +

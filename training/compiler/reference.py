@@ -85,6 +85,9 @@ def forward_generic(arrays, tokens, dim, h1n, gate, alpha, flat):
     flat2 = mixed.reshape(-1)
     w1 = arrays["w1"].reshape(h1n, tokens * dim)
     b1 = arrays["b1"]
+    w2raw = np.asarray(arrays["w2"]).reshape(-1)
+    if w2raw.size == 32 * h1n * 2:
+        raise ValueError("pair head (w2 [32,2*H1]) not yet supported in compiled path; use direct eval (rune-cli eval / match) for head_pair models")
     w2 = arrays["w2"].reshape(32, h1n)
     b2 = arrays["b2"]
     h1 = linear_bias_clip(w1, b1, flat2)

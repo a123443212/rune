@@ -83,6 +83,74 @@ void testSerialization() {
   CHECK(attn.spec().configHash() == attn.spec().configHash());
 }
 
+void testPairHead() {
+  GroupedMlp mlp;
+  std::vector<std::string> names;
+  std::vector<std::vector<int>> shapes;
+  std::vector<const float*> data;
+  mlp.getTensors(names, shapes, data);
+  std::vector<float> flatSingle;
+  for (size_t i = 0; i < data.size(); ++i) {
+    size_t n = 1;
+    for (int s : shapes[i]) n *= static_cast<size_t>(s);
+    for (size_t j = 0; j < n; ++j) flatSingle.push_back(data[i][j]);
+  }
+  size_t w1n = 128 * 256, b1n = 128, w2single = 32 * 128, b2n = 32;
+  uint64_t rng = 0x12345678ULL;
+  auto nextU = [&]() {
+    rng = rng * 6364136223846793005ULL + 1442695040888963407ULL;
+    return static_cast<double>(rng >> 11) / static_cast<double>(0x1FFFFFFFFFFFFFULL);
+  };
+  for (size_t i = 0; i < w1n; ++i) flatSingle[i] = static_cast<float>((nextU() - 0.5) * 0.1);
+  for (size_t i = 0; i < b1n; ++i) flatSingle[w1n + i] = static_cast<float>((nextU() - 0.5) * 0.02);
+  for (size_t i = 0; i < w2single; ++i)
+    flatSingle[w1n + b1n + i] = static_cast<float>((nextU() - 0.5) * 0.1);
+  for (size_t i = 0; i < b2n; ++i)
+    flatSingle[w1n + b1n + w2single + i] = static_cast<float>((nextU() - 0.5) * 0.02);
+  GroupedMlp mlpB;
+  CHECK(mlpB.setTensors(names, flatSingle));
+  std::vector<float> flatPair;
+  flatPair.insert(flatPair.end(), flatSingle.begin(), flatSingle.begin() + w1n + b1n);
+  for (int r = 0; r < 32; ++r) {
+    for (int c = 0; c < 128; ++c) flatPair.push_back(flatSingle[w1n + b1n + r * 128 + c]);
+    for (int c = 0; c < 128; ++c) flatPair.push_back(0.5f * flatSingle[w1n + b1n + r * 128 + c]);
+  }
+  flatPair.insert(flatPair.end(), flatSingle.begin() + w1n + b1n + w2single, flatSingle.end());
+  GroupedMlp mlpPair;
+  CHECK(mlpPair.setTensors(names, flatPair));
+  CHECK(mlpPair.parameterCount() == flatPair.size());
+  CHECK(mlpPair.parameterCount() == mlpB.parameterCount() + 32 * 128);
+  float tok[256];
+  for (int i = 0; i < 256; ++i) tok[i] = static_cast<float>((i % 41)) / 40.0f;
+  float vS, vP, wS[3], wP[3];
+  mlpB.forward(tok, vS, wS);
+  mlpPair.forward(tok, vP, wP);
+  CHECK(std::isfinite(vP));
+  bool differs = (std::fabs(vS - vP) > 1e-6);
+  for (int i = 0; i < 3; ++i) {
+    CHECK(std::isfinite(wP[i]));
+    if (std::fabs(wS[i] - wP[i]) > 1e-6) differs = true;
+  }
+  CHECK(differs);
+  std::vector<std::string> n2;
+  std::vector<std::vector<int>> s2;
+  std::vector<const float*> d2;
+  mlpPair.getTensors(n2, s2, d2);
+  CHECK(s2[2][0] == 32 && s2[2][1] == 256);
+  std::vector<float> flat2;
+  for (size_t i = 0; i < d2.size(); ++i) {
+    size_t n = 1;
+    for (int s : s2[i]) n *= static_cast<size_t>(s);
+    for (size_t j = 0; j < n; ++j) flat2.push_back(d2[i][j]);
+  }
+  GroupedMlp mlpPair2;
+  CHECK(mlpPair2.setTensors(n2, flat2));
+  float vP2, wP2[3];
+  mlpPair2.forward(tok, vP2, wP2);
+  CHECK_CLOSE(vP, vP2, 1e-7);
+  for (int i = 0; i < 3; ++i) CHECK_CLOSE(wP[i], wP2[i], 1e-7);
+}
+
 void testQuantization() {
   EmbeddingTables tables;
   tables.init(7);

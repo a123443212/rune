@@ -4,30 +4,31 @@ TOKEN_COUNTS = (6, 8, 10)
 TOKEN_DIMS = (24, 32, 40)
 
 
-def _full(group):
-    return [(group, 0, VOCAB_SIZES[group])]
+def _full(group, vocabs):
+    return [(group, 0, vocabs[group])]
 
 
-def _split(group, lo, hi):
-    return [(group, lo, hi)]
+def _split(group, lo, hi, vocabs):
+    return [(group, min(lo, vocabs[group]), min(hi, vocabs[group]))]
 
 
-def layout_for(tokens):
+def layout_for(tokens, vocabs=None):
+    vs = list(vocabs) if vocabs is not None else list(VOCAB_SIZES)
     if tokens == 8:
-        return [_full(0) + _full(8)] + [_full(g) for g in range(1, 8)]
+        return [_full(0, vs) + _full(8, vs)] + [_full(g, vs) for g in range(1, 8)]
     if tokens == 6:
-        return [_full(0) + _full(8), _full(1), _full(2), _full(3) + _full(4),
-                _full(5) + _full(6), _full(7)]
+        return [_full(0, vs) + _full(8, vs), _full(1, vs), _full(2, vs), _full(3, vs) + _full(4, vs),
+                _full(5, vs) + _full(6, vs), _full(7, vs)]
     if tokens == 10:
-        return [_full(0) + _full(8), _full(1), _split(2, 0, 128), _split(2, 128, 256),
-                _full(3), _full(4), _split(5, 0, 384), _split(5, 384, 512),
-                _full(6), _full(7)]
+        return [_full(0, vs) + _full(8, vs), _full(1, vs), _split(2, 0, 128, vs), _split(2, 128, 256, vs),
+                _full(3, vs), _full(4, vs), _split(5, 0, 384, vs), _split(5, 384, 512, vs),
+                _full(6, vs), _full(7, vs)]
     raise ValueError(f"unsupported token count {tokens}")
 
 
-def check_layout(tokens, dim):
+def check_layout(tokens, dim, vocabs=None):
     if tokens not in TOKEN_COUNTS:
         raise ValueError(f"unsupported token count {tokens}")
     if dim not in TOKEN_DIMS:
         raise ValueError(f"unsupported token dim {dim}")
-    return layout_for(tokens)
+    return layout_for(tokens, vocabs)

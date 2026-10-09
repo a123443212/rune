@@ -1,0 +1,73 @@
+experiment:
+  name: rune_v17_leg_a_pair
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/v17_leg_a
+
+data:
+  dataset: clean_v16_a
+  teacher: teacher_v16_distill_ckpt
+  positions:
+    - 250000000
+
+models:
+  - rune_attn_gab
+  - rune_attn_gab_pair
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  gate: clip
+  alpha: 1.0
+  pair: false
+
+# Matched-condition legs (one variable vs re-run control):
+#   leg-a-control: rune_attn_gab, pair=false (re-run v16 baseline)
+#   leg-a-pair:    rune_attn_gab_pair, pair=true (clip+sqr concat on h1,
+#                  arch_version 0.2.0, +4096 params). Promote only on
+#                  per-metric win + engine_match SPRT, no composite score.
+pair_legs:
+  control:
+    model: rune_attn_gab
+    pair: false
+  candidate:
+    model: rune_attn_gab_pair
+    pair: true
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+distillation:
+  enabled: true
+  task: value_wdl
+  alpha: 0.5
+  weight_mode: confidence
+  weight_lo: 0.25
+  weight_hi: 1.0
+  lambda_unc_distill: 0.0
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: true
+
+repro:
+  pool: data/pool_v16.jsonl
+  labeled: data/distilled_v16_250m.jsonl
+  teacher_ckpt: /path/to/teacher.ckpt

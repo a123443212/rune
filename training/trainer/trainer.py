@@ -49,7 +49,9 @@ class Trainer:
             p = config.get("rel_params", {})
             self.model = build_rel_model(tokens=p.get("tokens", 8), dim=p.get("dim", 32),
                                          gate=p.get("gate", "clip"), alpha=p.get("alpha", 1.0),
-                                          dynamic_bias=p.get("dynamic_bias", False))
+                                         dynamic_bias=p.get("dynamic_bias", False),
+                                         pair=p.get("pair", config.get("pair", False)),
+                                         game=config.get("game", "chess"))
             self.needs_context = True
             self.is_adaptive = False
             self.is_search = False
@@ -108,7 +110,10 @@ class Trainer:
             self.is_search = True
         else:
             p0 = config.get("rel_params", {})
-            self.model = build_model(config["arch"], gate=p0.get("gate", "clip"))
+            self.model = build_model(config["arch"], gate=p0.get("gate", "clip"),
+                                     pair=p0.get("pair", config.get("pair", False)),
+                                     game=config.get("game", "chess"),
+                                     buckets=config.get("head_buckets", 1))
             self.needs_context = False
             self.is_adaptive = False
             self.is_search = False
@@ -378,11 +383,12 @@ class Trainer:
         return out
 
     def make_train_loader(self, records, batch_size, shuffle, seed):
+        game = self.cfg.get("game", "chess")
         if self.needs_context:
             from training.datasets.flex_dataset import make_flex_loader
 
-            return make_flex_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed)
-        return make_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed)
+            return make_flex_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed, game=game)
+        return make_loader(records, batch_size=batch_size, shuffle=shuffle, seed=seed, game=game)
 
     def make_eval_loader(self, records, batch_size):
         return self.make_train_loader(records, batch_size, False, 0)

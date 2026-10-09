@@ -29,6 +29,7 @@ int main() {
   testAccumulatorIncremental();
   testAttentionMath();
   testSerialization();
+  testPairHead();
   testQuantization();
   testEvaluator();
   testModelIO();

@@ -29,6 +29,7 @@ void testFeatures();
 void testAccumulatorIncremental();
 void testAttentionMath();
 void testSerialization();
+void testPairHead();
 void testQuantization();
 void testEvaluator();
 void testModelIO();

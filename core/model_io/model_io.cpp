@@ -336,6 +336,8 @@ std::string toHex16(uint64_t v) {
 void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.arch = pickString(header, "architecture_id", "arch");
   spec.archVersion = pickString(header, "architecture_version", "arch_version");
+  spec.game = extractString(header, "game");
+  if (spec.game.empty()) spec.game = "chess";
   spec.featureSet = pickString(header, "feature_version", "feature_set");
   spec.tokens = static_cast<int>(extractInt(header, "tokens", 8));
   spec.tokenDim = static_cast<int>(extractInt(header, "token_dim", 32));

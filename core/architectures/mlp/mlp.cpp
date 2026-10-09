@@ -30,7 +30,7 @@ GroupedMlp::GroupedMlp() {
   initVec(heads_[0].bvo, 1, s, 0.01f);
   initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
   initVec(heads_[0].bwdl, 3, s, 0.01f);
-  scratch_.assign(160, 0.0f);
+  scratch_.assign(128 + 256 + 32, 0.0f);
 }
 
 const HeadBucket& GroupedMlp::headFor(int phase) const {
@@ -45,6 +45,26 @@ const HeadBucket& GroupedMlp::headFor(int phase) const {
 
 void GroupedMlp::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
+  int h1n = static_cast<int>(h.b1.size());
+  int h2n = static_cast<int>(h.b2.size());
+  bool isPair = (h.w2.size() == static_cast<size_t>(h2n) * static_cast<size_t>(h1n) * 2);
+  if (isPair) {
+    float* pre = scratch_.data();
+    float* h1p = scratch_.data() + h1n;
+    float* h2 = scratch_.data() + h1n + h1n * 2;
+    simd::matVec(h.w1.data(), tokens, h.b1.data(), pre, h1n, kIn);
+    for (int i = 0; i < h1n; ++i) {
+      float c = pre[i] < 0.0f ? 0.0f : (pre[i] > 1.0f ? 1.0f : pre[i]);
+      h1p[i] = c;
+      h1p[h1n + i] = c * c;
+    }
+    simd::matVecClipped(h.w2.data(), h1p, h.b2.data(), h2, h2n, h1n * 2);
+    float v = h.bvo[0];
+    for (int i = 0; i < h2n; ++i) v += h.wvo[i] * h2[i];
+    value = std::tanh(v);
+    simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
+    return;
+  }
   float* h1 = scratch_.data();
   float* h2 = scratch_.data() + 128;
   simd::matVecClipped(h.w1.data(), tokens, h.b1.data(), h1, kH1, kIn);
@@ -76,7 +96,10 @@ void GroupedMlp::getTensors(std::vector<std::string>& names,
     const HeadBucket& h = heads_[b];
     names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
                                "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
-    shapes.insert(shapes.end(), {{128, 256}, {128}, {32, 128}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+    int h1n = static_cast<int>(h.b1.size());
+    int h2n = static_cast<int>(h.b2.size());
+    int w2cols = h1n == 0 ? 0 : static_cast<int>(h.w2.size() / static_cast<size_t>(h2n));
+    shapes.insert(shapes.end(), {{h1n, 256}, {h1n}, {h2n, w2cols}, {h2n}, {1, h2n}, {1}, {3, h2n}, {3}});
     data.insert(data.end(), {h.w1.data(), h.b1.data(), h.w2.data(), h.b2.data(), h.wvo.data(),
                              h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
   }
@@ -98,13 +121,19 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
   for (size_t i = 0; i < base.size(); ++i) {
     if (names[i] != base[i]) return false;
   }
+  size_t singlePer = 128 * 256 + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
+  size_t pairPer = 128 * 256 + 128 + 32 * 256 + 32 + 32 + 1 + 3 * 32 + 3;
+  bool isPair = (flat.size() == pairPer * nbuckets);
+  bool isSingle = (flat.size() == singlePer * nbuckets);
+  if (!isPair && !isSingle) return false;
+  size_t w2n = isPair ? 32 * 256 : 32 * 128;
   heads_.clear();
   size_t off = 0;
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
     h.w1.assign(128 * 256, 0.0f);
     h.b1.assign(128, 0.0f);
-    h.w2.assign(32 * 128, 0.0f);
+    h.w2.assign(w2n, 0.0f);
     h.b2.assign(32, 0.0f);
     h.wvo.assign(32, 0.0f);
     h.bvo.assign(1, 0.0f);
@@ -125,7 +154,8 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
 ModelSpec GroupedMlp::spec() const {
   ModelSpec s;
   s.arch = archId();
-  s.archVersion = archVersion();
+  bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
+  s.archVersion = isPair ? "0.2.0" : archVersion();
   s.attention = "none";
   s.geometricBias = "none";
   s.headBuckets = static_cast<int>(heads_.size());
@@ -143,7 +173,7 @@ SfnnBaseline::SfnnBaseline() {
   initVec(heads_[0].bvo, 1, s, 0.01f);
   initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
   initVec(heads_[0].bwdl, 3, s, 0.01f);
-  scratch_.assign(288, 0.0f);
+  scratch_.assign(256 + 512 + 32, 0.0f);
 }
 
 const HeadBucket& SfnnBaseline::headFor(int phase) const {
@@ -158,6 +188,26 @@ const HeadBucket& SfnnBaseline::headFor(int phase) const {
 
 void SfnnBaseline::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
+  int h1n = static_cast<int>(h.b1.size());
+  int h2n = static_cast<int>(h.b2.size());
+  bool isPair = (h.w2.size() == static_cast<size_t>(h2n) * static_cast<size_t>(h1n) * 2);
+  if (isPair) {
+    float* pre = scratch_.data();
+    float* h1p = scratch_.data() + h1n;
+    float* h2 = scratch_.data() + h1n + h1n * 2;
+    simd::matVec(h.w1.data(), tokens, h.b1.data(), pre, h1n, kIn);
+    for (int i = 0; i < h1n; ++i) {
+      float c = pre[i] < 0.0f ? 0.0f : (pre[i] > 1.0f ? 1.0f : pre[i]);
+      h1p[i] = c;
+      h1p[h1n + i] = c * c;
+    }
+    simd::matVecClipped(h.w2.data(), h1p, h.b2.data(), h2, h2n, h1n * 2);
+    float v = h.bvo[0];
+    for (int i = 0; i < h2n; ++i) v += h.wvo[i] * h2[i];
+    value = std::tanh(v);
+    simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
+    return;
+  }
   float* h1 = scratch_.data();
   float* h2 = scratch_.data() + 256;
   simd::matVecClipped(h.w1.data(), tokens, h.b1.data(), h1, kH1, kIn);
@@ -189,7 +239,10 @@ void SfnnBaseline::getTensors(std::vector<std::string>& names,
     const HeadBucket& h = heads_[b];
     names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
                                "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
-    shapes.insert(shapes.end(), {{256, 256}, {256}, {32, 256}, {32}, {1, 32}, {1}, {3, 32}, {3}});
+    int h1n = static_cast<int>(h.b1.size());
+    int h2n = static_cast<int>(h.b2.size());
+    int w2cols = h2n == 0 ? 0 : static_cast<int>(h.w2.size() / static_cast<size_t>(h2n));
+    shapes.insert(shapes.end(), {{h1n, 256}, {h1n}, {h2n, w2cols}, {h2n}, {1, h2n}, {1}, {3, h2n}, {3}});
     data.insert(data.end(), {h.w1.data(), h.b1.data(), h.w2.data(), h.b2.data(), h.wvo.data(),
                              h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
   }
@@ -211,13 +264,19 @@ bool SfnnBaseline::setTensors(const std::vector<std::string>& names, const std::
   for (size_t i = 0; i < base.size(); ++i) {
     if (names[i] != base[i]) return false;
   }
+  size_t singlePer = 256 * 256 + 256 + 32 * 256 + 32 + 32 + 1 + 3 * 32 + 3;
+  size_t pairPer = 256 * 256 + 256 + 32 * 512 + 32 + 32 + 1 + 3 * 32 + 3;
+  bool isPair = (flat.size() == pairPer * nbuckets);
+  bool isSingle = (flat.size() == singlePer * nbuckets);
+  if (!isPair && !isSingle) return false;
+  size_t w2n = isPair ? 32 * 512 : 32 * 256;
   heads_.clear();
   size_t off = 0;
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
     h.w1.assign(256 * 256, 0.0f);
     h.b1.assign(256, 0.0f);
-    h.w2.assign(32 * 256, 0.0f);
+    h.w2.assign(w2n, 0.0f);
     h.b2.assign(32, 0.0f);
     h.wvo.assign(32, 0.0f);
     h.bvo.assign(1, 0.0f);
@@ -238,7 +297,8 @@ bool SfnnBaseline::setTensors(const std::vector<std::string>& names, const std::
 ModelSpec SfnnBaseline::spec() const {
   ModelSpec s;
   s.arch = archId();
-  s.archVersion = archVersion();
+  bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
+  s.archVersion = isPair ? "0.2.0" : archVersion();
   s.attention = "none";
   s.geometricBias = "none";
   s.headBuckets = static_cast<int>(heads_.size());

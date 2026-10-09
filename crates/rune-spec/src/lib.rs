@@ -1,6 +1,15 @@
 pub const RUNTIME_SPEC: &str = "RUNE-10";
 pub const MODEL_FORMAT_VERSION: u32 = 2;
 pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v02";
+pub const GAME_CHESS: &str = "chess";
+pub const GAME_SHOGI: &str = "shogi";
+pub fn game_feature_version(game: &str) -> Option<&'static str> {
+    match game {
+        "chess" => Some(FEATURE_VERSION),
+        "shogi" => Some("shogi_raw_v01"),
+        _ => None,
+    }
+}
 pub const CONTEXT_DIM: usize = 17;
 pub const NUM_GROUPS: usize = 9;
 pub const TOKEN_DIM_DEFAULT: usize = 32;

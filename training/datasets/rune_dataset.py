@@ -1,20 +1,30 @@
 import torch
 from torch.utils.data import Dataset
 
-from training.features.python_features import NUM_GROUPS, VOCAB_SIZES, extract_features
+from training.games import get as get_game
+
+
+def record_game(r):
+    return r.get("game", "chess")
+
+
+def record_state(r):
+    return r.get("state", r.get("fen"))
 
 
 class RuneDataset(Dataset):
-    def __init__(self, records, max_per_group=None):
+    def __init__(self, records, max_per_group=None, game=None):
         self.records = records
-        self.feats = [extract_features(r["fen"]) for r in records]
+        gid = game or (records[0].get("game", "chess") if records else "chess")
+        self.game = get_game(gid)
+        self.feats = [self.game.extract(record_state(r)) for r in records]
         if max_per_group is None:
-            max_per_group = [0] * NUM_GROUPS
+            max_per_group = [0] * self.game.num_groups
             for fl in self.feats:
-                counts = [0] * NUM_GROUPS
+                counts = [0] * self.game.num_groups
                 for g, _ in fl:
                     counts[g] += 1
-                for g in range(NUM_GROUPS):
+                for g in range(self.game.num_groups):
                     max_per_group[g] = max(max_per_group[g], counts[g])
             max_per_group = [max(1, m) for m in max_per_group]
         self.max_per_group = max_per_group
@@ -29,14 +39,14 @@ class RuneDataset(Dataset):
         b = len(idxs)
         ids = []
         masks = []
-        for g in range(NUM_GROUPS):
+        for g in range(self.game.num_groups):
             m = self.max_per_group[g]
             gid = torch.zeros(b, m, dtype=torch.long)
             gm = torch.zeros(b, m, dtype=torch.float32)
             for bi, i in enumerate(idxs):
                 vals = [idx for gg, idx in self.feats[i] if gg == g][:m]
                 for j, v in enumerate(vals):
-                    gid[bi, j] = v % VOCAB_SIZES[g]
+                    gid[bi, j] = v % self.game.vocabs[g]
                     gm[bi, j] = 1.0
             ids.append(gid)
             masks.append(gm)
@@ -70,8 +80,8 @@ class RuneDataset(Dataset):
         return ids, masks, value, wdl
 
 
-def make_loader(records, batch_size=256, shuffle=True, seed=0, max_per_group=None):
-    ds = RuneDataset(records, max_per_group=max_per_group)
+def make_loader(records, batch_size=256, shuffle=True, seed=0, max_per_group=None, game=None):
+    ds = RuneDataset(records, max_per_group=max_per_group, game=game)
     g = torch.Generator()
     g.manual_seed(seed)
     loader = torch.utils.data.DataLoader(

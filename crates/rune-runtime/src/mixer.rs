@@ -113,7 +113,30 @@ pub struct HeadTrace {
     pub h2: Vec<f32>,
 }
 impl HeadWeights {
+    pub fn is_pair(&self) -> bool {
+        self.w2.len() == self.h2 * self.h1 * 2
+    }
     pub fn forward(&self, flat: &[f32]) -> (f32, [f32; 3], HeadTrace) {
+        if self.is_pair() {
+            let mut pre = vec![0.0_f32; self.h1];
+            kernel::mat_vec(&self.w1, flat, Some(&self.b1), &mut pre, self.h1, self.input);
+            let mut h1p = vec![0.0_f32; self.h1 * 2];
+            for i in 0..self.h1 {
+                let c = kernel::clipped_relu(pre[i]);
+                h1p[i] = c;
+                h1p[self.h1 + i] = c * c;
+            }
+            let mut h2 = vec![0.0_f32; self.h2];
+            kernel::mat_vec_clipped(&self.w2, &h1p, Some(&self.b2), &mut h2, self.h2, self.h1 * 2);
+            let mut vv = self.bvo;
+            for i in 0..self.h2 {
+                vv += self.wvo[i] * h2[i];
+            }
+            let value = vv.tanh();
+            let mut wdl = [0.0_f32; 3];
+            kernel::mat_vec(&self.wwdl, &h2, Some(&self.bwdl), &mut wdl, 3, self.h2);
+            return (value, wdl, HeadTrace { h1: h1p, h2 });
+        }
         let mut h1 = vec![0.0_f32; self.h1];
         let mut h2 = vec![0.0_f32; self.h2];
         kernel::mat_vec_clipped(&self.w1, flat, Some(&self.b1), &mut h1, self.h1, self.input);
@@ -128,6 +151,23 @@ impl HeadWeights {
         (value, wdl, HeadTrace { h1, h2 })
     }
     pub fn forward_value_only(&self, flat: &[f32]) -> f32 {
+        if self.is_pair() {
+            let mut pre = vec![0.0_f32; self.h1];
+            kernel::mat_vec(&self.w1, flat, Some(&self.b1), &mut pre, self.h1, self.input);
+            let mut h1p = vec![0.0_f32; self.h1 * 2];
+            for i in 0..self.h1 {
+                let c = kernel::clipped_relu(pre[i]);
+                h1p[i] = c;
+                h1p[self.h1 + i] = c * c;
+            }
+            let mut h2 = vec![0.0_f32; self.h2];
+            kernel::mat_vec_clipped(&self.w2, &h1p, Some(&self.b2), &mut h2, self.h2, self.h1 * 2);
+            let mut vv = self.bvo;
+            for i in 0..self.h2 {
+                vv += self.wvo[i] * h2[i];
+            }
+            return vv.tanh();
+        }
         let mut h1 = vec![0.0_f32; self.h1];
         let mut h2 = vec![0.0_f32; self.h2];
         kernel::mat_vec_clipped(&self.w1, flat, Some(&self.b1), &mut h1, self.h1, self.input);

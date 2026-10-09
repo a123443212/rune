@@ -27,6 +27,40 @@ fn rejects_bad_magic() {
     let r = rune_model::load(&d);
     assert!(r.is_err());
 }
+fn write_minimal(header_json: &str) -> PathBuf {
+    let d = std::env::temp_dir().join("rune-game-gate.rune");
+    let mut buf = Vec::from([b'R', b'U', b'N', b'E']);
+    let hb = header_json.as_bytes();
+    buf.extend_from_slice(&(hb.len() as u32).to_le_bytes());
+    buf.extend_from_slice(hb);
+    std::fs::write(&d, &buf).unwrap();
+    d
+}
+#[test]
+fn legacy_files_default_to_chess() {
+    let p = PathBuf::from("../../spec/test-vectors/models/tiny-mlp-fp32.rune");
+    let m = rune_model::load(&p).expect("fixture");
+    assert_eq!(m.header.game, "chess");
+}
+#[test]
+fn rejects_unknown_game() {
+    let d = write_minimal(r#"{"format":2,"architecture_id":"RUNE-MLP","game":"go"}"#);
+    let r = rune_model::load(&d);
+    assert!(matches!(r, Err(rune_model::LoadError::GameMismatch(_))));
+}
+#[test]
+fn known_non_chess_game_passes_gate() {
+    let d = write_minimal(r#"{"format":2,"architecture_id":"RUNE-MLP","game":"shogi","feature_version":"shogi_raw_v01"}"#);
+    let r = rune_model::load(&d);
+    assert!(r.is_err());
+    assert!(!matches!(r, Err(rune_model::LoadError::GameMismatch(_))));
+}
+#[test]
+fn game_feature_versions() {
+    assert_eq!(rune_spec::game_feature_version("chess"), Some("grouped_hkav2_fullthreats_v02"));
+    assert_eq!(rune_spec::game_feature_version("shogi"), Some("shogi_raw_v01"));
+    assert_eq!(rune_spec::game_feature_version("go"), None);
+}
 #[test]
 fn rejects_truncated() {
     let src = PathBuf::from("../../spec/test-vectors/models/tiny-mlp-fp32.rune");

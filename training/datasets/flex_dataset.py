@@ -1,13 +1,12 @@
 import torch
 
-from training.datasets.rune_dataset import RuneDataset
-from training.features.context import context_vector
+from training.datasets.rune_dataset import RuneDataset, record_state
 
 
 class FlexDataset(RuneDataset):
-    def __init__(self, records, max_per_group=None):
-        super().__init__(records, max_per_group=max_per_group)
-        self.contexts = [context_vector(r["fen"]) for r in records]
+    def __init__(self, records, max_per_group=None, game=None):
+        super().__init__(records, max_per_group=max_per_group, game=game)
+        self.contexts = [self.game.context(record_state(r)) for r in records]
 
     def collate(self, idxs):
         out = super().collate(idxs)
@@ -22,8 +21,8 @@ class FlexDataset(RuneDataset):
         return ids, masks, ctx, value, wdl, teach
 
 
-def make_flex_loader(records, batch_size=256, shuffle=True, seed=0, max_per_group=None):
-    ds = FlexDataset(records, max_per_group=max_per_group)
+def make_flex_loader(records, batch_size=256, shuffle=True, seed=0, max_per_group=None, game=None):
+    ds = FlexDataset(records, max_per_group=max_per_group, game=game)
     g = torch.Generator()
     g.manual_seed(seed)
     loader = torch.utils.data.DataLoader(

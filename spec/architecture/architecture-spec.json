@@ -110,13 +110,22 @@
   "hard_sigmoid": "clamp(0.2*s+0.5,0,1)",
   "screlu": "clip01(s)^2"
  },
- "head_order": [
-  "flatten row-major",
-  "h1=clip01(W1x+b1)",
-  "h2=clip01(W2h1+b2)",
-  "value=tanh(wvo.h2+bvo)",
-  "wdl=Wwdl h2+bwdl linear"
- ],
+  "head_order": [
+   "flatten row-major",
+   "h1=clip01(W1x+b1)",
+   "h2=clip01(W2h1+b2)",
+   "value=tanh(wvo.h2+bvo)",
+   "wdl=Wwdl h2+bwdl linear"
+  ],
+  "head_pair_order": [
+   "flatten row-major",
+   "pre=W1x+b1",
+   "c=clip01(pre)",
+   "h1pair=concat(c,c*c)",
+   "h2=clip01(W2h1pair+b2)",
+   "value=tanh(wvo.h2+bvo)",
+   "wdl=Wwdl h2+bwdl linear"
+  ],
  "mixer_order": [
   "QKV per token matVec",
   "S=QK^T + gabS + dynamicBias(clamped)",

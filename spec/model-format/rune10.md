@@ -18,9 +18,10 @@ int8 raw, int16 `<i2`. File endianness is little-endian always.
 
 ```text
 format            u32 == 2
+game              string, e.g. "chess"; absent means "chess" (legacy files)
 architecture_id   string, e.g. "RUNE-ATTN-GAB"
 architecture_version string, e.g. "0.2.0"
-feature_version   string == "grouped_hkav2_fullthreats_v02"
+feature_version   string == per-game value from spec/games.md
 tokens            int
 token_dim         int
 attention, geometric_bias, head, quantization, gate, alpha, ...
@@ -81,7 +82,11 @@ trails) must compare both hashes.
 - Writers emit format 2 only.
 - Unknown `architecture_id` fails closed with
   `unsupported-architecture`. Unknown `quantization` fails closed.
-- `feature_version` mismatch against runtime or dataset fails closed.
+- Unknown `game` fails closed with `game mismatch`. A `game` other
+  than the runtime's game fails closed even when the architecture
+  matches: a chess runtime must never evaluate a shogi model.
+- `feature_version` mismatch against the per-game value in
+  `spec/games.md` fails closed.
 - There is exactly one logical model per file: no
   `network-cpp.rune` / `network-rust.rune` split. Both runtimes load
   the same bytes.
