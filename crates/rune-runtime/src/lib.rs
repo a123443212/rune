@@ -13,5 +13,6 @@ pub mod mixer_mh;
 pub mod relational_cache;
 pub mod shogi;
 pub mod token_delta;
+pub mod xiangqi;
 pub use error::{Result, RuntimeError};
 pub use evaluator::{EvalResult, Evaluator, FullTrace};

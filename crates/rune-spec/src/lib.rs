@@ -3,10 +3,12 @@ pub const MODEL_FORMAT_VERSION: u32 = 2;
 pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v02";
 pub const GAME_CHESS: &str = "chess";
 pub const GAME_SHOGI: &str = "shogi";
+pub const GAME_XIANGQI: &str = "xiangqi";
 pub fn game_feature_version(game: &str) -> Option<&'static str> {
     match game {
         "chess" => Some(FEATURE_VERSION),
         "shogi" => Some("shogi_raw_v01"),
+        "xiangqi" => Some("xiangqi_raw_v01"),
         _ => None,
     }
 }

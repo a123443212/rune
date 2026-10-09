@@ -11,12 +11,21 @@ rules. Each game owns its board, notation, extractor, and teacher.
 | ------ | -------- | --------------- | ------ | ----------- |
 | `chess` | FEN | `grouped_hkav2_fullthreats_v02` | 9 | 17 |
 | `shogi` | SFEN | `shogi_raw_v01` | 9 | 12 |
+| `xiangqi` | FEN (9x10) | `xiangqi_raw_v01` | 9 | 12 |
 
 `shogi_raw_v01` is a raw adapter: board pieces by relative color,
 hands by count, checkers, occupancy, and a global group. It shares
 the 8-token layout with chess. Semantic upgrades (drops-aware
 structure, king-zone analogues) promote through new versions, never
 by editing this one.
+
+`xiangqi_raw_v01` is a raw adapter: pawns (plus crossed-river files),
+palace king, advisors/elephants, horses, chariots/cannons,
+victim-plus-attacker-file threats (cannon screens, horse legs,
+elephant eyes, and flying generals included), occupancy, a global
+group with check/flying flags, and same-file major batteries. It
+shares the 8-token layout with chess. Stalemate loses and perpetuals
+are teacher-label concerns, not architecture concerns.
 
 ## Rules
 
@@ -25,10 +34,10 @@ by editing this one.
   header field. Unknown `game` fails closed on load.
 - A runtime built for one game rejects other games' models, even
   when architecture and shapes match. Native extractors ship per
-  game: chess and shogi both evaluate end-to-end in Python, Rust,
-  and C++, proven by the shared golden fixture
-  (`spec/test-vectors/shogi/eval.json` plus
-  `spec/test-vectors/models/shogi-mlp-fp32.rune`).
+  game: chess, shogi, and xiangqi all evaluate end-to-end in
+  Python, Rust, and C++, each proven by its shared golden fixture
+  (`spec/test-vectors/{shogi,xiangqi}/eval.json` plus the matching
+  model in `spec/test-vectors/models/`).
 - Records carry `game` plus `state` (notation string). Legacy
   records with `fen` and no `game` mean chess.
 - New games start as raw adapters over `(square, piece)`-style

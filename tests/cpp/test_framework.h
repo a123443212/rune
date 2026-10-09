@@ -31,6 +31,7 @@ void testAttentionMath();
 void testSerialization();
 void testPairHead();
 void testShogi();
+void testXiangqi();
 void testQuantization();
 void testEvaluator();
 void testModelIO();

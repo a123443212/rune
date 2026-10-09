@@ -31,6 +31,7 @@ int main() {
   testSerialization();
   testPairHead();
   testShogi();
+  testXiangqi();
   testQuantization();
   testEvaluator();
   testModelIO();

@@ -87,7 +87,13 @@ impl Evaluator {
         } else if tokens != 8 || dim != 32 {
             return Err(RuntimeError::Shape("tokens".to_string()));
         }
-        let vocabs = if game == spec::GAME_SHOGI { crate::shogi::SHOGI_VOCABS } else { spec::VOCAB_SIZES };
+        let vocabs = if game == spec::GAME_SHOGI {
+            crate::shogi::SHOGI_VOCABS
+        } else if game == spec::GAME_XIANGQI {
+            crate::xiangqi::XIANGQI_VOCABS
+        } else {
+            spec::VOCAB_SIZES
+        };
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..9 {
             let k = format!("emb{}", g);
@@ -127,7 +133,13 @@ impl Evaluator {
             let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
             let (dyn_u, dyn_w, ctx_dim) = if arch == "RUNE-REL-02" {
                 let cd = m.header.raw.get("context_dim").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                let want_cd = if game == spec::GAME_SHOGI { crate::shogi::SHOGI_CONTEXT_DIM } else { CONTEXT_DIM };
+                let want_cd = if game == spec::GAME_SHOGI {
+                    crate::shogi::SHOGI_CONTEXT_DIM
+                } else if game == spec::GAME_XIANGQI {
+                    crate::xiangqi::XIANGQI_CONTEXT_DIM
+                } else {
+                    CONTEXT_DIM
+                };
                 let pair = (m.arrays.get("dynU"), m.arrays.get("dynW"));
                 match pair {
                     (Some(u), Some(w)) => {
@@ -285,6 +297,18 @@ impl Evaluator {
         self.phase = crate::shogi::game_phase(b.hand_total(), b.promo_count());
         Ok(())
     }
+    pub fn refresh_xiangqi(&mut self, fen: &str) -> Result<()> {
+        if self.game != spec::GAME_XIANGQI {
+            return Err(RuntimeError::InvalidState("xiangqi refresh on non-xiangqi model".to_string()));
+        }
+        let b = crate::xiangqi::XiangqiBoard::parse_fen(fen)?;
+        let f = crate::xiangqi::extract_features(&b);
+        self.acc.refresh(&self.tables, &f);
+        self.feats = f;
+        self.ctx = crate::xiangqi::compute_context(&b);
+        self.phase = crate::xiangqi::game_phase(&b);
+        Ok(())
+    }
     pub fn update_incremental(&mut self, before: &[(u8, u16)], after: &[(u8, u16)], ctx: &[f32]) {
         let (added, removed) = diff_features(before, after);
         if added.len() + removed.len() > FULL_REFRESH_LIMIT {
@@ -325,6 +349,10 @@ impl Evaluator {
     }
     pub fn evaluate_sfen(&mut self, sfen: &str) -> Result<EvalResult> {
         self.refresh_sfen(sfen)?;
+        Ok(self.evaluate())
+    }
+    pub fn evaluate_xiangqi(&mut self, fen: &str) -> Result<EvalResult> {
+        self.refresh_xiangqi(fen)?;
         Ok(self.evaluate())
     }
     pub fn forward_tokens(&self, tok: &[f32]) -> EvalResult {

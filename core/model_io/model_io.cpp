@@ -8,6 +8,7 @@
 #include <sstream>
 
 #include "core/shogi/shogi_features.h"
+#include "core/xiangqi/xiangqi_features.h"
 
 namespace rune {
 
@@ -399,7 +400,8 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     return false;
   }
   bool isShogi = (out.spec.game == "shogi");
-  if (out.spec.game != "chess" && !isShogi) {
+  bool isXiangqi = (out.spec.game == "xiangqi");
+  if (out.spec.game != "chess" && !isShogi && !isXiangqi) {
     err = "game mismatch: " + out.spec.game;
     return false;
   }
@@ -414,6 +416,18 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     }
     int vocabs[9];
     for (int g = 0; g < 9; ++g) vocabs[g] = shogi::ShogiFeatureSet::vocabSize(g);
+    out.embeddings = EmbeddingTables(vocabs);
+  } else if (isXiangqi) {
+    if (out.spec.featureSet != "xiangqi_raw_v01") {
+      err = "feature version mismatch: " + out.spec.featureSet;
+      return false;
+    }
+    if (out.spec.quantization != "fp32") {
+      err = "xiangqi only supports fp32";
+      return false;
+    }
+    int vocabs[9];
+    for (int g = 0; g < 9; ++g) vocabs[g] = xiangqi::XiangqiFeatureSet::vocabSize(g);
     out.embeddings = EmbeddingTables(vocabs);
   } else if (out.spec.featureSet != "grouped_hkav2_fullthreats_v02") {
     err = "feature version mismatch: " + out.spec.featureSet;
@@ -614,7 +628,9 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
         return false;
       }
       int wantCols = useVar ? embWidths.w[g] : (out.isFlex ? dim : 32);
-      int wantVocab = isShogi ? shogi::ShogiFeatureSet::vocabSize(g) : GroupedFeatureSet::vocabSize(g);
+      int wantVocab = GroupedFeatureSet::vocabSize(g);
+      if (isShogi) wantVocab = shogi::ShogiFeatureSet::vocabSize(g);
+      if (isXiangqi) wantVocab = xiangqi::XiangqiFeatureSet::vocabSize(g);
       if (t.shape.size() != 2 || t.shape[0] != wantVocab ||
           t.shape[1] != wantCols) {
         err = "embedding shape mismatch " + t.name;

@@ -13,10 +13,11 @@ from training.games.shogi import ShogiGame, parse_sfen
 
 START_FEN = "rnbqkbnr/pppppppp/8/8/8/8/PPPPPPPP/RNBQKBNR w KQkq - 0 1"
 START_SFEN = "lnsgkgsnl/1r5b1/ppppppppp/9/9/9/PPPPPPPPP/1B5R1/LNSGKGSNL b - 1"
+START_XFEN = "rheakaehr/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR w - - 0 1"
 
 
 def test_registry():
-    assert set(games.available()) == {"chess", "shogi"}
+    assert set(games.available()) == {"chess", "shogi", "xiangqi"}
     with pytest.raises(ValueError):
         games.get("go")
 
@@ -91,7 +92,7 @@ def feats_to_tensors(g, feats):
 
 def test_shared_stack_both_games():
     from training.models.rune_models import build_model
-    cases = [("chess", START_FEN), ("shogi", START_SFEN)]
+    cases = [("chess", START_FEN), ("shogi", START_SFEN), ("xiangqi", START_XFEN)]
     for game, state in cases:
         g = games.get(game)
         m = build_model("RUNE-MLP", game=game)
@@ -109,7 +110,7 @@ def test_shared_stack_both_games():
 
 def test_shared_stack_buckets_decode_matches_game_phase():
     from training.models.rune_models import build_model
-    cases = [("chess", START_FEN), ("shogi", START_SFEN)]
+    cases = [("chess", START_FEN), ("shogi", START_SFEN), ("xiangqi", START_XFEN)]
     for game, state in cases:
         g = games.get(game)
         m = build_model("RUNE-MLP", buckets=3, game=game)
@@ -124,7 +125,7 @@ def test_shared_stack_buckets_decode_matches_game_phase():
 def test_export_header_carries_game(tmp_path):
     from training.export.export import export_model, read_header
     from training.models.rune_models import build_model
-    for game in ("chess", "shogi"):
+    for game in ("chess", "shogi", "xiangqi"):
         m = build_model("RUNE-MLP", game=game)
         p = str(tmp_path / f"{game}.rune")
         header = export_model(m, p, quantization="fp32")
@@ -153,3 +154,50 @@ def test_flex_dataset_game_context():
     batch = next(iter(loader))
     ids, masks, ctx, value, wdl = batch
     assert ctx.shape == (1, 12)
+
+
+def test_xiangqi_startpos_extract():
+    g = games.get("xiangqi")
+    feats = g.extract(START_XFEN)
+    assert feats == sorted(set(feats))
+    assert len(feats) > 50
+    for gg, ii in feats:
+        assert 0 <= gg < g.num_groups
+        assert 0 <= ii < g.vocabs[gg]
+    assert (7, 0) in feats
+    assert (7, 2) in feats
+    assert g.phase(START_XFEN) == 0
+    assert g.feature_version == "xiangqi_raw_v01"
+    assert g.context_dim == 12
+
+
+def test_xiangqi_check_and_flying():
+    g = games.get("xiangqi")
+    chk = "4k4/4a4/9/9/4r4/9/9/9/9/4K4 w - - 0 1"
+    assert (7, 21) in g.extract(chk)
+    fly = "4k4/9/9/9/9/9/9/9/9/4K4 w - - 0 1"
+    feats = g.extract(fly)
+    assert (7, 21) in feats
+    assert (7, 22) in feats
+    assert g.context(fly)[7] == 1.0
+    assert g.context(fly)[8] == 1.0
+
+
+def test_xiangqi_context_and_hobble():
+    g = games.get("xiangqi")
+    ctx = g.context(START_XFEN)
+    assert len(ctx) == 12
+    assert all(0.0 <= v <= 1.0 for v in ctx)
+    assert ctx[0] == 0.0
+    assert g.normalize(START_XFEN) == " ".join(START_XFEN.split()[:2])
+    blocked = "9/9/9/9/3p5/3H5/9/9/9/9 w - - 0 1"
+    assert g.extract(blocked) == g.extract(blocked)
+    assert games.get("xiangqi").phase(blocked) == 2
+
+
+def test_xiangqi_bad_fen():
+    g = games.get("xiangqi")
+    with pytest.raises(ValueError):
+        g.extract("rheakaehr/9 w - - 0 1")
+    with pytest.raises(ValueError):
+        g.extract("rheakaeh/9/1c5c1/p1p1p1p1p/9/9/P1P1P1P1P/1C5C1/9/RHEAKAEHR w - - 0 1")

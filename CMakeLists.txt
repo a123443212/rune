@@ -21,6 +21,9 @@ add_library(rune_core STATIC
   core/shogi/shogi_board.cpp
   core/shogi/shogi_features.cpp
   core/shogi/shogi_evaluator.cpp
+  core/xiangqi/xiangqi_board.cpp
+  core/xiangqi/xiangqi_features.cpp
+  core/xiangqi/xiangqi_evaluator.cpp
   core/position/position.cpp
   core/features/feature_set.cpp
   core/kernels/ref_kernels.cpp
@@ -73,6 +76,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_board.cpp
     tests/cpp/test_features.cpp
     tests/cpp/test_shogi.cpp
+    tests/cpp/test_xiangqi.cpp
     tests/cpp/test_arch.cpp
     tests/cpp/test_model.cpp
     tests/cpp/test_relational.cpp
