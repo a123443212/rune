@@ -107,9 +107,10 @@ def test_relational_eval_parity():
 
 
 def test_rel_param_accounting():
+    from training.features.context import CONTEXT_DIM
     a = build_rel_model(8, 32, dynamic_bias=False)
     b = build_rel_model(8, 32, dynamic_bias=True)
-    assert b.parameter_count() - a.parameter_count() == 128
+    assert b.parameter_count() - a.parameter_count() == 2 * 8 * CONTEXT_DIM
     small = build_rel_model(6, 24)
     big = build_rel_model(10, 40)
     assert small.parameter_count() < a.parameter_count() < big.parameter_count()
@@ -129,7 +130,7 @@ def test_rel_export_header(tmp_path):
     assert header["arch"] == "RUNE-REL-02"
     assert header["gate"] == "hard_sigmoid"
     assert header["alpha"] == 0.5
-    assert header["context_dim"] == 8
+    assert header["context_dim"] == 12
     assert header["tensors"][0]["dtype"] == "int16"
     assert arrays["emb0"].dtype == np.int16
     assert "dynU" in arrays and "dynW" in arrays

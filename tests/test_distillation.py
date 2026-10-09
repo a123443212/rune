@@ -92,8 +92,8 @@ def test_student_budgets_shrink():
 def test_student_forward_and_export():
     m = build_dense_student(budget="S2")
     m.eval()
-    ids = [torch.randint(0, 64, (2, 4)) for _ in range(8)]
-    masks = [torch.ones(2, 4) for _ in range(8)]
+    ids = [torch.randint(0, 64, (2, 4)) for _ in range(9)]
+    masks = [torch.ones(2, 4) for _ in range(9)]
     with torch.no_grad():
         v, w = m(ids, masks)
     assert v.shape == (2,) and w.shape == (2, 3)

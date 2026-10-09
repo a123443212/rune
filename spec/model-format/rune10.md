@@ -20,7 +20,7 @@ int8 raw, int16 `<i2`. File endianness is little-endian always.
 format            u32 == 2
 architecture_id   string, e.g. "RUNE-ATTN-GAB"
 architecture_version string, e.g. "0.2.0"
-feature_version   string == "grouped_hkav2_fullthreats_v01"
+feature_version   string == "grouped_hkav2_fullthreats_v02"
 tokens            int
 token_dim         int
 attention, geometric_bias, head, quantization, gate, alpha, ...

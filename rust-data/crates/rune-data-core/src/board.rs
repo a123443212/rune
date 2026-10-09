@@ -24,6 +24,8 @@ pub struct Board {
     pub stm: u8,
     pub castle_mask: u8,
     pub ep_sq: i16,
+    pub halfmove_clock: u16,
+    pub fullmove_number: u16,
 }
 
 pub fn sq_file(sq: usize) -> i32 {
@@ -124,6 +126,15 @@ impl Board {
             stm,
             castle_mask: mask,
             ep_sq,
+            halfmove_clock: parts
+                .get(4)
+                .and_then(|s| s.parse().ok())
+                .unwrap_or(0),
+            fullmove_number: parts
+                .get(5)
+                .and_then(|s| s.parse().ok())
+                .filter(|n| *n != 0)
+                .unwrap_or(1),
         })
     }
 

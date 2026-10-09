@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-from training.features.python_features import NUM_GROUPS, TOKEN_DIM, VOCAB_SIZES
+from training.features.python_features import NUM_GROUPS, TOKENS, TOKEN_DIM, VOCAB_SIZES
 
 ARCH_IDS = ["RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB"]
 
@@ -27,10 +27,13 @@ class GroupedEmbedder(nn.Module):
 
     def forward(self, group_ids, group_mask):
         toks = []
-        for g in range(NUM_GROUPS):
+        for g in range(8):
             e = self.tables[g](group_ids[g])
             e = (e * group_mask[g].unsqueeze(-1)).sum(dim=1)
             toks.append(e)
+        e8 = self.tables[8](group_ids[8])
+        e8 = (e8 * group_mask[8].unsqueeze(-1)).sum(dim=1)
+        toks[0] = toks[0] + e8
         x = torch.stack(toks, dim=1)
         return clip01(x)
 
@@ -38,7 +41,7 @@ class GroupedEmbedder(nn.Module):
 class ValueWdlHead(nn.Module):
     def __init__(self, hidden1=128, hidden2=32):
         super().__init__()
-        self.fc1 = nn.Linear(NUM_GROUPS * TOKEN_DIM, hidden1)
+        self.fc1 = nn.Linear(TOKENS * TOKEN_DIM, hidden1)
         self.fc2 = nn.Linear(hidden1, hidden2)
         self.fcv = nn.Linear(hidden2, 1)
         self.fcwdl = nn.Linear(hidden2, 3)
@@ -54,7 +57,7 @@ class ValueWdlHead(nn.Module):
 class SfnnHead(nn.Module):
     def __init__(self):
         super().__init__()
-        self.fc1 = nn.Linear(NUM_GROUPS * TOKEN_DIM, 256)
+        self.fc1 = nn.Linear(TOKENS * TOKEN_DIM, 256)
         self.fc2 = nn.Linear(256, 32)
         self.fcv = nn.Linear(32, 1)
         self.fcwdl = nn.Linear(32, 3)
@@ -74,7 +77,7 @@ class RuneAttention(nn.Module):
         self.wq = nn.Linear(TOKEN_DIM, TOKEN_DIM)
         self.wk = nn.Linear(TOKEN_DIM, TOKEN_DIM)
         self.wv = nn.Linear(TOKEN_DIM, TOKEN_DIM)
-        self.gab = nn.Parameter(torch.zeros(NUM_GROUPS, NUM_GROUPS))
+        self.gab = nn.Parameter(torch.zeros(TOKENS, TOKENS))
 
     def forward(self, x):
         q = self.wq(x)
@@ -163,8 +166,8 @@ class RuneFullModel(nn.Module):
         return {
             "arch": self.arch_id,
             "arch_version": "0.1.0",
-            "feature_set": "grouped_hkav2_fullthreats_v01",
-            "tokens": NUM_GROUPS,
+            "feature_set": "grouped_hkav2_fullthreats_v02",
+            "tokens": TOKENS,
             "token_dim": TOKEN_DIM,
             "attention": attention,
             "geometric_bias": gab,

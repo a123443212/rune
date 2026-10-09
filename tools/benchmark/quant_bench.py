@@ -62,7 +62,7 @@ def load_cpp_model(build_dir, path, header):
                              header.get("alpha", 1.0), header["geometric_bias"] == "dynamic")
     else:
         model = rb.RuneModel(arch)
-    for g in range(8):
+    for g in range(9):
         arr = arrays[f"emb{g}"]
         if str(arr.dtype) in ("int8", "int16"):
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]

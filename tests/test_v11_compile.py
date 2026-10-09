@@ -14,7 +14,7 @@ from training.compiler.precomputed import build_precomputed
 
 
 def _mini_header(tmp):
-    h = {"format": 2, "architecture_id": "RUNE-ATTN-GAB", "architecture_version": "0.2.0", "feature_version": "grouped_hkav2_fullthreats_v01", "tokens": 8, "token_dim": 32, "quantization": "fp32", "model_hash": "00"}
+    h = {"format": 2, "architecture_id": "RUNE-ATTN-GAB", "architecture_version": "0.2.0", "feature_version": "grouped_hkav2_fullthreats_v02", "tokens": 8, "token_dim": 32, "quantization": "fp32", "model_hash": "00"}
     return h
 
 

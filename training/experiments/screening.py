@@ -264,7 +264,7 @@ class ScreeningRunner:
                 "trained_positions": trainer.positions_seen,
                 "init_ckpt": init_ckpt,
                 "init_positions": init_positions,
-                "feature_set": "grouped_hkav2_fullthreats_v01",
+                "feature_set": "grouped_hkav2_fullthreats_v02",
                 "teacher_id": self.cfg.get("data", {}).get("teacher", "unknown"),
                 "distillation": self.cfg.get("distillation", {"enabled": False}),
                 "loss_config": {"wdl": loss_cfg.get("wdl", True),

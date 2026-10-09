@@ -40,7 +40,7 @@ void testRelationalMath() {
       for (float& w : m.mixer.dynW) w = -0.05f;
       float x[256];
       for (int i = 0; i < 256; ++i) x[i] = static_cast<float>((i % 13) - 6) * 0.04f;
-      float ctx[8] = {1.0f, 0.5f, 0.25f, 0.5f, 0.25f, 0.0f, 0.5f, 0.75f};
+      float ctx[12] = {1.0f, 0.5f, 0.25f, 0.5f, 0.25f, 0.0f, 0.5f, 0.75f, 1.0f, 0.0f, 0.0f, 0.0f};
       float out[256];
       m.mixer.forward(x, ctx, out);
       float q[256], k[256], v[256];
@@ -58,7 +58,7 @@ void testRelationalMath() {
             if (dyn) {
               float u = 0.0f;
               float w = 0.0f;
-              for (int c = 0; c < 8; ++c) {
+              for (int c = 0; c < ContextSpec::kDim; ++c) {
                 u += m.mixer.dynU[a * 8 + c] * ctx[c];
                 w += m.mixer.dynW[b * 8 + c] * ctx[c];
               }
@@ -86,7 +86,7 @@ void testDynamicBiasBounded() {
   for (float& w : m.mixer.dynW) w = 10.0f;
   float x[256] = {0.0f};
   for (int i = 0; i < 256; ++i) x[i] = 0.1f;
-  float ctx[8] = {1, 1, 1, 1, 1, 1, 1, 1};
+  float ctx[12] = {1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1};
   float out[256];
   m.mixer.forward(x, ctx, out);
   for (int i = 0; i < 256; ++i) CHECK(std::isfinite(out[i]));
@@ -95,7 +95,7 @@ void testDynamicBiasBounded() {
   CHECK(ms.configure(cfgs, err));
   ms.mixer.wq = m.mixer.wq;
   float outS[256];
-  float zeroCtx[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+  float zeroCtx[12] = {0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0};
   ms.mixer.forward(x, zeroCtx, outS);
   bool differs = false;
   for (int i = 0; i < 256; ++i) {
@@ -106,7 +106,7 @@ void testDynamicBiasBounded() {
 
 void testContextValues() {
   Board b;
-  float ctx[8];
+  float ctx[12];
   computeContext(b, ctx);
   CHECK_CLOSE(ctx[0], 0.0, 1e-6);
   CHECK_CLOSE(ctx[1], 0.0, 1e-6);
@@ -116,6 +116,10 @@ void testContextValues() {
   CHECK_CLOSE(ctx[5], 1.0, 1e-6);
   CHECK_CLOSE(ctx[6], 0.625, 1e-6);
   CHECK_CLOSE(ctx[7], 1.0, 1e-6);
+  CHECK_CLOSE(ctx[8], 1.0, 1e-6);
+  CHECK_CLOSE(ctx[9], 0.0, 1e-6);
+  CHECK_CLOSE(ctx[10], 0.0, 1e-6);
+  CHECK_CLOSE(ctx[11], 0.0, 1e-6);
   Board end("8/2p5/3p4/KP5r/1R3p1k/8/4P1P1/8 w - - 0 1");
   computeContext(end, ctx);
   CHECK_CLOSE(ctx[1], 1.0, 1e-6);

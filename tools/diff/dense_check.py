@@ -27,7 +27,7 @@ def load_torch_dense(path):
                    pool_clip=bool(header.get("pool_clip", True)),
                    gate_on=bool(header.get("gate_on", False)))
     sd = m.state_dict()
-    for g in range(8):
+    for g in range(9):
         sd[f"embedder.tables.{g}.weight"].copy_(
             torch.from_numpy(dequant(arrays[f"emb{g}"], None, header, f"emb{g}")))
     for ek, pk in HEAD_MAP:
@@ -38,7 +38,7 @@ def load_torch_dense(path):
 def batch_for(fen):
     feats = extract_features(fen)
     ids, masks = [], []
-    for g in range(8):
+    for g in range(9):
         idx = [i for gg, i in feats if gg == g]
         ids.append(torch.tensor([idx if idx else [0]]))
         masks.append(torch.tensor([[1.0] * len(idx) if idx else [0.0]]))

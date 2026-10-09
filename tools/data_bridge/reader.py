@@ -130,17 +130,17 @@ def to_torch_batch(records, group_widths=None, device="cpu"):
 
     dev = torch.device(device)
     if group_widths is None:
-        group_widths = [0] * 8
+        group_widths = [0] * 9
         for r in records:
-            counts = [0] * 8
+            counts = [0] * 9
             for g, _ in r["features"]:
                 counts[g] += 1
-            for g in range(8):
+            for g in range(9):
                 group_widths[g] = max(group_widths[g], counts[g])
         group_widths = [max(1, w) for w in group_widths]
     n = len(records)
     ids, masks = [], []
-    for g in range(8):
+    for g in range(9):
         ids.append(torch.zeros(n, group_widths[g], dtype=torch.long, device=dev))
         masks.append(torch.zeros(n, group_widths[g], dtype=torch.float32, device=dev))
     values, wdls = [], []
@@ -148,7 +148,7 @@ def to_torch_batch(records, group_widths=None, device="cpu"):
         per = {}
         for g, i in r["features"]:
             per.setdefault(g, []).append(i % VOCAB_SIZES[g])
-        for g in range(8):
+        for g in range(9):
             for j, v in enumerate(per.get(g, [])[:group_widths[g]]):
                 ids[g][b, j] = v
                 masks[g][b, j] = 1.0

@@ -17,7 +17,7 @@ def test_read_shard_header():
     header, recs = read_shard(FIXTURE)
     assert header["record_count"] == len(recs) == 28
     assert header["shard_count"] == 1
-    assert header["feature_version"] == "grouped_hkav2_fullthreats_v01"
+    assert header["feature_version"] == "grouped_hkav2_fullthreats_v02"
     assert all(len(r["features"]) > 0 for r in recs)
     assert all(r["perspective_stm"] for r in recs)
 
@@ -55,5 +55,5 @@ def test_shard_loader_batches():
     n = 0
     for ids, masks, values, wdls in ShardLoader(FIXTURE, batch_size=8):
         n += len(values)
-        assert len(ids) == 8 and len(masks) == 8
+        assert len(ids) == 9 and len(masks) == 9
     assert n == 28

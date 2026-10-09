@@ -148,7 +148,7 @@ class RuneRelational(nn.Module):
         return {
             "arch": "RUNE-REL-02",
             "arch_version": "0.2.0",
-            "feature_set": "grouped_hkav2_fullthreats_v01",
+            "feature_set": "grouped_hkav2_fullthreats_v02",
             "tokens": self.tokens,
             "token_dim": self.dim,
             "attention": "gated_relational",

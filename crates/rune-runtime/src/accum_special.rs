@@ -2,12 +2,12 @@ use crate::accumulator::Tables;
 
 pub struct GroupedSpec {
     pub dim: usize,
-    pub offsets: [usize; 8],
+    pub offsets: [usize; 9],
 }
 
 impl GroupedSpec {
     pub fn fixed_8x32() -> Self {
-        let mut offsets = [0usize; 8];
+        let mut offsets = [0usize; 9];
         for g in 0..8 {
             offsets[g] = g * 32;
         }
@@ -15,7 +15,7 @@ impl GroupedSpec {
     }
 
     pub fn for_dim(dim: usize) -> Self {
-        let mut offsets = [0usize; 8];
+        let mut offsets = [0usize; 9];
         for g in 0..8 {
             offsets[g] = g * dim;
         }
@@ -32,15 +32,15 @@ pub fn refresh_grouped(acc: &mut [f32], tables: &Tables, feats: &[(u8, u16)], sp
 
 pub fn apply_grouped(acc: &mut [f32], tables: &Tables, added: &[(u8, u16)], removed: &[(u8, u16)], spec: &GroupedSpec) {
     let dim = spec.dim;
-    let mut by_group_add: [Vec<u16>; 8] = Default::default();
-    let mut by_group_rm: [Vec<u16>; 8] = Default::default();
+    let mut by_group_add: [Vec<u16>; 9] = Default::default();
+    let mut by_group_rm: [Vec<u16>; 9] = Default::default();
     for (g, idx) in added {
         by_group_add[*g as usize].push(*idx);
     }
     for (g, idx) in removed {
         by_group_rm[*g as usize].push(*idx);
     }
-    for g in 0..8 {
+    for g in 0..9 {
         if by_group_add[g].is_empty() && by_group_rm[g].is_empty() {
             continue;
         }

@@ -43,7 +43,7 @@ def test_python_features_valid():
         assert len(feats) > 0
         assert feats == sorted(set(feats))
         for g, idx in feats:
-            assert 0 <= g < 8
+            assert 0 <= g < 9
             assert 0 <= idx < PF.VOCAB_SIZES[g]
 
 

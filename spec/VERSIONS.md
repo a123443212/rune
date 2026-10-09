@@ -12,5 +12,5 @@ Four independent versions. Bumping one never implies the others.
   the data engine, currently 2. Runtime only checks feature_version
   compatibility, never the full data schema.
 
-`feature_version` (`grouped_hkav2_fullthreats_v01`) is independent of
+`feature_version` (`grouped_hkav2_fullthreats_v02`) is independent of
 all four and changes only with extraction semantics.

@@ -16,7 +16,7 @@ fn fixtures_have_format2_and_hash() {
         let p = PathBuf::from(format!("../../spec/test-vectors/models/{}", n));
         let m = rune_model::load(&p).expect(n);
         assert_eq!(m.header.format, 2);
-        assert_eq!(m.header.feature_version, "grouped_hkav2_fullthreats_v01");
+        assert_eq!(m.header.feature_version, "grouped_hkav2_fullthreats_v02");
         assert!(!m.header.model_hash.is_empty());
     }
 }

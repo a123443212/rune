@@ -10,7 +10,7 @@ namespace rune {
 struct ModelSpec {
   std::string arch;
   std::string archVersion = "0.1.0";
-  std::string featureSet = "grouped_hkav2_fullthreats_v01";
+  std::string featureSet = "grouped_hkav2_fullthreats_v02";
   int tokens = 8;
   int tokenDim = 32;
   std::string attention = "none";

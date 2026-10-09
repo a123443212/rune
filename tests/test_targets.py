@@ -71,8 +71,8 @@ def test_soft_wdl_and_quality_train_step():
                        "soft_wdl": True, "quality_weighted": True}}
     tr = Trainer(cfg)
     torch.manual_seed(0)
-    ids = [torch.randint(0, 64, (4, 4)) for _ in range(8)]
-    masks = [torch.ones(4, 4) for _ in range(8)]
+    ids = [torch.randint(0, 64, (4, 4)) for _ in range(9)]
+    masks = [torch.ones(4, 4) for _ in range(9)]
     value = torch.zeros(4)
     wdl = torch.ones(4, dtype=torch.long)
     teach = {"v": torch.zeros(4), "w": torch.ones(4, dtype=torch.long),

@@ -1,6 +1,6 @@
 use crate::board::{self, Board, BISHOP, BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE};
 
-pub const VOCAB_SIZES: [usize; 8] = [256, 256, 256, 128, 128, 512, 512, 64];
+pub const VOCAB_SIZES: [usize; 9] = [256, 256, 256, 128, 128, 512, 512, 64, 4560];
 
 fn type_index(kind: u8) -> usize {
     match kind {
@@ -232,21 +232,41 @@ fn pseudo_move_count(b: &Board, stm: u8, castle_mask: u8, ep_sq: i16) -> u32 {
 
 pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
     let mut feats: Vec<(u8, u16)> = Vec::new();
+    let us = if board.stm == 0 { WHITE } else { BLACK };
+    let mut kus = 64;
+    for sq in 0..64 {
+        match board.sq[sq] {
+            Some(c) if c.kind == KING && c.color == us => {
+                kus = sq;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let fold = kus < 64 && board::sq_file(kus) < 4;
+    let rel = |sq: usize| {
+        if !fold {
+            sq
+        } else {
+            board::make_sq(7 - board::sq_file(sq), board::sq_rank(sq))
+        }
+    };
     for sq in 0..64 {
         let cell = match board.sq[sq] {
             Some(c) => c,
             None => continue,
         };
-        let ci = if cell.color == WHITE { 0 } else { 1 };
+        let ci = if cell.color == us { 0 } else { 1 };
+        let s = rel(sq);
         if cell.kind == PAWN {
-            feats.push((0, (ci * 64 + sq) as u16));
+            feats.push((0, (ci * 64 + s) as u16));
             feats.push((
                 0,
-                (128 + board::sq_file(sq) * 4 + board::sq_rank(sq) / 2) as u16,
+                (128 + board::sq_file(s) * 4 + board::sq_rank(s) / 2) as u16,
             ));
         }
         if cell.kind == KING {
-            feats.push((1, (ci * 64 + sq) as u16));
+            feats.push((1, (ci * 64 + s) as u16));
             for df in -1..=1 {
                 for dr in -1..=1 {
                     if df == 0 && dr == 0 {
@@ -256,24 +276,24 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
                     if !board::on_board(f, r) {
                         continue;
                     }
-                    let nsq = board::make_sq(f, r);
+                    let nsq = rel(board::make_sq(f, r));
                     feats.push((1, (128 + ci * 32 + nsq / 2) as u16));
                 }
             }
         }
         if cell.kind == KNIGHT {
-            feats.push((2, (ci * 64 + sq) as u16));
+            feats.push((2, (ci * 64 + s) as u16));
         }
         if cell.kind == BISHOP {
-            feats.push((2, (128 + ci * 64 + sq) as u16));
+            feats.push((2, (128 + ci * 64 + s) as u16));
         }
         if cell.kind == ROOK {
-            feats.push((3, (ci * 64 + sq) as u16));
+            feats.push((3, (ci * 64 + s) as u16));
         }
         if cell.kind == QUEEN {
-            feats.push((4, (ci * 64 + sq) as u16));
+            feats.push((4, (ci * 64 + s) as u16));
         }
-        feats.push((6, (type_index(cell.kind) * 64 + sq) as u16));
+        feats.push((6, (type_index(cell.kind) * 64 + s) as u16));
     }
     for vsq in 0..64 {
         let victim = match board.sq[vsq] {
@@ -292,8 +312,9 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
                 continue;
             }
             let vt = type_index(victim.kind);
-            feats.push((5, (vt * 64 + vsq) as u16));
-            let coarse = 384 + board::sq_file(asq) * 8 + board::sq_rank(asq);
+            feats.push((5, (vt * 64 + rel(vsq)) as u16));
+            let ra = rel(asq);
+            let coarse = 384 + board::sq_file(ra) * 8 + board::sq_rank(asq);
             if coarse < 512 {
                 feats.push((5, coarse as u16));
             }
@@ -307,6 +328,10 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
     let bucket = ((total as i32 - 2) / 2).clamp(0, 15);
     feats.push((7, (18 + bucket) as u16));
     feats.push((7, (34 + board.game_phase() as i32) as u16));
+    if board.ep_sq >= 0 {
+        feats.push((7, (37 + board::sq_file(rel(board.ep_sq as usize))) as u16));
+    }
+    feats.push((7, (45 + (board.halfmove_clock / 20).min(4)) as u16));
     feats.sort_unstable();
     feats.dedup();
     feats

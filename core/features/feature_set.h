@@ -19,12 +19,16 @@ struct ActiveFeature {
 
 class GroupedFeatureSet {
  public:
-  static constexpr int kNumGroups = 8;
+  static constexpr int kNumGroups = 9;
+  static constexpr int kTokens = 8;
   static constexpr int kTokenDim = 32;
+  static constexpr int kPairVocab = 4560;
 
   static int vocabSize(int group);
   static const char* version();
   static const char* groupName(int group);
+  static int tokenForGroup(int group) { return group == 8 ? 0 : group; }
+  static int pairIndex(int ida, int idb);
 
   static void extract(const Board& board, std::vector<ActiveFeature>& out);
   static void diffFeatures(const std::vector<ActiveFeature>& before, const std::vector<ActiveFeature>& after,

@@ -14,12 +14,12 @@ def _split(group, lo, hi):
 
 def layout_for(tokens):
     if tokens == 8:
-        return [_full(g) for g in range(8)]
+        return [_full(0) + _full(8)] + [_full(g) for g in range(1, 8)]
     if tokens == 6:
-        return [_full(0), _full(1), _full(2), _full(3) + _full(4),
+        return [_full(0) + _full(8), _full(1), _full(2), _full(3) + _full(4),
                 _full(5) + _full(6), _full(7)]
     if tokens == 10:
-        return [_full(0), _full(1), _split(2, 0, 128), _split(2, 128, 256),
+        return [_full(0) + _full(8), _full(1), _split(2, 0, 128), _split(2, 128, 256),
                 _full(3), _full(4), _split(5, 0, 384), _split(5, 384, 512),
                 _full(6), _full(7)]
     raise ValueError(f"unsupported token count {tokens}")

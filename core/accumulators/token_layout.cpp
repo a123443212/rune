@@ -36,6 +36,7 @@ bool TokenLayout::make(int tokens, int dim, TokenLayout& out, std::string& err) 
     for (int g = 0; g < 8; ++g) {
       std::vector<TokenSource> v;
       addRange(v, g);
+      if (g == 0) addRange(v, 8);
       out.sources.push_back(v);
     }
     return true;
@@ -44,6 +45,7 @@ bool TokenLayout::make(int tokens, int dim, TokenLayout& out, std::string& err) 
     for (int g = 0; g <= 2; ++g) {
       std::vector<TokenSource> v;
       addRange(v, g);
+      if (g == 0) addRange(v, 8);
       out.sources.push_back(v);
     }
     std::vector<TokenSource> majors;
@@ -63,6 +65,7 @@ bool TokenLayout::make(int tokens, int dim, TokenLayout& out, std::string& err) 
     for (int g = 0; g <= 1; ++g) {
       std::vector<TokenSource> v;
       addRange(v, g);
+      if (g == 0) addRange(v, 8);
       out.sources.push_back(v);
     }
     std::vector<TokenSource> knights;

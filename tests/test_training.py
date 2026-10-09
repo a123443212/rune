@@ -39,7 +39,7 @@ def test_dataset_loader_runs():
     loader, ds = make_loader(recs, batch_size=8, shuffle=False)
     batch = next(iter(loader))
     ids, masks, value, wdl = batch
-    assert len(ids) == 8 and value.shape[0] == 8
+    assert len(ids) == 9 and value.shape[0] == 8
 
 
 def test_trainer_trains_and_checkpoints(tmp_path):

@@ -35,7 +35,7 @@ impl Default for PipelineConfig {
             phase_cap_ratio: 2.0,
             source_id: 0,
             dataset_id: "rune-clean-v07".to_string(),
-            feature_version: "grouped_hkav2_fullthreats_v01".to_string(),
+            feature_version: "grouped_hkav2_fullthreats_v02".to_string(),
             compression: Compression::Raw,
             deterministic: true,
         }

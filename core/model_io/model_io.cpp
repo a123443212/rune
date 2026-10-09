@@ -94,7 +94,7 @@ bool parseDecimalInt(const std::string& s, int& out) {
 bool parseGroupIndex(const std::string& name, int& g) {
   if (name.size() < 4 || name.compare(0, 3, "emb") != 0) return false;
   if (!parseDecimalInt(name.substr(3), g)) return false;
-  return g >= 0 && g < 8;
+  return g >= 0 && g < 9;
 }
 
 bool parseTensors(const std::string& h, std::vector<TensorMeta>& out) {
@@ -298,7 +298,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     return false;
   }
   fillSpec(header, out.spec);
-  if (out.spec.featureSet != "grouped_hkav2_fullthreats_v01") {
+  if (out.spec.featureSet != "grouped_hkav2_fullthreats_v02") {
     err = "feature version mismatch: " + out.spec.featureSet;
     return false;
   }
@@ -379,7 +379,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     out.varWidths = varWidths;
     VarWidths gw = varWidths;
     if (ds.pooling == "shared") {
-      for (int g = 0; g < 8; ++g) gw.w[g] = ds.sharedWidth;
+      for (int g = 0; g < 9; ++g) gw.w[g] = ds.sharedWidth;
     }
     embWidths = gw;
     out.varEmbeddings.configure(gw);
@@ -410,11 +410,11 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       if (err.empty()) err = "adaptive build failed";
       return false;
     }
-    for (int g = 0; g < 8; ++g) varWidths.w[g] = dim;
+    for (int g = 0; g < 9; ++g) varWidths.w[g] = dim;
     out.varWidths = varWidths;
     VarWidths gw = varWidths;
     if (as.cheapPooling == "shared") {
-      for (int g = 0; g < 8; ++g) gw.w[g] = 32;
+      for (int g = 0; g < 9; ++g) gw.w[g] = 32;
     }
     embWidths = gw;
     out.varEmbeddings.configure(gw);

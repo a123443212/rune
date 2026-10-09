@@ -13,8 +13,8 @@ def test_all_archs_forward_shapes():
     for arch in ARCH_IDS:
         model = build_model(arch)
         model.eval()
-        ids = [torch.randint(0, 8, (4, 6)) for _ in range(8)]
-        masks = [torch.ones(4, 6) for _ in range(8)]
+        ids = [torch.randint(0, 8, (4, 6)) for _ in range(9)]
+        masks = [torch.ones(4, 6) for _ in range(9)]
         with torch.no_grad():
             v, w = model(ids, masks)
         assert v.shape == (4,)
@@ -84,4 +84,4 @@ def test_spec_and_export_order_cover_all_params():
         arch_t = model.arch_tensors()
         assert sorted(arch_t.keys()) == sorted(EXPORT_ORDER[arch])
         emb = model.embedding_tensors()
-        assert len(emb) == 8
+        assert len(emb) == 9

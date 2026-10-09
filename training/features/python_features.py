@@ -1,7 +1,8 @@
-VOCAB_SIZES = [256, 256, 256, 128, 128, 512, 512, 64]
-NUM_GROUPS = 8
+VOCAB_SIZES = [256, 256, 256, 128, 128, 512, 512, 64, 4560]
+NUM_GROUPS = 9
+TOKENS = 8
 TOKEN_DIM = 32
-FEATURE_VERSION = "grouped_hkav2_fullthreats_v01"
+FEATURE_VERSION = "grouped_hkav2_fullthreats_v02"
 
 GROUP_NAMES = [
     "pawn_structure",
@@ -12,7 +13,20 @@ GROUP_NAMES = [
     "threats",
     "mobility",
     "global",
+    "pawn_pairs",
 ]
+
+PAWN_PAIR_VOCAB = 4560
+
+
+def pawn_pair_index(ida, idb):
+    if ida == idb:
+        return None
+    lo, hi = (ida, idb) if ida < idb else (idb, ida)
+    idx = hi * (hi - 1) // 2 + lo
+    if idx < 0 or idx >= PAWN_PAIR_VOCAB:
+        return None
+    return idx
 
 TYPE_INDEX = {"p": 0, "n": 1, "b": 2, "r": 3, "q": 4, "k": 5}
 
@@ -207,18 +221,42 @@ def game_phase(board):
 
 def extract_features(fen):
     board, stm, castle_mask, ep_sq = parse_fen(fen)
+    us = "w" if stm == 0 else "b"
+    kus = -1
+    for sq in range(64):
+        if board[sq] == ("k", us):
+            kus = sq
+            break
+    fold = kus >= 0 and sq_file(kus) < 4
+
+    def rel(sq):
+        if not fold:
+            return sq
+        return sq_rank(sq) * 8 + (7 - sq_file(sq))
+
+    def rel_color(color):
+        return 0 if color == us else 1
+
+    parts = fen.split()
+    half = 0
+    if len(parts) > 4:
+        try:
+            half = max(0, int(parts[4]))
+        except ValueError:
+            half = 0
     feats = []
     for sq in range(64):
         cell = board[sq]
         if cell is None:
             continue
         p, color = cell
-        ci = 0 if color == "w" else 1
+        ci = rel_color(color)
+        s = rel(sq)
         if p == "p":
-            feats.append((0, ci * 64 + sq))
-            feats.append((0, 128 + sq_file(sq) * 4 + sq_rank(sq) // 2))
+            feats.append((0, ci * 64 + s))
+            feats.append((0, 128 + sq_file(s) * 4 + sq_rank(s) // 2))
         if p == "k":
-            feats.append((1, ci * 64 + sq))
+            feats.append((1, ci * 64 + s))
             for df in (-1, 0, 1):
                 for dr in (-1, 0, 1):
                     if df == 0 and dr == 0:
@@ -226,17 +264,17 @@ def extract_features(fen):
                     f, r = sq_file(sq) + df, sq_rank(sq) + dr
                     if not on_board(f, r):
                         continue
-                    nsq = make_sq(f, r)
+                    nsq = rel(make_sq(f, r))
                     feats.append((1, 128 + ci * 32 + nsq // 2))
         if p == "n":
-            feats.append((2, ci * 64 + sq))
+            feats.append((2, ci * 64 + s))
         if p == "b":
-            feats.append((2, 128 + ci * 64 + sq))
+            feats.append((2, 128 + ci * 64 + s))
         if p == "r":
-            feats.append((3, ci * 64 + sq))
+            feats.append((3, ci * 64 + s))
         if p == "q":
-            feats.append((4, ci * 64 + sq))
-        feats.append((6, TYPE_INDEX[p] * 64 + sq))
+            feats.append((4, ci * 64 + s))
+        feats.append((6, TYPE_INDEX[p] * 64 + s))
     for vsq in range(64):
         victim = board[vsq]
         if victim is None:
@@ -248,8 +286,8 @@ def extract_features(fen):
             if not piece_attacks(board, asq, vsq):
                 continue
             vt = TYPE_INDEX[victim[0]]
-            feats.append((5, vt * 64 + vsq))
-            coarse = 384 + sq_file(asq) * 8 + sq_rank(asq)
+            feats.append((5, vt * 64 + rel(vsq)))
+            coarse = 384 + sq_file(rel(asq)) * 8 + sq_rank(asq)
             if coarse < 512:
                 feats.append((5, coarse))
     mob = pseudo_move_count(board, stm, castle_mask, ep_sq)
@@ -262,6 +300,22 @@ def extract_features(fen):
     bucket = max(0, min(15, bucket))
     feats.append((7, 18 + bucket))
     feats.append((7, 34 + game_phase(board)))
+    if ep_sq >= 0:
+        feats.append((7, 37 + sq_file(rel(ep_sq))))
+    feats.append((7, 45 + min(half // 20, 4)))
+    pawns = []
+    for sq in range(64):
+        cell = board[sq]
+        if cell is None or cell[0] != "p":
+            continue
+        if sq < 8 or sq > 55:
+            continue
+        pawns.append(rel_color(cell[1]) * 48 + (rel(sq) - 8))
+    for i in range(len(pawns)):
+        for j in range(i + 1, len(pawns)):
+            idx = pawn_pair_index(pawns[i], pawns[j])
+            if idx is not None:
+                feats.append((8, idx))
     return sorted(set(feats))
 
 

@@ -1,10 +1,10 @@
 use rune_kernel as kernel;
 pub struct Tables {
     pub dim: usize,
-    pub data: [Vec<f32>; 8],
+    pub data: [Vec<f32>; 9],
 }
 impl Tables {
-    pub fn zeros(dim: usize, vocabs: [usize; 8]) -> Tables {
+    pub fn zeros(dim: usize, vocabs: [usize; 9]) -> Tables {
         Tables {
             dim,
             data: [
@@ -16,6 +16,7 @@ impl Tables {
                 vec![0.0; vocabs[5] * dim],
                 vec![0.0; vocabs[6] * dim],
                 vec![0.0; vocabs[7] * dim],
+                vec![0.0; vocabs[8] * dim],
             ],
         }
     }
@@ -25,6 +26,9 @@ impl Tables {
     }
 }
 pub fn token_of(tokens: usize, group: u8, index: u16) -> Option<usize> {
+    if group == 8 {
+        return Some(0);
+    }
     if tokens == 8 {
         return Some(group as usize);
     }
@@ -157,48 +161,60 @@ pub struct IntAccumulator {
     pub dim: usize,
     pub tokens: usize,
     acc: Vec<i32>,
-    scales: [f32; 8],
+    scales: [f32; 9],
 }
 impl IntAccumulator {
-    pub fn new(tokens: usize, dim: usize, scales: [f32; 8]) -> IntAccumulator {
-        IntAccumulator { tokens, dim, acc: vec![0; tokens * dim], scales }
+    pub fn new(tokens: usize, dim: usize, scales: [f32; 9]) -> IntAccumulator {
+        IntAccumulator { tokens, dim, acc: vec![0; 9 * dim], scales }
     }
-    pub fn refresh(&mut self, qtables: &[Vec<i32>; 8], feats: &[(u8, u16)]) {
+    pub fn refresh(&mut self, qtables: &[Vec<i32>; 9], feats: &[(u8, u16)]) {
         for v in self.acc.iter_mut() {
             *v = 0;
         }
         self.apply_diff(qtables, feats, &[]);
     }
-    pub fn apply_diff(&mut self, qtables: &[Vec<i32>; 8], added: &[(u8, u16)], removed: &[(u8, u16)]) {
+    pub fn apply_diff(&mut self, qtables: &[Vec<i32>; 9], added: &[(u8, u16)], removed: &[(u8, u16)]) {
         for (g, idx) in added {
-            let t = match token_of(self.tokens, *g, *idx) {
-                Some(v) => v,
-                None => continue,
-            };
+            if *g as usize >= 9 {
+                continue;
+            }
             let base_q = *idx as usize * self.dim;
-            let base_a = t * self.dim;
+            let base_a = *g as usize * self.dim;
             for d in 0..self.dim {
                 self.acc[base_a + d] += qtables[*g as usize][base_q + d];
             }
         }
         for (g, idx) in removed {
-            let t = match token_of(self.tokens, *g, *idx) {
-                Some(v) => v,
-                None => continue,
-            };
+            if *g as usize >= 9 {
+                continue;
+            }
             let base_q = *idx as usize * self.dim;
-            let base_a = t * self.dim;
+            let base_a = *g as usize * self.dim;
             for d in 0..self.dim {
                 self.acc[base_a + d] -= qtables[*g as usize][base_q + d];
             }
         }
     }
     pub fn tokens(&self, out: &mut [f32]) {
-        for g in 0..self.tokens {
+        for t in 0..self.tokens {
             for d in 0..self.dim {
-                let v = self.acc[g * self.dim + d] as f32 * self.scales[token_scale_group(self.tokens, g)];
-                out[g * self.dim + d] = kernel::clipped_relu(v);
+                out[t * self.dim + d] = 0.0;
             }
+        }
+        for g in 0..9 {
+            let t = match token_of(self.tokens, g as u8, 0) {
+                Some(v) => v,
+                None => continue,
+            };
+            if t >= self.tokens {
+                continue;
+            }
+            for d in 0..self.dim {
+                out[t * self.dim + d] += self.acc[g * self.dim + d] as f32 * self.scales[g];
+            }
+        }
+        for v in out.iter_mut() {
+            *v = kernel::clipped_relu(*v);
         }
     }
 }

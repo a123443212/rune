@@ -82,7 +82,7 @@ impl Evaluator {
         }
         let vocabs = spec::VOCAB_SIZES;
         let mut tables = Tables::zeros(dim, vocabs);
-        for g in 0..8 {
+        for g in 0..9 {
             let k = format!("emb{}", g);
             let arr = m.arrays.get(&k).ok_or_else(|| RuntimeError::TensorMissing(k.clone()))?;
             if arr.len() != vocabs[g] * dim {

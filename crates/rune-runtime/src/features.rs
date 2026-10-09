@@ -1,6 +1,6 @@
 use crate::board::{self, Board, BISHOP, BLACK, KING, KNIGHT, PAWN, QUEEN, ROOK, WHITE};
 use rune_spec as spec;
-pub const CONTEXT_DIM: usize = 8;
+pub const CONTEXT_DIM: usize = 12;
 pub fn vocab_size(group: usize) -> usize {
     spec::VOCAB_SIZES[group]
 }
@@ -187,18 +187,38 @@ pub fn pseudo_move_count(b: &Board) -> u32 {
 }
 pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
     let mut feats: Vec<(u8, u16)> = Vec::new();
+    let us = if board.stm == 0 { WHITE } else { BLACK };
+    let mut kus = 64;
+    for sq in 0..64 {
+        match board.sq[sq] {
+            Some(c) if c.kind == KING && c.color == us => {
+                kus = sq;
+                break;
+            }
+            _ => {}
+        }
+    }
+    let fold = kus < 64 && board::sq_file(kus) < 4;
+    let rel = |sq: usize| {
+        if !fold {
+            sq
+        } else {
+            board::make_sq(7 - board::sq_file(sq), board::sq_rank(sq))
+        }
+    };
     for sq in 0..64 {
         let cell = match board.sq[sq] {
             Some(c) => c,
             None => continue,
         };
-        let ci = if cell.color == WHITE { 0 } else { 1 };
+        let ci = if cell.color == us { 0 } else { 1 };
+        let s = rel(sq);
         if cell.kind == PAWN {
-            feats.push((0, (ci * 64 + sq) as u16));
-            feats.push((0, (128 + board::sq_file(sq) * 4 + board::sq_rank(sq) / 2) as u16));
+            feats.push((0, (ci * 64 + s) as u16));
+            feats.push((0, (128 + board::sq_file(s) * 4 + board::sq_rank(s) / 2) as u16));
         }
         if cell.kind == KING {
-            feats.push((1, (ci * 64 + sq) as u16));
+            feats.push((1, (ci * 64 + s) as u16));
             for df in -1..=1 {
                 for dr in -1..=1 {
                     if df == 0 && dr == 0 {
@@ -208,24 +228,24 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
                     if !board::on_board(f, r) {
                         continue;
                     }
-                    let nsq = board::make_sq(f, r);
+                    let nsq = rel(board::make_sq(f, r));
                     feats.push((1, (128 + ci * 32 + nsq / 2) as u16));
                 }
             }
         }
         if cell.kind == KNIGHT {
-            feats.push((2, (ci * 64 + sq) as u16));
+            feats.push((2, (ci * 64 + s) as u16));
         }
         if cell.kind == BISHOP {
-            feats.push((2, (128 + ci * 64 + sq) as u16));
+            feats.push((2, (128 + ci * 64 + s) as u16));
         }
         if cell.kind == ROOK {
-            feats.push((3, (ci * 64 + sq) as u16));
+            feats.push((3, (ci * 64 + s) as u16));
         }
         if cell.kind == QUEEN {
-            feats.push((4, (ci * 64 + sq) as u16));
+            feats.push((4, (ci * 64 + s) as u16));
         }
-        feats.push((6, (type_index(cell.kind) * 64 + sq) as u16));
+        feats.push((6, (type_index(cell.kind) * 64 + s) as u16));
     }
     for vsq in 0..64 {
         let victim = match board.sq[vsq] {
@@ -244,8 +264,9 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
                 continue;
             }
             let vt = type_index(victim.kind);
-            feats.push((5, (vt * 64 + vsq) as u16));
-            let coarse = 384 + board::sq_file(asq) * 8 + board::sq_rank(asq);
+            feats.push((5, (vt * 64 + rel(vsq)) as u16));
+            let ra = rel(asq);
+            let coarse = 384 + board::sq_file(ra) * 8 + board::sq_rank(asq);
             if coarse < 512 {
                 feats.push((5, coarse as u16));
             }
@@ -265,6 +286,33 @@ pub fn extract_features(board: &Board) -> Vec<(u8, u16)> {
     }
     feats.push((7, (18 + bucket) as u16));
     feats.push((7, (34 + board.game_phase() as i32) as u16));
+    if board.ep_sq >= 0 {
+        feats.push((7, (37 + board::sq_file(rel(board.ep_sq as usize))) as u16));
+    }
+    feats.push((7, (45 + (board.halfmove_clock / 20).min(4)) as u16));
+    let mut pair_ids = Vec::new();
+    for sq in 0..64 {
+        match board.sq[sq] {
+            Some(c) if c.kind == PAWN && sq >= 8 && sq <= 55 => {
+                let ci = if c.color == us { 0 } else { 1 };
+                pair_ids.push(ci * 48 + (rel(sq) - 8));
+            }
+            _ => {}
+        }
+    }
+    for i in 0..pair_ids.len() {
+        for j in (i + 1)..pair_ids.len() {
+            let (a, b) = (pair_ids[i], pair_ids[j]);
+            if a == b {
+                continue;
+            }
+            let (lo, hi) = if a < b { (a, b) } else { (b, a) };
+            let idx = hi * (hi - 1) / 2 + lo;
+            if idx < 4560 {
+                feats.push((8, idx as u16));
+            }
+        }
+    }
     feats.sort_unstable();
     feats.dedup();
     feats
@@ -297,6 +345,7 @@ pub fn diff_features(before: &[(u8, u16)], after: &[(u8, u16)]) -> (Vec<(u8, u16
 }
 pub fn compute_context(board: &Board) -> Vec<f32> {
     let us = if board.stm == 0 { WHITE } else { BLACK };
+    let them = if board.stm == 0 { BLACK } else { WHITE };
     let mut pawns = 0;
     let mut minors = 0;
     let mut rooks = 0;
@@ -344,14 +393,41 @@ pub fn compute_context(board: &Board) -> Vec<f32> {
             }
         }
     }
+    let mut check = 0;
+    if king < 64 {
+        for asq in 0..64 {
+            match board.sq[asq] {
+                Some(c) if c.color == them => {
+                    if piece_attacks(board, asq, king) {
+                        check = 1;
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    let clip = |v: f32| {
+        if v < 0.0 {
+            0.0
+        } else if v > 1.0 {
+            1.0
+        } else {
+            v
+        }
+    };
     vec![
-        board.stm as f32,
-        board.game_phase() as f32 / 2.0,
-        pawns as f32 / 16.0,
-        minors as f32 / 8.0,
-        rooks as f32 / 4.0,
-        queens as f32 / 2.0,
-        shield as f32 / 8.0,
-        total as f32 / 32.0,
+        clip(board.stm as f32),
+        clip(board.game_phase() as f32 / 2.0),
+        clip(pawns as f32 / 16.0),
+        clip(minors as f32 / 8.0),
+        clip(rooks as f32 / 4.0),
+        clip(queens as f32 / 2.0),
+        clip(shield as f32 / 8.0),
+        clip(total as f32 / 32.0),
+        clip(board.castle_mask as f32 / 15.0),
+        clip(if board.ep_sq >= 0 { 1.0 } else { 0.0 }),
+        clip(check as f32),
+        clip(board.halfmove_clock as f32 / 100.0),
     ]
 }

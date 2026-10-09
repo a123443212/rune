@@ -7,7 +7,7 @@ from training.models.dense import ChannelGate, TokenPool, VarEmbedder
 TOKENS = 8
 ARCH_ID = "RUNE-04"
 ARCH_VERSION = "0.4.0"
-FEATURE_SET = "grouped_hkav2_fullthreats_v01"
+FEATURE_SET = "grouped_hkav2_fullthreats_v02"
 
 
 def wdl_entropy(wdl_logits):
@@ -197,7 +197,7 @@ class AdaptiveModel(nn.Module):
                         "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
 
     def embedding_tensors(self):
-        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(TOKENS)}
+        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(9)}
 
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())

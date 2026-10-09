@@ -1,1 +1,130 @@
-{"accumulator":{"acc_width":"int32 for int8/int16 paths, float32 accumulator for fp32 path","layout":"row-major acc[groups][width], zero on refresh","token_post":"clip01 after dequant"},"architectures":[{"dims":[32],"head":"sfnn 256->32","id":"RUNE-SFNN","tokens":[8]},{"dims":[32],"head":"value_wdl 128->32","id":"RUNE-MLP","tokens":[8]},{"dims":[32],"head":"value_wdl 128->32","id":"RUNE-ATTN","tokens":[8]},{"dims":[32],"head":"value_wdl 128->32","id":"RUNE-ATTN-GAB","tokens":[8]},{"dims":[24,32,40],"gate":["clip","hard_sigmoid"],"head":"value_wdl 128->32","id":"RUNE-REL-02","tokens":[6,8,10]},{"head":"dense variable","id":"RUNE-03-*","tokens":[8]},{"head":"adaptive cheap+refine","id":"RUNE-04","tokens":[8]},{"head":"adaptive plus uncertainty","id":"RUNE-05","tokens":[8]}],"context_dim":8,"endianness":"little","feature_version":"grouped_hkav2_fullthreats_v01","float_format":"ieee754-binary32","gate":{"clip":"min(max(s,0),1)","hard_sigmoid":"clamp(0.2*s+0.5,0,1)"},"head_order":["flatten row-major","h1=clip01(W1x+b1)","h2=clip01(W2h1+b2)","value=tanh(wvo.h2+bvo)","wdl=Wwdl h2+bwdl linear"],"mixer_order":["QKV per token matVec","S=QK^T + gabS + dynamicBias(clamped)","gate elementwise","Y=S@V","out=x+alpha*Y"],"quantization":{"bound_int16":32767,"bound_int8":127,"mode":"symmetric per-group","rounding":"half-away-from-zero","stored_int16":"<i2","stored_int8":"i8"},"residual_alpha":"per-model float32","routing":{"nan_policy":"refine on NaN","op":">=","thresholds":["threshold","t_high","t_low or null"]},"rune_format_version":2,"rune_runtime_spec":"RUNE-10"}
+{
+ "accumulator": {
+  "acc_width": "int32 for int8/int16 paths, float32 accumulator for fp32 path",
+  "layout": "row-major acc[groups][width], zero on refresh",
+  "token_post": "clip01 after dequant"
+ },
+ "architectures": [
+  {
+   "dims": [
+    32
+   ],
+   "head": "sfnn 256->32",
+   "id": "RUNE-SFNN",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-MLP",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-ATTN",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-ATTN-GAB",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "dims": [
+    24,
+    32,
+    40
+   ],
+   "gate": [
+    "clip",
+    "hard_sigmoid"
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-REL-02",
+   "tokens": [
+    6,
+    8,
+    10
+   ]
+  },
+  {
+   "head": "dense variable",
+   "id": "RUNE-03-*",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "head": "adaptive cheap+refine",
+   "id": "RUNE-04",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "head": "adaptive plus uncertainty",
+   "id": "RUNE-05",
+   "tokens": [
+    8
+   ]
+  }
+ ],
+ "context_dim": 12,
+ "endianness": "little",
+ "feature_version": "grouped_hkav2_fullthreats_v02",
+ "float_format": "ieee754-binary32",
+ "gate": {
+  "clip": "min(max(s,0),1)",
+  "hard_sigmoid": "clamp(0.2*s+0.5,0,1)"
+ },
+ "head_order": [
+  "flatten row-major",
+  "h1=clip01(W1x+b1)",
+  "h2=clip01(W2h1+b2)",
+  "value=tanh(wvo.h2+bvo)",
+  "wdl=Wwdl h2+bwdl linear"
+ ],
+ "mixer_order": [
+  "QKV per token matVec",
+  "S=QK^T + gabS + dynamicBias(clamped)",
+  "gate elementwise",
+  "Y=S@V",
+  "out=x+alpha*Y"
+ ],
+ "quantization": {
+  "bound_int16": 32767,
+  "bound_int8": 127,
+  "mode": "symmetric per-group",
+  "rounding": "half-away-from-zero",
+  "stored_int16": "<i2",
+  "stored_int8": "i8"
+ },
+ "residual_alpha": "per-model float32",
+ "routing": {
+  "nan_policy": "refine on NaN",
+  "op": ">=",
+  "thresholds": [
+   "threshold",
+   "t_high",
+   "t_low or null"
+  ]
+ },
+ "rune_format_version": 2,
+ "rune_runtime_spec": "RUNE-10"
+}

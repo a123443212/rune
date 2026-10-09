@@ -116,7 +116,7 @@ fn startpos_value_matches_golden_triangle() {
     let mut ev = Evaluator::load(&p).expect("load");
     let b = Board::startpos();
     let r = ev.evaluate_board(&b);
-    assert!((r.value + 0.019763).abs() < 2e-5, "got {}", r.value);
+    assert!((r.value - 0.05041957).abs() < 2e-5, "got {}", r.value);
 }
 #[test]
 fn quant_model_close_to_fp32() {
@@ -198,9 +198,9 @@ fn unsupported_arch_fails_closed() {
 fn context_matches_reference_startpos() {
     let b = Board::startpos();
     let ctx = compute_context(&b);
-    let want = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.625, 1.0];
-    assert_eq!(ctx.len(), 8);
-    for i in 0..8 {
+    let want = [0.0, 0.0, 1.0, 1.0, 1.0, 1.0, 0.625, 1.0, 1.0, 0.0, 0.0, 0.0];
+    assert_eq!(ctx.len(), 12);
+    for i in 0..12 {
         assert!((ctx[i] - want[i]).abs() < 1e-6, "{} got {} want {}", i, ctx[i], want[i]);
     }
 }
@@ -258,10 +258,10 @@ fn dynamic_bias_matches_cache() {
     let mut m = rune_model::load(&p).expect("load");
     let t = m.header.tokens;
     let d = m.header.token_dim;
-    let cd = 8;
+    let cd = rune_runtime::features::CONTEXT_DIM;
     m.arrays.insert("dynU".to_string(), vec![0.02; t * cd]);
     m.arrays.insert("dynW".to_string(), vec![0.03; t * cd]);
-    m.header.raw["context_dim"] = serde_json::json!(8);
+    m.header.raw["context_dim"] = serde_json::json!(rune_runtime::features::CONTEXT_DIM);
     let mut ev = Evaluator::from_model(&m).expect("dyn model loads");
     let gate_hard = m.header.raw.get("gate").and_then(|x| x.as_str()).unwrap_or("clip") == "hard_sigmoid";
     let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;

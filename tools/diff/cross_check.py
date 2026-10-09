@@ -12,7 +12,8 @@ def py_value(model, fen):
     feats = extract_features(fen)
     acc = np.zeros((8, 32), dtype=np.float64)
     for g, i in feats:
-        acc[g] += arrays["emb" + str(g)][i]
+        t = 0 if g == 8 else g
+        acc[t] += arrays["emb" + str(g)][i]
     tok = np.clip(acc, 0, 1).astype(np.float32)
     arch = header.get("architecture_id", header.get("arch"))
     if arch in ("RUNE-ATTN", "RUNE-ATTN-GAB"):

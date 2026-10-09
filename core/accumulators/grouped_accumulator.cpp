@@ -61,17 +61,20 @@ void GroupedAccumulator::refresh(const std::vector<ActiveFeature>& features) {
   for (int g = 0; g < kTokens; ++g)
     for (int d = 0; d < kDim; ++d) acc_[g][d] = 0.0f;
   for (const ActiveFeature& f : features) {
-    for (int d = 0; d < kDim; ++d) acc_[f.group][d] += tables_->get(f.group, f.index, d);
+    int t = GroupedFeatureSet::tokenForGroup(f.group);
+    for (int d = 0; d < kDim; ++d) acc_[t][d] += tables_->get(f.group, f.index, d);
   }
 }
 
 void GroupedAccumulator::applyDiff(const std::vector<ActiveFeature>& added,
                                    const std::vector<ActiveFeature>& removed) {
   for (const ActiveFeature& f : added) {
-    for (int d = 0; d < kDim; ++d) acc_[f.group][d] += tables_->get(f.group, f.index, d);
+    int t = GroupedFeatureSet::tokenForGroup(f.group);
+    for (int d = 0; d < kDim; ++d) acc_[t][d] += tables_->get(f.group, f.index, d);
   }
   for (const ActiveFeature& f : removed) {
-    for (int d = 0; d < kDim; ++d) acc_[f.group][d] -= tables_->get(f.group, f.index, d);
+    int t = GroupedFeatureSet::tokenForGroup(f.group);
+    for (int d = 0; d < kDim; ++d) acc_[t][d] -= tables_->get(f.group, f.index, d);
   }
 }
 
@@ -159,13 +162,21 @@ void GroupedAccumulatorInt::applyDiff(const std::vector<ActiveFeature>& added,
 }
 
 void GroupedAccumulatorInt::tokens(float* out) const {
-  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+  for (int t = 0; t < 8; ++t) {
     for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
-      float v = static_cast<float>(acc_[g][d]) * scales_->embedding[g];
-      if (v < 0.0f) v = 0.0f;
-      if (v > 1.0f) v = 1.0f;
-      out[g * GroupedFeatureSet::kTokenDim + d] = v;
+      out[t * GroupedFeatureSet::kTokenDim + d] = 0.0f;
     }
+  }
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    int t = GroupedFeatureSet::tokenForGroup(g);
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
+      out[t * GroupedFeatureSet::kTokenDim + d] +=
+          static_cast<float>(acc_[g][d]) * scales_->embedding[g];
+    }
+  }
+  for (int i = 0; i < 8 * GroupedFeatureSet::kTokenDim; ++i) {
+    if (out[i] < 0.0f) out[i] = 0.0f;
+    if (out[i] > 1.0f) out[i] = 1.0f;
   }
 }
 
@@ -232,13 +243,21 @@ void GroupedAccumulator16::applyDiff(const std::vector<ActiveFeature>& added,
 }
 
 void GroupedAccumulator16::tokens(float* out) const {
-  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+  for (int t = 0; t < 8; ++t) {
     for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
-      float v = static_cast<float>(acc_[g][d]) * scales_->embedding[g];
-      if (v < 0.0f) v = 0.0f;
-      if (v > 1.0f) v = 1.0f;
-      out[g * GroupedFeatureSet::kTokenDim + d] = v;
+      out[t * GroupedFeatureSet::kTokenDim + d] = 0.0f;
     }
+  }
+  for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) {
+    int t = GroupedFeatureSet::tokenForGroup(g);
+    for (int d = 0; d < GroupedFeatureSet::kTokenDim; ++d) {
+      out[t * GroupedFeatureSet::kTokenDim + d] +=
+          static_cast<float>(acc_[g][d]) * scales_->embedding[g];
+    }
+  }
+  for (int i = 0; i < 8 * GroupedFeatureSet::kTokenDim; ++i) {
+    if (out[i] < 0.0f) out[i] = 0.0f;
+    if (out[i] > 1.0f) out[i] = 1.0f;
   }
 }
 

@@ -15,8 +15,8 @@ def bench_torch(arch_id, iters=200):
 
     model = build_model(arch_id)
     model.eval()
-    ids = [torch.randint(0, 64, (1, 8)) for _ in range(8)]
-    masks = [torch.ones(1, 8) for _ in range(8)]
+    ids = [torch.randint(0, 64, (1, 8)) for _ in range(9)]
+    masks = [torch.ones(1, 8) for _ in range(9)]
     with torch.no_grad():
         for _ in range(20):
             model(ids, masks)

@@ -127,7 +127,7 @@ def load_model_for_match(arch_id, runepath, build_dir):
                                  float(header.get("threshold", 0.5)), True)
     else:
         model = rb.RuneModel(header["arch"])
-    for g in range(8):
+    for g in range(9):
         arr = arrays[f"emb{g}"]
         if arr.dtype.name == "int8":
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]

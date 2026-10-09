@@ -4,7 +4,7 @@ import numpy as np
 
 MAGIC = b"RUNE"
 FORMAT_VERSION = 2
-FEATURE_VERSION = "grouped_hkav2_fullthreats_v01"
+FEATURE_VERSION = "grouped_hkav2_fullthreats_v02"
 
 
 def fnv1a(data):
@@ -35,11 +35,13 @@ def quantize_array(arr, bits=8):
 
 
 def collect_tensors(model, quantization="fp32"):
+    from training.features.python_features import NUM_GROUPS
+
     arch_tensors = model.arch_tensors()
     emb_tensors = model.embedding_tensors()
-    order = ["emb" + str(g) for g in range(8)] + model.export_order()
+    order = ["emb" + str(g) for g in range(NUM_GROUPS)] + model.export_order()
     arrays = {}
-    for g in range(8):
+    for g in range(NUM_GROUPS):
         arrays[f"emb{g}"] = emb_tensors[f"emb{g}"].numpy()
     for k, v in arch_tensors.items():
         arrays[k] = np.asarray(v.numpy(), dtype=np.float32)

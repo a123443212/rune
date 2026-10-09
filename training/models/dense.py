@@ -20,9 +20,11 @@ class VarEmbedder(nn.Module):
         super().__init__()
         from training.features.python_features import NUM_GROUPS, VOCAB_SIZES
 
-        self.group_widths = list(group_widths)
+        if len(group_widths) != 8:
+            raise ValueError("token dims must have 8 entries")
+        self.group_widths = list(group_widths) + [group_widths[0]]
         self.tables = nn.ModuleList(
-            [nn.Embedding(VOCAB_SIZES[g], group_widths[g]) for g in range(NUM_GROUPS)]
+            [nn.Embedding(VOCAB_SIZES[g], self.group_widths[g]) for g in range(NUM_GROUPS)]
         )
         for emb in self.tables:
             nn.init.uniform_(emb.weight, -0.01, 0.01)
@@ -35,6 +37,9 @@ class VarEmbedder(nn.Module):
             ids = group_ids[g].clamp(0, VOCAB_SIZES[g] - 1)
             e = self.tables[g](ids) * group_mask[g].unsqueeze(-1)
             toks.append(e.sum(dim=1))
+        ids8 = group_ids[8].clamp(0, VOCAB_SIZES[8] - 1)
+        e8 = self.tables[8](ids8) * group_mask[8].unsqueeze(-1)
+        toks[0] = toks[0] + e8.sum(dim=1)
         return torch.clamp(torch.cat(toks, dim=1), 0.0, 1.0)
 
 
@@ -195,7 +200,7 @@ class DenseModel(nn.Module):
         return order + ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
 
     def embedding_tensors(self):
-        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(8)}
+        return {f"emb{g}": self.embedder.tables[g].weight.detach() for g in range(9)}
 
     def parameter_count(self):
         return sum(p.numel() for p in self.parameters())
@@ -207,7 +212,7 @@ class DenseModel(nn.Module):
         return {
             "arch": f"RUNE-03-{self.variant}",
             "arch_version": "0.3.0",
-            "feature_set": "grouped_hkav2_fullthreats_v01",
+            "feature_set": "grouped_hkav2_fullthreats_v02",
             "tokens": 8,
             "token_dim": sum(self.token_dims),
             "token_dims": list(self.token_dims),

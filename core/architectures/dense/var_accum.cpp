@@ -25,6 +25,7 @@ bool VarWidths::make(const std::vector<int>& dims, VarWidths& out, std::string& 
     }
   }
   for (int i = 0; i < 8; ++i) out.w[i] = dims[i];
+  out.w[8] = out.w[0];
   return true;
 }
 
@@ -99,6 +100,14 @@ void VarQuantTables::quantizeFrom(const VarEmbeddings& src, VarScales& scales) {
       float a = v < 0 ? -v : v;
       if (a > maxAbs) maxAbs = a;
     }
+    const std::vector<float>* extra = nullptr;
+    if (t == 0) {
+      extra = &src.groupData(8);
+      for (float v : *extra) {
+        float a = v < 0 ? -v : v;
+        if (a > maxAbs) maxAbs = a;
+      }
+    }
     float scale = maxAbs / bound;
     if (scale <= 0.0f) scale = 1.0f;
     scales.token[t] = scale;
@@ -107,6 +116,14 @@ void VarQuantTables::quantizeFrom(const VarEmbeddings& src, VarScales& scales) {
       if (q > qmax) q = qmax;
       if (q < qmin) q = qmin;
       tables_[t][i] = q;
+    }
+    if (extra) {
+      for (size_t i = 0; i < extra->size(); ++i) {
+        int q = static_cast<int>(std::lround((*extra)[i] / scale));
+        if (q > qmax) q = qmax;
+        if (q < qmin) q = qmin;
+        tables_[8][i] = q;
+      }
     }
   }
 }
@@ -117,7 +134,7 @@ VarAccumulator::VarAccumulator() {}
 
 void VarAccumulator::configure(const VarEmbeddings* tables) {
   tables_ = tables;
-  for (int g = 0; g < 8; ++g) widths_.w[g] = tables->groupWidth(g);
+  for (int g = 0; g < 9; ++g) widths_.w[g] = tables->groupWidth(g);
   int n = widths_.total();
   acc_.assign(n, 0.0f);
 }
@@ -130,12 +147,12 @@ void VarAccumulator::refresh(const std::vector<ActiveFeature>& features) {
 void VarAccumulator::applyDiff(const std::vector<ActiveFeature>& added,
                                const std::vector<ActiveFeature>& removed) {
   for (const ActiveFeature& f : added) {
-    int off = tokenOffset(f.group);
+    int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];
     for (int d = 0; d < w; ++d) acc_[off + d] += tables_->get(f.group, f.index, d);
   }
   for (const ActiveFeature& f : removed) {
-    int off = tokenOffset(f.group);
+    int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];
     for (int d = 0; d < w; ++d) acc_[off + d] -= tables_->get(f.group, f.index, d);
   }
@@ -174,13 +191,13 @@ void VarAccumulatorInt::refresh(const std::vector<ActiveFeature>& features) {
 void VarAccumulatorInt::applyDiff(const std::vector<ActiveFeature>& added,
                                   const std::vector<ActiveFeature>& removed) {
   for (const ActiveFeature& f : added) {
-    int off = tokenOffset(f.group);
+    int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];
     size_t base = static_cast<size_t>(f.index) * w;
     for (int d = 0; d < w; ++d) acc_[off + d] += tables_->get(f.group, static_cast<int>(base) + d);
   }
   for (const ActiveFeature& f : removed) {
-    int off = tokenOffset(f.group);
+    int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];
     size_t base = static_cast<size_t>(f.index) * w;
     for (int d = 0; d < w; ++d) acc_[off + d] -= tables_->get(f.group, static_cast<int>(base) + d);

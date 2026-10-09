@@ -29,10 +29,10 @@ def build_batch(fens):
     per = []
     for fen in fens:
         feats = extract_features(fen)
-        per.append([[i for gg, i in feats if gg == g] for g in range(8)])
-    maxlen = [max(1, max(len(per[b][g]) for b in range(len(fens)))) for g in range(8)]
+        per.append([[i for gg, i in feats if gg == g] for g in range(9)])
+    maxlen = [max(1, max(len(per[b][g]) for b in range(len(fens)))) for g in range(9)]
     batch_ids, batch_masks = [], []
-    for g in range(8):
+    for g in range(9):
         gid = torch.zeros(len(fens), maxlen[g], dtype=torch.long)
         gm = torch.zeros(len(fens), maxlen[g], dtype=torch.float32)
         for b in range(len(fens)):

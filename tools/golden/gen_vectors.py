@@ -14,6 +14,7 @@ FENS = [
     "8/P7/8/8/8/1k6/8/4K3 w - - 0 1",
     "r1bqkb1r/pppp1Qpp/2n2n2/4p3/2B1P3/8/PPPP1PPP/RNB1K2R b KQkq - 0 1",
     "8/8/4k3/8/8/4K3/4P3/8 w - - 0 1",
+    "6k1/8/8/8/8/8/8/K6R w - - 100 45",
 ]
 MASK64 = (1 << 64) - 1
 def lcg_init(seed):
@@ -93,7 +94,7 @@ def build():
     with open(os.path.join(OUT, "features.json"), "w") as f:
         json.dump({"version": 1, "feature_version": pf.FEATURE_VERSION, "vectors": feats}, f, indent=2)
     tables = {}
-    for g in range(8):
+    for g in range(9):
         tables[str(g)] = make_table(7, pf.VOCAB_SIZES[g], pf.TOKEN_DIM)
     acc_cases = []
     for entry in feats:
@@ -101,8 +102,9 @@ def build():
         acc = [0.0] * (8 * pf.TOKEN_DIM)
         for (g, idx) in fl:
             base_t = tables[str(g)]
+            t = 0 if g == 8 else g
             for d in range(pf.TOKEN_DIM):
-                acc[g * pf.TOKEN_DIM + d] += base_t[idx * pf.TOKEN_DIM + d]
+                acc[t * pf.TOKEN_DIM + d] += base_t[idx * pf.TOKEN_DIM + d]
         tok = [clip01(v) for v in acc]
         acc_cases.append({"fen": entry["fen"], "accumulator": acc, "tokens": tok})
     with open(os.path.join(OUT, "accumulator.json"), "w") as f:

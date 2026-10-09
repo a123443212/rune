@@ -5,8 +5,8 @@
 namespace rune {
 
 struct ContextSpec {
-  static constexpr int kDim = 8;
-  static const char* names[8];
+  static constexpr int kDim = 12;
+  static const char* names[12];
 };
 
 void computeContext(const Board& board, float* ctx);

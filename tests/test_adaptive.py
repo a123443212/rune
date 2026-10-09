@@ -16,8 +16,8 @@ from training.models.adaptive import (
 
 
 def tiny_batch(n=4, dim=32):
-    ids = [torch.randint(0, 64, (n, 4)) for _ in range(8)]
-    masks = [torch.ones(n, 4) for _ in range(8)]
+    ids = [torch.randint(0, 64, (n, 4)) for _ in range(9)]
+    masks = [torch.ones(n, 4) for _ in range(9)]
     return ids, masks
 
 

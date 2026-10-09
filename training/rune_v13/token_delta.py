@@ -37,7 +37,7 @@ def _group_accum(tables, feats, dim):
 
 def group_deltas_to_tokens(tables, feats_old, feats_new, dim, token_of_group=None):
     if token_of_group is None:
-        token_of_group = list(range(NUM_GROUPS))
+        token_of_group = [0, 1, 2, 3, 4, 5, 6, 7, 0]
     n_tokens = max(token_of_group) + 1
     acc_old = _group_accum(tables, feats_old, dim)
     acc_new = _group_accum(tables, feats_new, dim)

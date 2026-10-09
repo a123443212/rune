@@ -1,11 +1,11 @@
 pub const RUNTIME_SPEC: &str = "RUNE-10";
 pub const MODEL_FORMAT_VERSION: u32 = 2;
-pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v01";
-pub const CONTEXT_DIM: usize = 8;
-pub const NUM_GROUPS: usize = 8;
+pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v02";
+pub const CONTEXT_DIM: usize = 12;
+pub const NUM_GROUPS: usize = 9;
 pub const TOKEN_DIM_DEFAULT: usize = 32;
-pub const VOCAB_SIZES: [usize; 8] = [256, 256, 256, 128, 128, 512, 512, 64];
-pub const GROUP_NAMES: [&str; 8] = [
+pub const VOCAB_SIZES: [usize; 9] = [256, 256, 256, 128, 128, 512, 512, 64, 4560];
+pub const GROUP_NAMES: [&str; 9] = [
     "pawn_structure",
     "king_zone",
     "minor_pieces",
@@ -14,6 +14,7 @@ pub const GROUP_NAMES: [&str; 8] = [
     "threats",
     "mobility",
     "global",
+    "pawn_pairs",
 ];
 pub const MAGIC: [u8; 4] = [82, 85, 78, 69];
 pub const MAX_HEADER_LEN: usize = 1000000;

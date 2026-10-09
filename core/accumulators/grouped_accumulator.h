@@ -32,12 +32,12 @@ class GroupedAccumulator {
   void applyDiff(const std::vector<ActiveFeature>& added, const std::vector<ActiveFeature>& removed);
   void tokens(float* out) const;
 
-  static constexpr int kTokens = GroupedFeatureSet::kNumGroups;
+  static constexpr int kTokens = 8;
   static constexpr int kDim = GroupedFeatureSet::kTokenDim;
 
  private:
   const EmbeddingTables* tables_ = nullptr;
-  alignas(64) float acc_[GroupedFeatureSet::kNumGroups][GroupedFeatureSet::kTokenDim];
+  alignas(64) float acc_[8][GroupedFeatureSet::kTokenDim];
 };
 
 struct QuantScales {

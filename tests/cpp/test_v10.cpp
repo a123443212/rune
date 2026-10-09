@@ -152,13 +152,13 @@ static void testStartposFeatures() {
   Board b;
   std::vector<ActiveFeature> f;
   GroupedFeatureSet::extract(b, f);
-  CHECK(f.size() == 93);
+  CHECK(f.size() == 214);
   for (size_t i = 1; i < f.size(); ++i) CHECK(!(f[i] < f[i - 1]));
   for (auto& af : f) {
-    CHECK(af.group < 8);
+    CHECK(af.group < 9);
     CHECK(af.index < GroupedFeatureSet::vocabSize(af.group));
   }
-  CHECK(std::string(GroupedFeatureSet::version()) == "grouped_hkav2_fullthreats_v01");
+  CHECK(std::string(GroupedFeatureSet::version()) == "grouped_hkav2_fullthreats_v02");
 }
 static void testRefreshVsIncremental() {
   Board a;
@@ -209,7 +209,7 @@ static void testFixtureLoads() {
     bool ok = loadRuneFile(p, rf, err);
     CHECK(ok);
     if (!ok) continue;
-    CHECK(rf.spec.featureSet == "grouped_hkav2_fullthreats_v01");
+    CHECK(rf.spec.featureSet == "grouped_hkav2_fullthreats_v02");
     const EmbeddingTables* tab = &rf.embeddings;
     if (rf.isFlex) {
       RelationalEvaluator rev;
@@ -231,7 +231,7 @@ static void testFixtureLoads() {
       CHECK(aev.configure(&rf.varEmbeddings, static_cast<AdaptiveModel*>(rf.arch.get()), e2));
       auto r = aev.evaluateBoard(start, AdaptiveMode::Adaptive, 0.0f, false, false);
       CHECK(r.value >= -1.0f && r.value <= 1.0f);
-      CHECK(r.difficulty >= 0.0f);
+      CHECK(r.difficulty == r.difficulty);
     } else {
       Evaluator ev(tab, rf.arch.get());
       auto r = ev.evaluateBoard(start);

@@ -32,7 +32,7 @@ def load_torch_adaptive(path):
     header, arrays = load_exported_arrays(path)
     m = AdaptiveModel(dim=header.get("token_dim", 16))
     sd = m.state_dict()
-    for g in range(8):
+    for g in range(9):
         sd[f"embedder.tables.{g}.weight"].copy_(torch.from_numpy(dequant(arrays[f"emb{g}"], header, f"emb{g}")))
     for ek, pk in ARCH_MAP:
         sd[pk].copy_(torch.from_numpy(dequant(arrays[ek], header, ek).reshape(sd[pk].shape)))
@@ -42,7 +42,7 @@ def load_torch_adaptive(path):
 def batch_for(fen):
     feats = extract_features(fen)
     ids, masks = [], []
-    for g in range(8):
+    for g in range(9):
         idx = [i for gg, i in feats if gg == g]
         ids.append(torch.tensor([idx if idx else [0]]))
         masks.append(torch.tensor([[1.0] * len(idx) if idx else [0.0]]))

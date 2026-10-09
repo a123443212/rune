@@ -5,7 +5,7 @@ import torch
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from training.features.python_features import NUM_GROUPS
+from training.features.python_features import NUM_GROUPS, VOCAB_SIZES
 from training.features.python_features import extract_features
 from training.rune_v13 import (
     IncrementalRelationalState,
@@ -92,7 +92,7 @@ def test_token_change_detection_from_spec():
 
 def test_move_type_token_changes_measured():
     torch.manual_seed(3)
-    tables = [torch.randn(512, 32) * 0.01 for _ in range(NUM_GROUPS)]
+    tables = [torch.randn(VOCAB_SIZES[g], 32) * 0.01 for g in range(NUM_GROUPS)]
     got = {}
     for name, (fa, fb) in MOVE_PAIRS.items():
         a = extract_features(fa)

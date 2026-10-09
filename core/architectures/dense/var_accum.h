@@ -9,7 +9,7 @@
 namespace rune {
 
 struct VarWidths {
-  int w[8] = {32, 32, 32, 32, 32, 32, 32, 32};
+  int w[9] = {32, 32, 32, 32, 32, 32, 32, 32, 32};
   static bool make(const std::vector<int>& dims, VarWidths& out, std::string& err);
   int total() const;
 };

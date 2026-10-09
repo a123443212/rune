@@ -20,10 +20,10 @@ def _rust_const(path, name):
 
 def test_feature_version_single_source():
     spec = _read("spec/VERSIONS.md")
-    assert "grouped_hkav2_fullthreats_v01" in spec
-    assert _rust_const("crates/rune-spec/src/lib.rs", "FEATURE_VERSION") == "grouped_hkav2_fullthreats_v01"
+    assert "grouped_hkav2_fullthreats_v02" in spec
+    assert _rust_const("crates/rune-spec/src/lib.rs", "FEATURE_VERSION") == "grouped_hkav2_fullthreats_v02"
     py = _read("training/features/python_features.py")
-    assert "grouped_hkav2_fullthreats_v01" in py
+    assert "grouped_hkav2_fullthreats_v02" in py
 
 
 def test_model_format_version_single_source():
