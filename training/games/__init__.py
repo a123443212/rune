@@ -1,5 +1,6 @@
 from training.games.chess import ChessGame
 from training.games.shogi import ShogiGame
+from training.games.xiangqi import XiangqiGame
 
 _GAMES = {}
 
@@ -21,3 +22,4 @@ def available():
 
 register(ChessGame())
 register(ShogiGame())
+register(XiangqiGame())
