@@ -4,11 +4,14 @@ from training.models.activations import apply_gate, clip01
 from training.models.attention import RuneAttention
 from training.models.heads import BucketedHead, GroupedEmbedder, SfnnHead, ValueWdlHead
 
-ARCH_IDS = ["RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-ATTN-MH4"]
+ARCH_IDS = ["RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-ATTN-MH4", "RUNE-MLP-S", "RUNE-SFNN-C", "RUNE-ATTN-DUAL"]
 
 EXPORT_ORDER = {
     "RUNE-SFNN": ["w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"],
     "RUNE-MLP": ["w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"],
+    "RUNE-MLP-S": ["w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"],
+    "RUNE-SFNN-C": ["w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"],
+    "RUNE-ATTN-DUAL": ["wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "wq2", "bq2", "wk2", "bk2", "wvv2", "bvv2", "gab2", "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"],
     "RUNE-ATTN": ["wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"],
     "RUNE-ATTN-GAB": ["wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"],
 }
@@ -32,9 +35,18 @@ class RuneFullModel(nn.Module):
         self.pair = pair
         self.embedder = GroupedEmbedder(self.game.vocabs, self.dim_n)
         phase_fn = self.game.phase_from_ids
+        self.attn2 = None
         if arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             self.attn = RuneAttention(use_gab=(arch_id == "RUNE-ATTN-GAB"), gate=gate,
                                       tokens=self.tokens_n, token_dim=self.dim_n)
+            self.head = BucketedHead(ValueWdlHead, pair=pair, input_dim=self.input_dim,
+                                     phase_fn=phase_fn) if buckets == 3 else ValueWdlHead(pair=pair, input_dim=self.input_dim)
+        elif arch_id == "RUNE-ATTN-DUAL":
+            self.attn = RuneAttention(use_gab=False, gate=gate,
+                                      tokens=self.tokens_n, token_dim=self.dim_n)
+            from training.models.dual_attention import RuneDualAttention
+            self.attn2 = RuneAttention(use_gab=False, gate=gate,
+                                       tokens=self.tokens_n, token_dim=self.dim_n)
             self.head = BucketedHead(ValueWdlHead, pair=pair, input_dim=self.input_dim,
                                      phase_fn=phase_fn) if buckets == 3 else ValueWdlHead(pair=pair, input_dim=self.input_dim)
         elif arch_id == "RUNE-ATTN-MH4":
@@ -46,6 +58,20 @@ class RuneFullModel(nn.Module):
             self.attn = None
             self.head = BucketedHead(ValueWdlHead, pair=pair, input_dim=self.input_dim,
                                      phase_fn=phase_fn) if buckets == 3 else ValueWdlHead(pair=pair, input_dim=self.input_dim)
+        elif arch_id == "RUNE-MLP-S":
+            from training.models.mlp_small import H1 as S_H1
+            from training.models.mlp_small import H2 as S_H2
+            self.attn = None
+            mk = lambda pair=pair, input_dim=None: ValueWdlHead(S_H1, S_H2, pair, input_dim or self.input_dim)
+            self.head = BucketedHead(mk, pair=pair, input_dim=self.input_dim,
+                                     phase_fn=phase_fn) if buckets == 3 else ValueWdlHead(S_H1, S_H2, pair, self.input_dim)
+        elif arch_id == "RUNE-SFNN-C":
+            from training.models.sfnn_compact import H1 as C_H1
+            from training.models.sfnn_compact import H2 as C_H2
+            self.attn = None
+            mkc = lambda pair=pair, input_dim=None: ValueWdlHead(C_H1, C_H2, pair, input_dim or self.input_dim)
+            self.head = BucketedHead(mkc, pair=pair, input_dim=self.input_dim,
+                                     phase_fn=phase_fn) if buckets == 3 else ValueWdlHead(C_H1, C_H2, pair, self.input_dim)
         else:
             self.attn = None
             self.head = BucketedHead(SfnnHead, pair=pair, input_dim=self.input_dim,
@@ -55,6 +81,8 @@ class RuneFullModel(nn.Module):
         x = self.embedder(group_ids, group_mask)
         if self.attn is not None:
             x = self.attn(x)
+        if self.attn2 is not None:
+            x = self.attn2(x)
         flat = x.reshape(x.size(0), -1)
         if self.buckets == 3:
             phase = self.head.phases_from_ids(group_ids, group_mask)
@@ -62,6 +90,35 @@ class RuneFullModel(nn.Module):
         return self.head(flat)
 
     def arch_tensors(self):
+        if self.arch_id == "RUNE-ATTN-DUAL":
+            d = {
+                "wq": self.attn.wq.weight.detach(),
+                "bq": self.attn.wq.bias.detach(),
+                "wk": self.attn.wk.weight.detach(),
+                "bk": self.attn.wk.bias.detach(),
+                "wvv": self.attn.wv.weight.detach(),
+                "bvv": self.attn.wv.bias.detach(),
+                "gab": self.attn.gab.detach(),
+                "wq2": self.attn2.wq.weight.detach(),
+                "bq2": self.attn2.wq.bias.detach(),
+                "wk2": self.attn2.wk.weight.detach(),
+                "bk2": self.attn2.wk.bias.detach(),
+                "wvv2": self.attn2.wv.weight.detach(),
+                "bvv2": self.attn2.wv.bias.detach(),
+                "gab2": self.attn2.gab.detach(),
+            }
+            heads = self.head.heads if self.buckets == 3 else [self.head]
+            for b, h in enumerate(heads):
+                suffix = f"_b{b}" if self.buckets == 3 else ""
+                d["w1" + suffix] = h.fc1.weight.detach()
+                d["b1" + suffix] = h.fc1.bias.detach()
+                d["w2" + suffix] = h.fc2.weight.detach()
+                d["b2" + suffix] = h.fc2.bias.detach()
+                d["wvo" + suffix] = h.fcv.weight.detach()
+                d["bvo" + suffix] = h.fcv.bias.detach()
+                d["wwdl" + suffix] = h.fcwdl.weight.detach()
+                d["bwdl" + suffix] = h.fcwdl.bias.detach()
+            return d
         if self.arch_id == "RUNE-ATTN-MH4":
             d = self.attn.arch_tensors()
             heads = self.head.heads if self.buckets == 3 else [self.head]
@@ -143,6 +200,9 @@ class RuneFullModel(nn.Module):
         if self.arch_id in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
             attention = "gated_linear"
             gab = "learned" if self.arch_id == "RUNE-ATTN-GAB" else "none"
+        if self.arch_id == "RUNE-ATTN-DUAL":
+            attention = "gated_linear_x2"
+            gab = "none"
         if self.arch_id == "RUNE-ATTN-MH4":
             attention = "multi_head"
             gab = "per_head"

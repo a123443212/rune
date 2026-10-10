@@ -7,12 +7,14 @@ use crate::accumulator::Tables;
 use crate::error::{Result, RuntimeError};
 use crate::features::CONTEXT_DIM;
 use crate::mixer::{HeadWeights, MixerWeights};
+use crate::mixer_dual::DualMixer;
 use crate::mixer_mh::MultiHeadMixer;
 use crate::model_config::ResolvedModelConfig;
 
 pub(crate) struct SparseModel {
     pub tables: Tables,
     pub mixer: Option<MixerWeights>,
+    pub dual: Option<DualMixer>,
     pub multi_head: Option<MultiHeadMixer>,
     pub heads: Vec<HeadWeights>,
 }
@@ -68,7 +70,7 @@ impl SparseModel {
 
         let has_mixer = matches!(
             config.architecture_id.as_str(),
-            "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-REL-02"
+            "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-REL-02" | "RUNE-REL-LITE" | "RUNE-ATTN-DUAL"
         );
         let mixer = if has_mixer {
             let wq = need_vec(&model.arrays, "wq")?;
@@ -93,7 +95,7 @@ impl SparseModel {
             };
             let gab = match model.arrays.get(gab_name) {
                 Some(values) => values.clone(),
-                None if config.architecture_id == "RUNE-ATTN" => {
+                None if config.architecture_id == "RUNE-ATTN" || config.architecture_id == "RUNE-ATTN-DUAL" => {
                     vec![0.0; config.tokens * config.tokens]
                 }
                 None => return Err(RuntimeError::TensorMissing(gab_name.to_string())),
@@ -155,6 +157,48 @@ impl SparseModel {
                 gate,
                 alpha,
             })
+        } else {
+            None
+        };
+
+        let dual = if config.architecture_id == "RUNE-ATTN-DUAL" {
+            let base = mixer.clone().ok_or_else(|| RuntimeError::Shape("dual base".to_string()))?;
+            let wq = need_vec(&model.arrays, "wq2")?;
+            let bq = need_vec(&model.arrays, "bq2")?;
+            let wk = need_vec(&model.arrays, "wk2")?;
+            let bk = need_vec(&model.arrays, "bk2")?;
+            let wv = need_vec(&model.arrays, "wvv2").or_else(|_| need_vec(&model.arrays, "wv2"))?;
+            let bv = need_vec(&model.arrays, "bvv2").or_else(|_| need_vec(&model.arrays, "bv2"))?;
+            if wq.len() != config.dim * config.dim || wk.len() != config.dim * config.dim || wv.len() != config.dim * config.dim {
+                return Err(RuntimeError::Shape("dual mat".to_string()));
+            }
+            if bq.len() != config.dim || bk.len() != config.dim || bv.len() != config.dim {
+                return Err(RuntimeError::Shape("dual bias".to_string()));
+            }
+            let gab2 = match model.arrays.get("gab2") {
+                Some(v) => v.clone(),
+                None => vec![0.0; config.tokens * config.tokens],
+            };
+            if gab2.len() != config.tokens * config.tokens {
+                return Err(RuntimeError::Shape("gab2".to_string()));
+            }
+            let second = MixerWeights {
+                tokens: config.tokens,
+                dim: config.dim,
+                wq,
+                bq,
+                wk,
+                bk,
+                wv,
+                bv,
+                gab: gab2,
+                dyn_u: Vec::new(),
+                dyn_w: Vec::new(),
+                ctx_dim: 0,
+                gate: base.gate,
+                alpha: 1.0,
+            };
+            Some(DualMixer { first: base, second })
         } else {
             None
         };
@@ -278,6 +322,7 @@ impl SparseModel {
         Ok(Self {
             tables,
             mixer,
+            dual,
             multi_head,
             heads,
         })

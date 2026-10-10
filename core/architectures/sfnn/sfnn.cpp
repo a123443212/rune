@@ -68,13 +68,13 @@ void SfnnBaseline::forward(const float* tokens, float& value, float* wdl, int ph
     return;
   }
   float* hidden1Values = scratch_.data();
-  float* hidden2Values = scratch_.data() + kH1;
-  simd::matVecClipped(head.w1.data(), tokens, head.b1.data(), hidden1Values, kH1, kIn);
-  simd::matVecClipped(head.w2.data(), hidden1Values, head.b2.data(), hidden2Values, kH2, kH1);
+  float* hidden2Values = scratch_.data() + hidden1;
+  simd::matVecClipped(head.w1.data(), tokens, head.b1.data(), hidden1Values, hidden1, kIn);
+  simd::matVecClipped(head.w2.data(), hidden1Values, head.b2.data(), hidden2Values, hidden2, hidden1);
   float result = head.bvo[0];
-  for (int i = 0; i < kH2; ++i) result += head.wvo[i] * hidden2Values[i];
+  for (int i = 0; i < hidden2; ++i) result += head.wvo[i] * hidden2Values[i];
   value = std::tanh(result);
-  simd::matVec(head.wwdl.data(), hidden2Values, head.bwdl.data(), wdl, 3, kH2);
+  simd::matVec(head.wwdl.data(), hidden2Values, head.bwdl.data(), wdl, 3, hidden2);
 }
 
 size_t SfnnBaseline::parameterCount() const {

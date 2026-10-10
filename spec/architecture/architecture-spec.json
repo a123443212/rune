@@ -80,6 +80,52 @@
    ]
   },
   {
+   "dims": [
+    24
+   ],
+   "gate": [
+    "clip",
+    "hard_sigmoid",
+    "screlu"
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-REL-LITE",
+   "tokens": [
+    6
+   ]
+  },
+  {
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 64->16",
+   "id": "RUNE-MLP-S",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->16",
+   "id": "RUNE-SFNN-C",
+   "tokens": [
+    8
+   ]
+  },
+  {
+   "attention": "gated_linear_x2",
+   "dims": [
+    32
+   ],
+   "head": "value_wdl 128->32",
+   "id": "RUNE-ATTN-DUAL",
+   "tokens": [
+    8
+   ]
+  },
+  {
    "head": "dense variable",
    "id": "RUNE-03-*",
    "tokens": [

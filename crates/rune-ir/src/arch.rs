@@ -7,10 +7,14 @@ pub fn arch_family(arch: &str) -> &'static str {
         "adaptive"
     } else if arch == "RUNE-SFNN"
         || arch == "RUNE-MLP"
+        || arch == "RUNE-MLP-S"
+        || arch == "RUNE-SFNN-C"
         || arch == "RUNE-ATTN"
         || arch == "RUNE-ATTN-GAB"
+        || arch == "RUNE-ATTN-DUAL"
         || arch == "RUNE-ATTN-MH4"
         || arch == "RUNE-REL-02"
+        || arch == "RUNE-REL-LITE"
         || arch == "RUNE-03"
         || arch.starts_with("RUNE-03-")
     {

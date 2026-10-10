@@ -1,13 +1,8 @@
-#include "core/architectures/attention/attention.h"
-
+#include "core/architectures/attention/dual_attention.h"
 #include <cmath>
-#include <string>
-
 namespace rune {
-
 namespace {
-
-void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
+void initDual(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
   v.assign(n, 0.0f);
   for (size_t i = 0; i < n; ++i) {
     s = s * 6364136223846793005ULL + 1442695040888963407ULL;
@@ -15,64 +10,23 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
     v[i] = static_cast<float>((u - 0.5) * 2.0 * scale);
   }
 }
-
-}  // namespace
-
-RuneAttentionBlock::RuneAttentionBlock(bool useGab, GateFn gate) : useGab_(useGab), gate_(gate) {
-  uint64_t s = useGab ? 999 : 555;
-  initVec(wq, 32 * 32, s, 0.08f);
-  initVec(bq, 32, s, 0.01f);
-  initVec(wk, 32 * 32, s, 0.08f);
-  initVec(bk, 32, s, 0.01f);
-  initVec(wv, 32 * 32, s, 0.08f);
-  initVec(bv, 32, s, 0.01f);
-  gab.assign(64, 0.0f);
-  scratch_.assign(8 * 32 * 3 + 64 + 8 * 32, 0.0f);
 }
-
-void RuneAttentionBlock::forward(const float* x, float* out) const {
-  float* q = scratch_.data();
-  float* k = scratch_.data() + 256;
-  float* v = scratch_.data() + 512;
-  float* s = scratch_.data() + 768;
-  float* y = scratch_.data() + 832;
-  for (int t = 0; t < 8; ++t) {
-    simd::matVec(wq.data(), x + t * 32, bq.data(), q + t * 32, 32, 32);
-    simd::matVec(wk.data(), x + t * 32, bk.data(), k + t * 32, 32, 32);
-    simd::matVec(wv.data(), x + t * 32, bv.data(), v + t * 32, 32, 32);
-  }
-  simd::matMulTT(q, k, s, 8, 8, 32);
-  for (int i = 0; i < 64; ++i) {
-    float val = s[i] + (useGab_ ? gab[i] : 0.0f);
-    s[i] = applyGate(gate_, val);
-  }
-  simd::matMul(s, v, y, 8, 32, 8);
-  for (int i = 0; i < 256; ++i) out[i] = x[i] + y[i];
-}
-
-size_t RuneAttentionBlock::parameterCount() const {
-  size_t n = wq.size() + bq.size() + wk.size() + bk.size() + wv.size() + bv.size();
-  if (useGab_) n += gab.size();
-  return n;
-}
-
-RuneAttnModel::RuneAttnModel() : RuneAttnModel(false) {}
-
-RuneAttnModel::RuneAttnModel(bool useGab, GateFn gate) : attn(useGab, gate), useGab_(useGab), gate_(gate) {
-  uint64_t s = useGab ? 4242 : 3131;
+RuneDualAttentionModel::RuneDualAttentionModel() : RuneDualAttentionModel(GateFn::Clip) {}
+RuneDualAttentionModel::RuneDualAttentionModel(GateFn gate)
+    : attn1(false, gate), attn2(false, gate), gate_(gate) {
+  uint64_t s = 7171;
   heads_.resize(1);
-  initVec(heads_[0].w1, 128 * 256, s, 0.05f);
-  initVec(heads_[0].b1, 128, s, 0.01f);
-  initVec(heads_[0].w2, 32 * 128, s, 0.05f);
-  initVec(heads_[0].b2, 32, s, 0.01f);
-  initVec(heads_[0].wvo, 1 * 32, s, 0.05f);
-  initVec(heads_[0].bvo, 1, s, 0.01f);
-  initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
-  initVec(heads_[0].bwdl, 3, s, 0.01f);
-  scratch_.assign(256 + 128 + 256 + 32, 0.0f);
+  initDual(heads_[0].w1, 128 * 256, s, 0.05f);
+  initDual(heads_[0].b1, 128, s, 0.01f);
+  initDual(heads_[0].w2, 32 * 128, s, 0.05f);
+  initDual(heads_[0].b2, 32, s, 0.01f);
+  initDual(heads_[0].wvo, 1 * 32, s, 0.05f);
+  initDual(heads_[0].bvo, 1, s, 0.01f);
+  initDual(heads_[0].wwdl, 3 * 32, s, 0.05f);
+  initDual(heads_[0].bwdl, 3, s, 0.01f);
+  scratch_.assign(256 + 256 + 128 + 256 + 32, 0.0f);
 }
-
-const HeadBucket& RuneAttnModel::headFor(int phase) const {
+const HeadBucket& RuneDualAttentionModel::headFor(int phase) const {
   if (heads_.size() > 1) {
     int b = phase;
     if (b < 0) b = 0;
@@ -81,18 +35,19 @@ const HeadBucket& RuneAttnModel::headFor(int phase) const {
   }
   return heads_[0];
 }
-
-void RuneAttnModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+void RuneDualAttentionModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
   int h1n = static_cast<int>(h.b1.size());
   int h2n = static_cast<int>(h.b2.size());
   bool isPair = (h.w2.size() == static_cast<size_t>(h2n) * static_cast<size_t>(h1n) * 2);
-  float* mixed = scratch_.data();
-  attn.forward(tokens, mixed);
+  float* mid = scratch_.data();
+  float* mixed = scratch_.data() + 256;
+  attn1.forward(tokens, mid);
+  attn2.forward(mid, mixed);
   if (isPair) {
-    float* pre = scratch_.data() + 256;
-    float* h1p = scratch_.data() + 256 + h1n;
-    float* h2 = scratch_.data() + 256 + h1n + h1n * 2;
+    float* pre = scratch_.data() + 512;
+    float* h1p = scratch_.data() + 512 + h1n;
+    float* h2 = scratch_.data() + 512 + h1n + h1n * 2;
     simd::matVec(h.w1.data(), mixed, h.b1.data(), pre, h1n, 256);
     for (int i = 0; i < h1n; ++i) {
       float c = pre[i] < 0.0f ? 0.0f : (pre[i] > 1.0f ? 1.0f : pre[i]);
@@ -106,8 +61,8 @@ void RuneAttnModel::forward(const float* tokens, float& value, float* wdl, int p
     simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
     return;
   }
-  float* h1 = scratch_.data() + 256;
-  float* h2 = scratch_.data() + 256 + h1n;
+  float* h1 = scratch_.data() + 512;
+  float* h2 = scratch_.data() + 512 + h1n;
   simd::matVecClipped(h.w1.data(), mixed, h.b1.data(), h1, h1n, 256);
   simd::matVecClipped(h.w2.data(), h1, h.b2.data(), h2, h2n, h1n);
   float vv = h.bvo[0];
@@ -115,25 +70,26 @@ void RuneAttnModel::forward(const float* tokens, float& value, float* wdl, int p
   value = std::tanh(vv);
   simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
 }
-
-size_t RuneAttnModel::parameterCount() const {
-  size_t n = attn.parameterCount();
+size_t RuneDualAttentionModel::parameterCount() const {
+  size_t n = attn1.parameterCount() + attn2.parameterCount();
   for (const HeadBucket& h : heads_) {
     n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
          h.bvo.size() + h.wwdl.size() + h.bwdl.size();
   }
   return n;
 }
-
-size_t RuneAttnModel::modelSizeBytes() const { return parameterCount() * 4; }
-
-void RuneAttnModel::getTensors(std::vector<std::string>& names,
-                               std::vector<std::vector<int>>& shapes,
-                               std::vector<const float*>& data) const {
-  names = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab"};
-  shapes = {{32, 32}, {32}, {32, 32}, {32}, {32, 32}, {32}, {8, 8}};
-  data = {attn.wq.data(), attn.bq.data(), attn.wk.data(), attn.bk.data(), attn.wv.data(),
-          attn.bv.data(), attn.gab.data()};
+size_t RuneDualAttentionModel::modelSizeBytes() const { return parameterCount() * 4; }
+void RuneDualAttentionModel::getTensors(std::vector<std::string>& names,
+                                        std::vector<std::vector<int>>& shapes,
+                                        std::vector<const float*>& data) const {
+  names = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab",
+           "wq2", "bq2", "wk2", "bk2", "wvv2", "bvv2", "gab2"};
+  shapes = {{32, 32}, {32}, {32, 32}, {32}, {32, 32}, {32}, {8, 8},
+            {32, 32}, {32}, {32, 32}, {32}, {32, 32}, {32}, {8, 8}};
+  data = {attn1.wq.data(), attn1.bq.data(), attn1.wk.data(), attn1.bk.data(), attn1.wv.data(),
+          attn1.bv.data(), attn1.gab.data(),
+          attn2.wq.data(), attn2.bq.data(), attn2.wk.data(), attn2.bk.data(), attn2.wv.data(),
+          attn2.bv.data(), attn2.gab.data()};
   for (size_t b = 0; b < heads_.size(); ++b) {
     std::string suffix = heads_.size() > 1 ? "_b" + std::to_string(b) : "";
     const HeadBucket& h = heads_[b];
@@ -147,14 +103,14 @@ void RuneAttnModel::getTensors(std::vector<std::string>& names,
                              h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
   }
 }
-
-bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
-  std::vector<std::string> base = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "w1", "b1",
-                                   "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
+bool RuneDualAttentionModel::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
+  std::vector<std::string> base = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab",
+                                   "wq2", "bq2", "wk2", "bk2", "wvv2", "bvv2", "gab2",
+                                   "w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
   std::vector<std::string> want = base;
   if (names.size() > base.size()) {
     want.clear();
-    want.insert(want.end(), base.begin(), base.begin() + 7);
+    want.insert(want.end(), base.begin(), base.begin() + 14);
     for (int b = 0; b < 3; ++b) {
       std::string suffix = "_b" + std::to_string(b);
       want.insert(want.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
@@ -165,15 +121,17 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
   for (size_t i = 0; i < want.size(); ++i) {
     if (names[i] != want[i]) return false;
   }
-  std::vector<std::vector<float>*> slots = {&attn.wq, &attn.bq, &attn.wk, &attn.bk, &attn.wv,
-                                            &attn.bv, &attn.gab};
+  std::vector<std::vector<float>*> slots = {&attn1.wq, &attn1.bq, &attn1.wk, &attn1.bk, &attn1.wv,
+                                            &attn1.bv, &attn1.gab,
+                                            &attn2.wq, &attn2.bq, &attn2.wk, &attn2.bk, &attn2.wv,
+                                            &attn2.bv, &attn2.gab};
   size_t off = 0;
   for (auto* slot : slots) {
     if (off + slot->size() > flat.size()) return false;
-    for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+    for (size_t k = 0; k < slot->size(); ++k) (*slot)[k] = flat[off + k];
     off += slot->size();
   }
-  size_t nbuckets = (want.size() - 7) / 8;
+  size_t nbuckets = (want.size() - 14) / 8;
   size_t mixTotal = 0;
   for (auto* slot : slots) mixTotal += slot->size();
   size_t remain = flat.size() > mixTotal ? flat.size() - mixTotal : 0;
@@ -197,24 +155,22 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
     std::vector<std::vector<float>*> hs = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
     for (auto* slot : hs) {
       if (off + slot->size() > flat.size()) return false;
-      for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+      for (size_t k = 0; k < slot->size(); ++k) (*slot)[k] = flat[off + k];
       off += slot->size();
     }
     heads_.push_back(std::move(h));
   }
   return off == flat.size();
 }
-
-ModelSpec RuneAttnModel::spec() const {
+ModelSpec RuneDualAttentionModel::spec() const {
   ModelSpec s;
   s.arch = archId();
   bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
   s.archVersion = isPair ? "0.2.0" : archVersion();
-  s.attention = "gated_linear";
-  s.geometricBias = useGab_ ? "learned" : "none";
+  s.attention = "gated_linear_x2";
+  s.geometricBias = "none";
   s.gate = gateName(gate_);
   s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }
-
 }

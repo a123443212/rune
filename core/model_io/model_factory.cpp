@@ -1,17 +1,23 @@
 #include "core/model_io/model_factory.h"
 
 #include "core/architectures/attention/attention.h"
+#include "core/architectures/attention/dual_attention.h"
 #include "core/architectures/attention/multi_head.h"
 #include "core/architectures/mlp/mlp.h"
+#include "core/architectures/mlp/mlp_small.h"
 #include "core/architectures/sfnn/sfnn.h"
+#include "core/architectures/sfnn/sfnn_compact.h"
 
 namespace rune {
 
 std::unique_ptr<IArchitecture> createArchitecture(const std::string& archId, GateFn gate) {
   if (archId == "RUNE-MLP") return std::unique_ptr<IArchitecture>(new GroupedMlp());
+  if (archId == "RUNE-MLP-S") return std::unique_ptr<IArchitecture>(new GroupedMlpSmall());
   if (archId == "RUNE-SFNN") return std::unique_ptr<IArchitecture>(new SfnnBaseline());
+  if (archId == "RUNE-SFNN-C") return std::unique_ptr<IArchitecture>(new SfnnCompact());
   if (archId == "RUNE-ATTN") return std::unique_ptr<IArchitecture>(new RuneAttnModel(false, gate));
   if (archId == "RUNE-ATTN-GAB") return std::unique_ptr<IArchitecture>(new RuneAttnModel(true, gate));
+  if (archId == "RUNE-ATTN-DUAL") return std::unique_ptr<IArchitecture>(new RuneDualAttentionModel(gate));
   if (archId == "RUNE-ATTN-MH4") return std::unique_ptr<IArchitecture>(new RuneAttnMhModel(gate));
   return nullptr;
 }

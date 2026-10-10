@@ -453,7 +453,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   std::string arch = out.spec.arch;
   out.isInt8 = (out.spec.quantization == "int8");
   out.isInt16 = (out.spec.quantization == "int16");
-  out.isFlex = (arch == "RUNE-REL-02");
+  out.isFlex = (arch == "RUNE-REL-02" || arch == "RUNE-REL-LITE");
   out.isDense = isDenseArch(arch);
   out.isAdaptive = isAdaptiveArch(arch);
   out.isUncertainty = isUncertaintyArch(arch);
@@ -562,7 +562,17 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
       err = "context dim mismatch";
       return false;
     }
-    out.arch = createRelational(bs, err);
+    if (arch == "RUNE-REL-LITE") {
+      FlexBuildSpec lite;
+      lite.tokens = 6;
+      lite.dim = 24;
+      lite.gate = out.spec.gate;
+      lite.alpha = out.spec.alpha;
+      lite.dynamicBias = false;
+      out.arch = createRelational(lite, err);
+    } else {
+      out.arch = createRelational(bs, err);
+    }
     if (!out.arch) {
       if (err.empty()) err = "relational build failed";
       return false;

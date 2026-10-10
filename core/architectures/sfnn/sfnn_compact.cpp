@@ -1,14 +1,9 @@
-#include "core/architectures/mlp/mlp.h"
-
+#include "core/architectures/sfnn/sfnn_compact.h"
 #include <cmath>
-#include <string>
-#include "core/kernels/fused.h"
-
+#include "core/simd/simd.h"
 namespace rune {
-
 namespace {
-
-void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
+void initCompact(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
   v.assign(n, 0.0f);
   for (size_t i = 0; i < n; ++i) {
     s = s * 6364136223846793005ULL + 1442695040888963407ULL;
@@ -16,24 +11,21 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
     v[i] = static_cast<float>((u - 0.5) * 2.0 * scale);
   }
 }
-
-}  // namespace
-
-GroupedMlp::GroupedMlp() {
-  uint64_t s = 12345;
-  heads_.resize(1);
-  initVec(heads_[0].w1, 128 * 256, s, 0.05f);
-  initVec(heads_[0].b1, 128, s, 0.01f);
-  initVec(heads_[0].w2, 32 * 128, s, 0.05f);
-  initVec(heads_[0].b2, 32, s, 0.01f);
-  initVec(heads_[0].wvo, 1 * 32, s, 0.05f);
-  initVec(heads_[0].bvo, 1, s, 0.01f);
-  initVec(heads_[0].wwdl, 3 * 32, s, 0.05f);
-  initVec(heads_[0].bwdl, 3, s, 0.01f);
-  scratch_.assign(128 + 256 + 32, 0.0f);
 }
-
-const HeadBucket& GroupedMlp::headFor(int phase) const {
+SfnnCompact::SfnnCompact() {
+  uint64_t s = 6107;
+  heads_.resize(1);
+  initCompact(heads_[0].w1, kH1 * kIn, s, 0.04f);
+  initCompact(heads_[0].b1, kH1, s, 0.01f);
+  initCompact(heads_[0].w2, kH2 * kH1, s, 0.05f);
+  initCompact(heads_[0].b2, kH2, s, 0.01f);
+  initCompact(heads_[0].wvo, kH2, s, 0.05f);
+  initCompact(heads_[0].bvo, 1, s, 0.01f);
+  initCompact(heads_[0].wwdl, 3 * kH2, s, 0.05f);
+  initCompact(heads_[0].bwdl, 3, s, 0.01f);
+  scratch_.assign(kH1 + kH1 * 2 + kH2, 0.0f);
+}
+const HeadBucket& SfnnCompact::headFor(int phase) const {
   if (heads_.size() > 1) {
     int b = phase;
     if (b < 0) b = 0;
@@ -42,8 +34,7 @@ const HeadBucket& GroupedMlp::headFor(int phase) const {
   }
   return heads_[0];
 }
-
-void GroupedMlp::forward(const float* tokens, float& value, float* wdl, int phase) const {
+void SfnnCompact::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
   int h1n = static_cast<int>(h.b1.size());
   int h2n = static_cast<int>(h.b2.size());
@@ -74,8 +65,7 @@ void GroupedMlp::forward(const float* tokens, float& value, float* wdl, int phas
   value = std::tanh(v);
   simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
 }
-
-size_t GroupedMlp::parameterCount() const {
+size_t SfnnCompact::parameterCount() const {
   size_t n = 0;
   for (const HeadBucket& h : heads_) {
     n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
@@ -83,11 +73,10 @@ size_t GroupedMlp::parameterCount() const {
   }
   return n;
 }
-
-size_t GroupedMlp::modelSizeBytes() const { return parameterCount() * 4; }
-void GroupedMlp::getTensors(std::vector<std::string>& names,
-                               std::vector<std::vector<int>>& shapes,
-                               std::vector<const float*>& data) const {
+size_t SfnnCompact::modelSizeBytes() const { return parameterCount() * 4; }
+void SfnnCompact::getTensors(std::vector<std::string>& names,
+                             std::vector<std::vector<int>>& shapes,
+                             std::vector<const float*>& data) const {
   names.clear();
   shapes.clear();
   data.clear();
@@ -98,14 +87,13 @@ void GroupedMlp::getTensors(std::vector<std::string>& names,
                                "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
     int h1n = static_cast<int>(h.b1.size());
     int h2n = static_cast<int>(h.b2.size());
-    int w2cols = h1n == 0 ? 0 : static_cast<int>(h.w2.size() / static_cast<size_t>(h2n));
-    shapes.insert(shapes.end(), {{h1n, 256}, {h1n}, {h2n, w2cols}, {h2n}, {1, h2n}, {1}, {3, h2n}, {3}});
+    int w2cols = h2n == 0 ? 0 : static_cast<int>(h.w2.size() / static_cast<size_t>(h2n));
+    shapes.insert(shapes.end(), {{h1n, kIn}, {h1n}, {h2n, w2cols}, {h2n}, {1, h2n}, {1}, {3, h2n}, {3}});
     data.insert(data.end(), {h.w1.data(), h.b1.data(), h.w2.data(), h.b2.data(), h.wvo.data(),
                              h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
   }
 }
-
-bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
+bool SfnnCompact::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
   std::vector<std::string> base = {"w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"};
   size_t nbuckets = 1;
   if (names.size() > base.size()) {
@@ -121,23 +109,23 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
   for (size_t i = 0; i < base.size(); ++i) {
     if (names[i] != base[i]) return false;
   }
-  size_t singlePer = 128 * 256 + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
-  size_t pairPer = 128 * 256 + 128 + 32 * 256 + 32 + 32 + 1 + 3 * 32 + 3;
+  size_t singlePer = kH1 * kIn + kH1 + kH2 * kH1 + kH2 + kH2 + 1 + 3 * kH2 + 3;
+  size_t pairPer = kH1 * kIn + kH1 + kH2 * kH1 * 2 + kH2 + kH2 + 1 + 3 * kH2 + 3;
   bool isPair = (flat.size() == pairPer * nbuckets);
   bool isSingle = (flat.size() == singlePer * nbuckets);
   if (!isPair && !isSingle) return false;
-  size_t w2n = isPair ? 32 * 256 : 32 * 128;
+  size_t w2n = isPair ? kH2 * kH1 * 2 : kH2 * kH1;
   heads_.clear();
   size_t off = 0;
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
-    h.w1.assign(128 * 256, 0.0f);
-    h.b1.assign(128, 0.0f);
+    h.w1.assign(kH1 * kIn, 0.0f);
+    h.b1.assign(kH1, 0.0f);
     h.w2.assign(w2n, 0.0f);
-    h.b2.assign(32, 0.0f);
-    h.wvo.assign(32, 0.0f);
+    h.b2.assign(kH2, 0.0f);
+    h.wvo.assign(kH2, 0.0f);
     h.bvo.assign(1, 0.0f);
-    h.wwdl.assign(3 * 32, 0.0f);
+    h.wwdl.assign(3 * kH2, 0.0f);
     h.bwdl.assign(3, 0.0f);
     std::vector<std::vector<float>*> slots = {&h.w1, &h.b1, &h.w2, &h.b2,
                                               &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
@@ -150,8 +138,7 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
   }
   return off == flat.size();
 }
-
-ModelSpec GroupedMlp::spec() const {
+ModelSpec SfnnCompact::spec() const {
   ModelSpec s;
   s.arch = archId();
   bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
@@ -161,5 +148,4 @@ ModelSpec GroupedMlp::spec() const {
   s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }
-
 }

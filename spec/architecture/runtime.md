@@ -13,6 +13,10 @@ machine-readable form; this text explains it.
 | RUNE-ATTN-GAB | 8 | 32 | gated_linear | learned gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
 | RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
 | RUNE-REL-02 | 6/8/10 | 24/32/40 | gated_relational | static/dynamic | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-MLP-S | 8 | 32 | none | none | clip | value_wdl 64->16 | active |
+| RUNE-SFNN-C | 8 | 32 | none | none | clip | value_wdl 128->16 | active |
+| RUNE-ATTN-DUAL | 8 | 32 | gated_linear_x2 | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-REL-LITE | 6 | 24 | gated_relational | static | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
 | RUNE-03-<variant> | 8 | per-group token_dims | pooled | none | clip | dense head_h1->head_h2 | frozen, screening only |
 | RUNE-04 | 8 | 8..64 uniform | adaptive cheap+refine | threshold routing | clip | cheap_hidden + ref_h1->ref_h2 | frozen, screening only |
 | RUNE-05 | 8 | 8..64 uniform | adaptive + uncertainty | threshold routing | clip | RUNE-04 + uncertainty head | frozen, screening only |
@@ -27,6 +31,20 @@ clip01, hard_sigmoid `clamp(0.2*s+0.5,0,1)`, or screlu `clip01(s)^2`. Mix `Y=S@V
 Residual `out=x+alpha*Y`.
 
 No softmax, no scaling by sqrt(d), no layer norm in this generation.
+
+## Dual mixer (RUNE-ATTN-DUAL, normative order)
+
+Two gated_linear layers in sequence. Layer 1 uses `wq,bq,wk,bk,wvv,bvv,gab`
+applied per mixer order with `alpha=1.0` and no context. Layer 2 uses
+`wq2,bq2,wk2,bk2,wvv2,bvv2,gab2` applied to layer 1 output with same gate
+and `alpha=1.0`. Tensors `gab,gab2` are `[8,8]` zeros when unused.
+Export order lists layer 1 tensors then layer 2 tensors then head.
+
+## Lite relational (RUNE-REL-LITE, normative order)
+
+Same mixer and head order as RUNE-REL-02 with fixed `tokens=6, dim=24`,
+static `gabS` only, no `dynU/dynW`. Context input is accepted but ignored
+for bias. Head is `value_wdl 128->32` on flattened `6*24=144` inputs.
 
 ## Multi-head mixer (RUNE-ATTN-MH4, normative order)
 

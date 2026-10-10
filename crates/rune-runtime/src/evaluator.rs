@@ -7,6 +7,7 @@ use crate::board::Board;
 use crate::error::{Result, RuntimeError};
 use crate::features::{compute_context, diff_features, extract_features};
 use crate::mixer::{HeadTrace, HeadWeights, MixerTrace, MixerWeights};
+use crate::mixer_dual::DualMixer;
 use crate::mixer_mh::MultiHeadMixer;
 use crate::model_config::{resolve_model_config, ExecutionTarget};
 use crate::evaluator_spatial::SpatialExecutor;
@@ -35,6 +36,7 @@ pub struct FullTrace {
 pub struct Evaluator {
     tables: Tables,
     mixer: Option<MixerWeights>,
+    dual: Option<DualMixer>,
     mh: Option<MultiHeadMixer>,
     heads: Vec<HeadWeights>,
     pub(crate) spatial: Option<SpatialExecutor>,
@@ -65,11 +67,11 @@ impl Evaluator {
             let tables = Tables::zeros(dim, vocabs);
             let spatial = SpatialExecutor::from_model(m)?;
             let acc = Accumulator::new(tokens, dim);
-            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), spatial: Some(spatial), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
+            return Ok(Evaluator { tables, mixer: None, dual: None, mh: None, heads: Vec::new(), spatial: Some(spatial), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
         }
         let sparse = SparseModel::from_model(m, &config)?;
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables: sparse.tables, mixer: sparse.mixer, mh: sparse.multi_head, heads: sparse.heads, spatial: None, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables: sparse.tables, mixer: sparse.mixer, dual: sparse.dual, mh: sparse.multi_head, heads: sparse.heads, spatial: None, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id
@@ -179,6 +181,11 @@ impl Evaluator {
             mx.forward(tok, self.active_ctx(), &mut out, None);
             mixed = out;
         }
+        if let Some(du) = &self.dual {
+            let mut out = vec![0.0_f32; self.tokens * self.dim];
+            du.forward(&mixed, &mut out);
+            mixed = out;
+        }
         if let Some(mh) = &self.mh {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
             mh.forward(tok, &mut out);
@@ -194,6 +201,11 @@ impl Evaluator {
         if let Some(mx) = &self.mixer {
             let mut out = vec![0.0_f32; self.tokens * self.dim];
             mx.forward(&tok, self.active_ctx(), &mut out, None);
+            mixed = out;
+        }
+        if let Some(du) = &self.dual {
+            let mut out = vec![0.0_f32; self.tokens * self.dim];
+            du.forward(&mixed, &mut out);
             mixed = out;
         }
         if let Some(mh) = &self.mh {

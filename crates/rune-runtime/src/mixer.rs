@@ -52,6 +52,10 @@ impl MixerWeights {
     pub fn forward(&self, x: &[f32], ctx: Option<&[f32]>, out: &mut [f32], trace: Option<&mut MixerTrace>) {
         let t = self.tokens;
         let d = self.dim;
+        if trace.is_none() && t == 8 && d == 32 && !self.dyn_active(ctx) {
+            self.forward_fast_8x32(x, out);
+            return;
+        }
         let mut q = vec![0.0_f32; t * d];
         let mut k = vec![0.0_f32; t * d];
         let mut vv = vec![0.0_f32; t * d];
@@ -90,6 +94,36 @@ impl MixerWeights {
             tr.scores = s;
             tr.gates = g;
             tr.mixed = out.to_vec();
+        }
+    }
+    fn forward_fast_8x32(&self, x: &[f32], out: &mut [f32]) {
+        let mut q = [0.0_f32; 256];
+        let mut k = [0.0_f32; 256];
+        let mut vv = [0.0_f32; 256];
+        for i in 0..8 {
+            let xb = &x[i * 32..(i + 1) * 32];
+            let qb = &mut q[i * 32..(i + 1) * 32];
+            let kb = &mut k[i * 32..(i + 1) * 32];
+            let vb = &mut vv[i * 32..(i + 1) * 32];
+            kernel::mat_vec(&self.wq, xb, Some(&self.bq), qb, 32, 32);
+            kernel::mat_vec(&self.wk, xb, Some(&self.bk), kb, 32, 32);
+            kernel::mat_vec(&self.wv, xb, Some(&self.bv), vb, 32, 32);
+        }
+        let mut g = [0.0_f32; 64];
+        for a in 0..8 {
+            for b in 0..8 {
+                let mut acc = 0.0_f32;
+                for t in 0..32 {
+                    acc += q[a * 32 + t] * k[b * 32 + t];
+                }
+                let val = acc + self.gab[a * 8 + b];
+                g[a * 8 + b] = self.gate.apply(val);
+            }
+        }
+        let mut y = [0.0_f32; 256];
+        kernel::mat_mul(&g, &vv, &mut y, 8, 32, 8);
+        for i in 0..256 {
+            out[i] = x[i] + self.alpha * y[i];
         }
     }
 }
@@ -151,6 +185,9 @@ impl HeadWeights {
         (value, wdl, HeadTrace { h1, h2 })
     }
     pub fn forward_value_only(&self, flat: &[f32]) -> f32 {
+        if self.h1 <= 256 && self.h2 <= 32 && self.input <= 320 {
+            return self.forward_value_stack(flat);
+        }
         if self.is_pair() {
             let mut pre = vec![0.0_f32; self.h1];
             kernel::mat_vec(&self.w1, flat, Some(&self.b1), &mut pre, self.h1, self.input);
@@ -174,6 +211,36 @@ impl HeadWeights {
         kernel::mat_vec_clipped(&self.w2, &h1, Some(&self.b2), &mut h2, self.h2, self.h1);
         let mut vv = self.bvo;
         for i in 0..self.h2 {
+            vv += self.wvo[i] * h2[i];
+        }
+        vv.tanh()
+    }
+    fn forward_value_stack(&self, flat: &[f32]) -> f32 {
+        let mut pre = [0.0_f32; 256];
+        let mut h1p = [0.0_f32; 512];
+        let mut h2 = [0.0_f32; 32];
+        if self.is_pair() {
+            let h1 = self.h1;
+            let h2n = self.h2;
+            kernel::mat_vec(&self.w1, flat, Some(&self.b1), &mut pre[..h1], h1, self.input);
+            for i in 0..h1 {
+                let c = kernel::clipped_relu(pre[i]);
+                h1p[i] = c;
+                h1p[h1 + i] = c * c;
+            }
+            kernel::mat_vec_clipped(&self.w2, &h1p[..h1 * 2], Some(&self.b2), &mut h2[..h2n], h2n, h1 * 2);
+            let mut vv = self.bvo;
+            for i in 0..h2n {
+                vv += self.wvo[i] * h2[i];
+            }
+            return vv.tanh();
+        }
+        let h1 = self.h1;
+        let h2n = self.h2;
+        kernel::mat_vec_clipped(&self.w1, flat, Some(&self.b1), &mut pre[..h1], h1, self.input);
+        kernel::mat_vec_clipped(&self.w2, &pre[..h1], Some(&self.b2), &mut h2[..h2n], h2n, h1);
+        let mut vv = self.bvo;
+        for i in 0..h2n {
             vv += self.wvo[i] * h2[i];
         }
         vv.tanh()

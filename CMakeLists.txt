@@ -67,11 +67,15 @@ add_library(rune_core STATIC
   core/accumulators/flex_accumulator.cpp
   core/architectures/base/architecture.cpp
   core/architectures/mlp/mlp.cpp
+  core/architectures/mlp/mlp_small.cpp
   core/architectures/sfnn/sfnn.cpp
+  core/architectures/sfnn/sfnn_compact.cpp
   core/architectures/attention/attention.cpp
+  core/architectures/attention/dual_attention.cpp
   core/architectures/attention/multi_head.cpp
   core/architectures/relational/context.cpp
   core/architectures/relational/relational.cpp
+  core/architectures/relational/rel_lite.cpp
   core/architectures/dense/var_accum.cpp
   core/architectures/dense/pooling.cpp
   core/architectures/dense/dense.cpp

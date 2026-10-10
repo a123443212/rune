@@ -13,6 +13,50 @@ class TrainingModel:
 
 def build_training_model(config):
     architecture = config["arch"]
+    if architecture == "RUNE-REL-LITE":
+        from training.models.rel_lite import build_rel_lite
+
+        params = config.get("rel_params", {})
+        model = build_rel_lite(
+            gate=params.get("gate", "clip"),
+            alpha=params.get("alpha", 1.0),
+            pair=params.get("pair", config.get("pair", False)),
+            game=config.get("game", "chess"),
+        )
+        return TrainingModel(model, True, False, False)
+
+    if architecture == "RUNE-MLP-S":
+        from training.models.mlp_small import build_mlp_small
+
+        model = build_mlp_small(
+            buckets=config.get("head_buckets", 1),
+            pair=config.get("pair", False),
+            game=config.get("game", "chess"),
+        )
+        return TrainingModel(model, False, False, False)
+
+    if architecture == "RUNE-SFNN-C":
+        from training.models.sfnn_compact import build_sfnn_compact
+
+        model = build_sfnn_compact(
+            buckets=config.get("head_buckets", 1),
+            pair=config.get("pair", False),
+            game=config.get("game", "chess"),
+        )
+        return TrainingModel(model, False, False, False)
+
+    if architecture == "RUNE-ATTN-DUAL":
+        from training.models.dual_attention import build_dual_attention
+
+        params = config.get("rel_params", {})
+        model = build_dual_attention(
+            buckets=config.get("head_buckets", 1),
+            gate=params.get("gate", "clip"),
+            pair=params.get("pair", config.get("pair", False)),
+            game=config.get("game", "chess"),
+        )
+        return TrainingModel(model, False, False, False)
+
     if architecture == "RUNE-REL-02":
         from training.models.relational import build_rel_model
 

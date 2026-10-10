@@ -12,6 +12,7 @@ pub mod go;
 pub mod incremental_mixer;
 pub mod interaction_graph;
 pub mod mixer;
+pub mod mixer_dual;
 pub mod mixer_mh;
 mod model_config;
 pub mod policy_head;
