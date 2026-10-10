@@ -4,15 +4,19 @@
     "ghcr.io/devcontainers/features/python:1": {
       "version": "3.11"
     },
-    "ghcr.io/devcontainers/features/rust:1": {}
+    "ghcr.io/devcontainers/features/rust:1": {},
+    "ghcr.io/devcontainers/features/node:1": {
+      "version": "lts"
+    }
   },
-  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y cmake && bash .devcontainer/post-create.sh",
+  "postCreateCommand": "sudo apt-get update && sudo apt-get install -y build-essential cmake ninja-build gdb && bash .devcontainer/post-create.sh",
   "customizations": {
     "vscode": {
       "extensions": [
         "ms-python.python",
         "rust-lang.rust-analyzer",
-        "ms-vscode.cmake-tools"
+        "ms-vscode.cmake-tools",
+        "ms-vscode.cpptools"
       ]
     }
   }
