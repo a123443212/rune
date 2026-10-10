@@ -26,7 +26,10 @@ pub(crate) fn resolve_model_config(
     let game = model.header.game.clone();
     let expected_feature = spec::game_feature_version(&game)
         .ok_or_else(|| RuntimeError::GameMismatch(game.clone()))?;
-    if model.header.feature_version != expected_feature {
+    let accepted = spec::accepted_feature_versions(&game);
+    let feature_ok = model.header.feature_version == expected_feature
+        || accepted.contains(&model.header.feature_version.as_str());
+    if !feature_ok {
         return Err(RuntimeError::FeatureMismatch(
             model.header.feature_version.clone(),
         ));

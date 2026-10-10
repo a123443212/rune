@@ -1,5 +1,9 @@
 use serde::{Deserialize, Serialize};
 
+fn default_in_planes() -> usize {
+    1
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IrModel {
     pub architecture: String,
@@ -25,6 +29,8 @@ pub struct IrModel {
     pub num_blocks: usize,
     #[serde(default)]
     pub policy_size: usize,
+    #[serde(default = "default_in_planes")]
+    pub in_planes: usize,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

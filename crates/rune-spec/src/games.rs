@@ -15,6 +15,13 @@ pub fn game_feature_version(game: &str) -> Option<&'static str> {
     }
 }
 
+pub fn accepted_feature_versions(game: &str) -> &'static [&'static str] {
+    match game {
+        "go" => &["go_planes_v01", "go_planes_v02"],
+        _ => &[],
+    }
+}
+
 pub const CONTEXT_DIM: usize = 17;
 pub const NUM_GROUPS: usize = 9;
 pub const TOKEN_DIM_DEFAULT: usize = 32;

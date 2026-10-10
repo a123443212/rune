@@ -99,6 +99,24 @@
    "tokens": [
     8
    ]
+  },
+  {
+   "board_sizes": [
+    9,
+    13,
+    19
+   ],
+   "channels": "1..256",
+   "head": "value_wdl_policy",
+   "id": "RUNE-RESNET-01",
+   "in_planes": [
+    1,
+    8
+   ],
+   "planes_v01": 1,
+   "planes_v02": 8,
+   "policy": "board*board+1",
+   "stem": "conv3x3pad1 in_planes->channels + relu"
   }
  ],
  "context_dim": 12,

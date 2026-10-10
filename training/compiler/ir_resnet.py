@@ -12,15 +12,16 @@ def build_resnet(model_spec, tensor_metas, target):
     channels = int(model_spec.get("channels", model_spec.get("token_dim", 32)))
     blocks = int(model_spec.get("num_blocks", 6))
     policy = int(model_spec.get("policy_size", board * board + 1))
+    in_planes = int(model_spec.get("in_planes", 1))
     quant = model_spec.get("quantization", "fp32")
     arch = model_spec.get("arch", "RUNE-RESNET-01")
     ir = {"ir_version": IR_VERSION, "spec_version": SPEC_VERSION, "model": {}, "tensors": [], "ops": [], "memory": {}, "fusion": [], "kernel_plan": [], "target": {}, "hashes": {}}
-    ir["model"] = {"architecture": arch, "architecture_version": model_spec.get("arch_version", "0.1.0"), "tokens": board, "token_dim": channels, "dtype": "fp32" if quant == "fp32" else quant, "quantization": quant, "gate": "relu", "alpha": 1.0, "head_h1": channels * board * board, "head_h2": int(model_spec.get("head_h2", 256)), "threshold": 0.5, "t_high": 0.5, "t_low": None, "has_t_low": False, "adaptive": False, "board_size": board, "channels": channels, "num_blocks": blocks, "policy_size": policy}
-    tensors = [_tensor_entry("planes", [board * board], "index", "packed", False, [0, 1]), _tensor_entry("stem", [board, board], "fp32", "row-major", False, [1, 3])]
+    ir["model"] = {"architecture": arch, "architecture_version": model_spec.get("arch_version", "0.1.0"), "tokens": board, "token_dim": channels, "dtype": "fp32" if quant == "fp32" else quant, "quantization": quant, "gate": "relu", "alpha": 1.0, "head_h1": channels * board * board, "head_h2": int(model_spec.get("head_h2", 256)), "threshold": 0.5, "t_high": 0.5, "t_low": None, "has_t_low": False, "adaptive": False, "board_size": board, "channels": channels, "num_blocks": blocks, "policy_size": policy, "in_planes": in_planes}
+    tensors = [_tensor_entry("planes", [in_planes * board * board], "index", "packed", False, [0, 1]), _tensor_entry("stem", [board, board], "fp32", "row-major", False, [1, 3])]
     for tm in tensor_metas:
         tensors.append(_tensor_entry(tm.get("name", ""), tm.get("shape", []), tm.get("dtype", "float32"), "row-major", True, [0, 12]))
     ir["tensors"] = tensors
-    ops = [_op_entry("op00", "FeaturePlanes", [], ["planes"], {"board": board}), _op_entry("op01", "StemConv", ["planes", "stem_w", "stem_b"], ["x0"], {"board": board, "channels": channels}), _op_entry("op02", "Relu", ["x0"], ["x1"], {})]
+    ops = [_op_entry("op00", "FeaturePlanes", [], ["planes"], {"board": board, "in_planes": in_planes}), _op_entry("op01", "StemConv", ["planes", "stem_w", "stem_b"], ["x0"], {"board": board, "channels": channels, "in_planes": in_planes}), _op_entry("op02", "Relu", ["x0"], ["x1"], {})]
     cur = "x1"
     nid = 3
     for b in range(blocks):

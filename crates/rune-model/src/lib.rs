@@ -146,7 +146,8 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     let game = hv.get("game").and_then(|x| x.as_str()).unwrap_or(spec::GAME_CHESS).to_string();
     let want_feat = spec::game_feature_version(&game).ok_or_else(|| LoadError::GameMismatch(game.clone()))?;
     let feat = get_str(&hv, "feature_version", "feature_set");
-    if feat != want_feat {
+    let accepted = spec::accepted_feature_versions(&game);
+    if feat != want_feat && !accepted.contains(&feat.as_str()) {
         return Err(LoadError::FeatureMismatch(feat));
     }
     let quant = hv.get("quantization").and_then(|x| x.as_str()).unwrap_or("fp32").to_string();

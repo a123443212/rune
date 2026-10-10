@@ -2,6 +2,7 @@
 #include <vector>
 
 #include "core/go/go_planes_v02.h"
+#include "core/go/go_resnet.h"
 #include "core/go/go_rules.h"
 #include "core/go/go_state.h"
 #include "core/go/go_token_v02.h"
@@ -139,6 +140,47 @@ void testTokenV02() {
   CHECK(!f2.empty());
 }
 
+void testResnetV02() {
+  GoResnetSizes sz;
+  sz.board = 9;
+  sz.channels = 2;
+  sz.blocks = 1;
+  sz.policySize = 82;
+  sz.valueH2 = 4;
+  sz.inPlanes = 8;
+  GoResnetWeights wt;
+  wt.stemW.assign(static_cast<size_t>(2 * 8 * 3 * 3), 0.05f);
+  wt.stemB.assign(2, 0.0f);
+  wt.blockW1.assign(1, std::vector<float>(static_cast<size_t>(2 * 2 * 3 * 3), 0.02f));
+  wt.blockB1.assign(1, std::vector<float>(2, 0.0f));
+  wt.blockW2.assign(1, std::vector<float>(static_cast<size_t>(2 * 2 * 3 * 3), 0.02f));
+  wt.blockB2.assign(1, std::vector<float>(2, 0.0f));
+  wt.vh1.assign(4 * 2, 0.1f);
+  wt.bh1.assign(4, 0.0f);
+  wt.wv.assign(4, 0.25f);
+  wt.bv = 0.0f;
+  wt.wwdl.assign(3 * 4, 0.1f);
+  wt.bwdl.assign(3, 0.0f);
+  wt.wpol.assign(static_cast<size_t>(82 * 2 * 81), 0.001f);
+  wt.bpol.assign(82, 0.0f);
+  GoState st;
+  CHECK(st.setState(emptyV02(9)));
+  std::vector<float> planes;
+  extractPlanesV02(st, planes);
+  CHECK(planes.size() == 8 * 81);
+  GoResnetOutput r1 = forwardGoResnet(wt, sz, planes.data());
+  GoResnetOutput r2 = forwardGoResnet(wt, sz, planes.data());
+  CHECK_CLOSE(r1.value, r2.value, 1e-9);
+  GoResnetScratch sc;
+  GoResnetOutput r3 = forwardGoResnetFast(wt, sz, planes.data(), sc);
+  CHECK_CLOSE(r1.value, r3.value, 1e-5);
+  for (size_t i = 0; i < r1.policy.size(); ++i) CHECK_CLOSE(r1.policy[i], r3.policy[i], 1e-5);
+  CHECK(r1.policy.size() == 82);
+  float s = 0.0f;
+  for (float v : r1.policy) s += v;
+  CHECK_CLOSE(s, 1.0, 1e-5);
+}
+
 }
 
 void testGoV02() {
@@ -147,4 +189,5 @@ void testGoV02() {
   testContextV02();
   testRulesV02();
   testTokenV02();
+  testResnetV02();
 }

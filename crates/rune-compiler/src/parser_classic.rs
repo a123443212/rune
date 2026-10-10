@@ -31,7 +31,7 @@ pub fn build_classic(m: &RuneModel, isa: &str, cpu: &str) -> Result<rune_ir::Run
         return Err(format!("unsupported head {}x{}", h1, h2));
     }
     let adaptive = arch == "RUNE-04" || arch == "RUNE-05";
-    let model = IrModel { architecture: arch, architecture_version: m.header.architecture_version.clone(), tokens, token_dim: dim, dtype: if quant == "fp32" { "fp32".to_string() } else { quant.clone() }, quantization: quant.clone(), gate, alpha, head_h1: h1, head_h2: h2, threshold: thr, t_high: th, t_low: tl, has_t_low: tl.is_some(), adaptive, board_size: 0, channels: 0, num_blocks: 0, policy_size: 0 };
+    let model = IrModel { architecture: arch, architecture_version: m.header.architecture_version.clone(), tokens, token_dim: dim, dtype: if quant == "fp32" { "fp32".to_string() } else { quant.clone() }, quantization: quant.clone(), gate, alpha, head_h1: h1, head_h2: h2, threshold: thr, t_high: th, t_low: tl, has_t_low: tl.is_some(), adaptive, board_size: 0, channels: 0, num_blocks: 0, policy_size: 0, in_planes: 1 };
     let vw = vector_width(isa);
     let target = IrTarget { cpu: cpu.to_string(), isa: isa.to_string(), vector_width: vw, dtype: model.dtype.clone(), quantization: quant.clone() };
     let mut tensors = Vec::new();
