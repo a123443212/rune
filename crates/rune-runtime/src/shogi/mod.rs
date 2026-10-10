@@ -96,7 +96,7 @@ fn parse_rank(rank: &str, row: usize, sq: &mut [Option<SPiece>; 81]) -> Result<(
     let mut chars = rank.chars().peekable();
     while let Some(c) = chars.next() {
         if c.is_ascii_digit() {
-            f += c.to_digit(10).unwrap() as i32;
+            f += (c as u8 - b'0') as i32;
         } else {
             let mut promo = false;
             let mut pc = c;

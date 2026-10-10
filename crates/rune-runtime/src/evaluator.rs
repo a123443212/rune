@@ -164,12 +164,17 @@ impl Evaluator {
     pub fn push(&mut self) {
         self.stack.push((self.acc.snapshot(), self.feats.clone(), self.ctx.clone(), self.phase));
     }
-    pub fn pop(&mut self) {
-        let (snap, feats, ctx, phase) = self.stack.pop().expect("pop without push");
+    pub fn pop(&mut self) -> bool {
+        let entry = match self.stack.pop() {
+            Some(v) => v,
+            None => return false,
+        };
+        let (snap, feats, ctx, phase) = entry;
         self.acc.restore(&snap);
         self.feats = feats;
         self.ctx = ctx;
         self.phase = phase;
+        true
     }
     pub fn search_depth(&self) -> usize {
         self.stack.len()

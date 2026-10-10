@@ -100,7 +100,7 @@ impl XiangqiBoard {
             let mut f: i32 = 0;
             for c in rank.chars() {
                 if c.is_ascii_digit() {
-                    f += c.to_digit(10).unwrap() as i32;
+                    f += (c as u8 - b'0') as i32;
                 } else {
                     let color = if c.is_ascii_uppercase() { XRED } else { XBLACK };
                     let kind = board_kind(c.to_ascii_lowercase())

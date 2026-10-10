@@ -130,7 +130,7 @@ impl Board {
                 if c == '0' || c == '9' {
                     return Err(RuntimeError::BadFen("bad digit".to_string()));
                 }
-                file += c.to_digit(10).unwrap() as i32;
+                file += (c as u8 - b'0') as i32;
                 if file > 8 {
                     return Err(RuntimeError::BadFen("rank overflow".to_string()));
                 }

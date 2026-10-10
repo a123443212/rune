@@ -178,9 +178,11 @@ impl RelationalCache {
         kernel::mat_mul_tt(q, k, s, t, t, d);
         let dyn_on = self.dyn_active(ctx);
         if dyn_on {
-            let (fdu, fdw) = self.dyn_factors(ctx.unwrap());
-            du.copy_from_slice(&fdu);
-            dw.copy_from_slice(&fdw);
+            if let Some(c) = ctx {
+                let (fdu, fdw) = self.dyn_factors(c);
+                du.copy_from_slice(&fdu);
+                dw.copy_from_slice(&fdw);
+            }
         }
         for a in 0..t {
             for b in 0..t {
@@ -252,9 +254,11 @@ impl RelationalCache {
         }
         let dyn_on = self.dyn_active(ctx);
         if dyn_on {
-            let (fdu, fdw) = self.dyn_factors(ctx.unwrap());
-            self.du.copy_from_slice(&fdu);
-            self.dw.copy_from_slice(&fdw);
+            if let Some(c) = ctx {
+                let (fdu, fdw) = self.dyn_factors(c);
+                self.du.copy_from_slice(&fdu);
+                self.dw.copy_from_slice(&fdw);
+            }
         }
         let (du, dw) = (self.du.clone(), self.dw.clone());
         let (gate, alpha) = (self.w.gate, self.w.alpha);
@@ -302,8 +306,11 @@ impl RelationalCache {
         });
     }
 
-    pub fn pop(&mut self) {
-        let s = self.stack.pop().expect("pop without push");
+    pub fn pop(&mut self) -> bool {
+        let s = match self.stack.pop() {
+            Some(v) => v,
+            None => return false,
+        };
         self.x = s.x;
         self.q = s.q;
         self.k = s.k;
@@ -315,6 +322,7 @@ impl RelationalCache {
         self.du = s.du;
         self.dw = s.dw;
         self.had_dyn = s.had_dyn;
+        true
     }
 
     pub fn verify_against_full(&self, tokens_new: &[f32], ctx: Option<&[f32]>, tol: f32) -> (bool, f32) {

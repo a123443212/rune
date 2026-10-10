@@ -156,9 +156,13 @@ impl Accumulator {
     pub fn push(&mut self) {
         self.stack.push(self.acc.clone());
     }
-    pub fn pop(&mut self) {
-        let prev = self.stack.pop().expect("pop without push");
+    pub fn pop(&mut self) -> bool {
+        let prev = match self.stack.pop() {
+            Some(v) => v,
+            None => return false,
+        };
         self.acc = prev;
+        true
     }
     pub fn depth(&self) -> usize {
         self.stack.len()

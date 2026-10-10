@@ -36,6 +36,12 @@ def gate_fn(name, s):
 
 def py_value(model, fen):
     header, arrays = load_exported_arrays(model)
+    if int(header.get("head_buckets", 1)) != 1:
+        raise ValueError("cross_check supports head_buckets=1 only")
+    if bool(header.get("head_pair", False)):
+        raise ValueError("cross_check supports head_pair=false only")
+    if header.get("game", "chess") != "chess":
+        raise ValueError("cross_check supports chess only")
     feats = extract_features(fen)
     acc = np.zeros((8, 32), dtype=np.float64)
     for g, i in feats:
@@ -60,6 +66,15 @@ def py_value(model, fen):
         G = gate_fn(header.get("gate", "clip"), S)
         alpha = float(header.get("alpha", 1.0))
         mixed = tok + alpha * (G @ V)
+    elif arch == "RUNE-ATTN-DUAL":
+        q1 = tok @ arrays["wq"].T + arrays["bq"]
+        k1 = tok @ arrays["wk"].T + arrays["bk"]
+        v1 = tok @ arrays["wvv"].T + arrays["bvv"]
+        mid = tok + gate_fn(header.get("gate", "clip"), q1 @ k1.T + arrays["gab"]) @ v1
+        q2 = mid @ arrays["wq2"].T + arrays["bq2"]
+        k2 = mid @ arrays["wk2"].T + arrays["bk2"]
+        v2 = mid @ arrays["wvv2"].T + arrays["bvv2"]
+        mixed = mid + gate_fn(header.get("gate", "clip"), q2 @ k2.T + arrays["gab2"]) @ v2
     elif arch == "RUNE-ATTN-MH4":
         parts = []
         for h in range(4):
@@ -71,8 +86,10 @@ def py_value(model, fen):
             parts.append(gate_fn(header.get("gate", "clip"), S) @ V)
         cat = np.concatenate(parts, axis=-1)
         mixed = tok + cat @ arrays["wo"].T + arrays["bwo"]
-    else:
+    elif arch in ("RUNE-SFNN", "RUNE-MLP", "RUNE-MLP-S", "RUNE-SFNN-C"):
         mixed = tok
+    else:
+        raise ValueError(f"cross_check unsupported arch {arch}")
     flat = mixed.reshape(-1)
     h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
     h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)

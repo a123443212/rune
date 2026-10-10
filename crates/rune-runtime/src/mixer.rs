@@ -22,7 +22,10 @@ pub fn dyn_factors(dyn_u: &[f32], dyn_w: &[f32], tokens: usize, ctx_dim: usize, 
     if !active {
         return (du, dw);
     }
-    let c = ctx.unwrap();
+    let c = match ctx {
+        Some(v) => v,
+        None => return (du, dw),
+    };
     for a in 0..tokens {
         let mut su = 0.0_f32;
         let mut sw = 0.0_f32;

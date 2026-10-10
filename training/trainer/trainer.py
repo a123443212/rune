@@ -32,7 +32,12 @@ from training.trainer.system_stats import file_size_bytes, git_commit, hardware_
 
 def derive_seed(config):
     key = json.dumps({"seed": config.get("seed", 0), "arch": config.get("arch"),
-                      "rel": config.get("rel_params", {})}, sort_keys=True)
+                      "game": config.get("game", "chess"),
+                      "rel": config.get("rel_params", {}),
+                      "dense": config.get("dense_params", {}),
+                      "adaptive": config.get("adaptive_params", {}),
+                      "pair": config.get("pair", False),
+                      "buckets": config.get("head_buckets", 1)}, sort_keys=True)
     return int(hashlib.sha256(key.encode()).hexdigest(), 16) % (2 ** 31)
 
 
