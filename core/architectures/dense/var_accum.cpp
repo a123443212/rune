@@ -19,6 +19,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 #include "core/architectures/dense/var_accum.h"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace rune {
 
@@ -152,6 +153,7 @@ int VarQuantTables::get(int group, int flat) const { return tables_[group][flat]
 VarAccumulator::VarAccumulator() {}
 
 void VarAccumulator::configure(const VarEmbeddings* tables) {
+  if (!tables) throw std::invalid_argument("null tables");
   tables_ = tables;
   for (int g = 0; g < 9; ++g) widths_.w[g] = tables->groupWidth(g);
   int n = widths_.total();
@@ -165,6 +167,7 @@ void VarAccumulator::refresh(const std::vector<ActiveFeature>& features) {
 
 void VarAccumulator::applyDiff(const std::vector<ActiveFeature>& added,
                                const std::vector<ActiveFeature>& removed) {
+  if (!tables_) throw std::logic_error("var accumulator not configured");
   for (const ActiveFeature& f : added) {
     int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];
@@ -196,6 +199,7 @@ VarAccumulatorInt::VarAccumulatorInt() {}
 
 void VarAccumulatorInt::bind(const VarQuantTables* tables, const VarScales* scales,
                              const VarWidths& widths) {
+  if (!tables || !scales) throw std::invalid_argument("null tables");
   tables_ = tables;
   scales_ = scales;
   widths_ = widths;
@@ -209,6 +213,7 @@ void VarAccumulatorInt::refresh(const std::vector<ActiveFeature>& features) {
 
 void VarAccumulatorInt::applyDiff(const std::vector<ActiveFeature>& added,
                                   const std::vector<ActiveFeature>& removed) {
+  if (!tables_ || !scales_) throw std::logic_error("var int accumulator not configured");
   for (const ActiveFeature& f : added) {
     int off = tokenOffset(GroupedFeatureSet::tokenForGroup(f.group));
     int w = widths_.w[f.group];

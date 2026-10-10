@@ -83,7 +83,7 @@ void testGoExtract() {
   GoFeatureSet::context(b, ctx);
   CHECK(ctx[0] == 0.0f);
   CHECK(GoFeatureSet::phase(b) == 0);
-  CHECK(GoFeatureSet::vocabSize(0) == 361);
+  CHECK(GoFeatureSet::vocabSize(0) == 722);
 }
 
 void testGoPlanes() {

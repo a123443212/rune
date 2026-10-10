@@ -23,7 +23,7 @@ MOVE_INDEX = {"go": 4, "xiangqi": 5, "shogi": 3}
 def shard_key(record):
     game = record.get("game", "")
     state = record.get("state", "")
-    return game + "\x00" + state.split()[0]
+    return game + "\x00" + state
 
 
 def move_no_of(game_id, state):
@@ -68,10 +68,12 @@ def dedup_records(records):
 
 def write_shards(game_id, records, out_dir, num_shards=2):
     from training.export.export import fnv1a
+    import hashlib
     os.makedirs(out_dir, exist_ok=True)
     shards = [[] for _ in range(max(1, num_shards))]
-    for i, r in enumerate(records):
-        shards[i % len(shards)].append(r)
+    for r in records:
+        h = int(hashlib.blake2b(shard_key(r).encode(), digest_size=8).hexdigest(), 16)
+        shards[h % len(shards)].append(r)
     manifest_shards = []
     for i, part in enumerate(shards):
         path = os.path.join(out_dir, f"shard_{i:04d}.jsonl")

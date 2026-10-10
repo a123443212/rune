@@ -25,7 +25,7 @@ namespace go {
 
 namespace {
 
-const int kVocabs[9] = {361, 361, 361, 64, 64, 361, 361, 64, 18};
+const int kVocabs[9] = {722, 722, 361, 64, 64, 361, 361, 64, 18};
 
 float clamp01(float v) {
   if (v < 0.0f) return 0.0f;
@@ -52,7 +52,7 @@ void GoFeatureSet::extract(const GoBoard& board, std::vector<ActiveFeature>& out
       int sq = r * n + c;
       ActiveFeature f;
       f.group = 0;
-      f.index = static_cast<uint16_t>((ci * 181 + sq) % 361);
+      f.index = static_cast<uint16_t>(ci * 361 + sq);
       out.push_back(f);
       f.group = 6;
       f.index = static_cast<uint16_t>(sq % 361);

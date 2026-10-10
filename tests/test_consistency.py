@@ -48,7 +48,7 @@ needs_bindings = pytest.mark.skipif(not HAS_BINDINGS, reason="bindings not built
 def copy_weights_to_cpp(torch_model, cpp_model):
     arch_t = torch_model.arch_tensors()
     emb = torch_model.embedding_tensors()
-    for g in range(8):
+    for g in range(9):
         cpp_model.set_embedding(g, [float(x) for x in emb[f"emb{g}"].numpy().reshape(-1)])
     names = list(EXPORT_ORDER[torch_model.arch_id])
     flat = []
@@ -71,10 +71,12 @@ def test_embedder_matches_cpp_tokens():
         toks = []
         emb = tm.embedder
         with torch.no_grad():
-            for g in range(8):
+            for g in range(9):
                 idx = [i for gg, i in feats if gg == g]
                 e = emb.tables[g](torch.tensor(idx)).sum(0).clamp(0, 1).numpy()
                 toks.append(e)
+            toks[0] = toks[0] + toks[8]
+            toks = toks[:8]
         py_tok = np.concatenate(toks)
         assert np.allclose(cpp_tok, py_tok, atol=1e-5), arch
 
@@ -95,7 +97,7 @@ def test_full_model_matches_cpp_eval():
             cv, cw = cm.eval_fen(fen)
             feats = __import__("training.features.python_features", fromlist=["extract_features"]).extract_features(fen)
             ids, masks = [], []
-            for g in range(8):
+            for g in range(9):
                 idx = [i for gg, i in feats if gg == g]
                 ids.append(torch.tensor([idx]))
                 masks.append(torch.ones(1, max(1, len(idx))))
@@ -119,7 +121,7 @@ def test_export_roundtrip_fp32(tmp_path):
     arch_t = model.arch_tensors()
     for name in EXPORT_ORDER["RUNE-ATTN-GAB"]:
         assert np.allclose(arrays[name], np.asarray(arch_t[name]), atol=0), name
-    for g in range(8):
+    for g in range(9):
         emb = model.embedding_tensors()[f"emb{g}"].numpy()
         assert np.allclose(arrays[f"emb{g}"], emb, atol=0)
 
@@ -133,7 +135,7 @@ def test_export_int8_and_fake_quant(tmp_path):
     assert header["quantization"] == "int8"
     assert arrays["emb0"].dtype == np.int8
     assert arrays["w1"].dtype == np.float32
-    for g in range(8):
+    for g in range(9):
         scale = header["scales"][f"emb{g}"]
         deq = arrays[f"emb{g}"].astype(np.float32) * scale
         orig = model.embedding_tensors()[f"emb{g}"].numpy()

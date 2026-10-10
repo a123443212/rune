@@ -30,7 +30,7 @@ CONTEXT_NAMES_V02 = ("stm", "us_stones", "them_stones", "komi", "move_no", "pass
 class GoGameV02(GameSpec):
     game_id = "go"
     num_groups = 9
-    vocabs = (361, 361, 361, 64, 64, 361, 361, 64, 18)
+    vocabs = (722, 722, 361, 64, 64, 361, 361, 64, 18)
     tokens = 8
     token_dim = 32
     context_dim = CONTEXT_DIM_V02

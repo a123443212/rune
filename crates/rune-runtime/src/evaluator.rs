@@ -110,15 +110,16 @@ impl Evaluator {
         }
         Some(&self.ctx)
     }
-    pub fn refresh(&mut self, board: &Board) {
+    pub fn refresh(&mut self, board: &Board) -> Result<()> {
         if self.game != spec::GAME_CHESS {
-            panic!("chess refresh on {} model", self.game);
+            return Err(RuntimeError::InvalidState(format!("chess refresh on {} model", self.game)));
         }
         let f = extract_features(board);
         self.acc.refresh(&self.tables, &f);
         self.feats = f;
         self.ctx = compute_context(board);
         self.phase = board.game_phase();
+        Ok(())
     }
     pub fn refresh_sfen(&mut self, sfen: &str) -> Result<()> {
         if self.game != spec::GAME_SHOGI {
@@ -178,9 +179,9 @@ impl Evaluator {
         self.acc.tokens(&mut tok);
         self.forward_tokens(&tok)
     }
-    pub fn evaluate_board(&mut self, board: &Board) -> EvalResult {
-        self.refresh(board);
-        self.evaluate()
+    pub fn evaluate_board(&mut self, board: &Board) -> Result<EvalResult> {
+        self.refresh(board)?;
+        Ok(self.evaluate())
     }
     pub fn evaluate_sfen(&mut self, sfen: &str) -> Result<EvalResult> {
         self.refresh_sfen(sfen)?;

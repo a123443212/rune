@@ -19,6 +19,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 #include "core/architectures/dense/dense.h"
 
 #include <cmath>
+#include <stdexcept>
 
 namespace rune {
 
@@ -90,6 +91,8 @@ bool DenseModel::configure(const DenseBuildSpec& spec, std::string& err) {
 
 void DenseModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
   (void)phase;
+  if (!tokens) throw std::invalid_argument("null tokens");
+  if (!wdl) throw std::invalid_argument("null wdl");
   int in = widths_.total();
   int h1 = headH1_;
   int h2 = headH2_;
@@ -256,11 +259,15 @@ void DenseEvaluator::updateIncremental(const std::vector<ActiveFeature>& added,
 }
 
 void DenseEvaluator::evaluate(float& value, float* wdl) const {
+  if (!model_) throw std::logic_error("dense evaluator not configured");
+  if (!wdl) throw std::invalid_argument("null wdl");
   acc_.tokens(tokenBuf_.data());
   model_->forward(tokenBuf_.data(), value, wdl);
 }
 
 void DenseEvaluator::evaluateBoard(const Board& board, float& value, float* wdl) {
+  if (!model_) throw std::logic_error("dense evaluator not configured");
+  if (!wdl) throw std::invalid_argument("null wdl");
   refresh(board);
   evaluate(value, wdl);
 }

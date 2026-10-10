@@ -81,6 +81,9 @@ class DenseBindingModel {
   }
 
   py::tuple forwardTokens(const std::vector<float>& tok) {
+    int expect = 0;
+    for (int t = 0; t < 8; ++t) expect += model_.spec().tokenDims[t];
+    if (static_cast<int>(tok.size()) != expect) throw std::runtime_error("tokens size mismatch");
     float value;
     float wdl[3];
     model_.forward(tok.data(), value, wdl);

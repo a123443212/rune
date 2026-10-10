@@ -109,7 +109,7 @@ fn cmd_eval(model: &str, fen: &str, kernel: &str) -> i32 {
             return 1;
         }
     };
-    let r = ev.evaluate_board(&b);
+    let r = ev.evaluate_board(&b).expect("eval");
     println!("value {:.6}", r.value);
     println!("wdl {:.6} {:.6} {:.6}", r.wdl[0], r.wdl[1], r.wdl[2]);
     println!("arch {}", ev.arch_id());
@@ -150,7 +150,7 @@ fn cmd_bench(model: &str, iters: usize, kernel: &str) -> i32 {
     let b = Board::startpos();
     let t0 = Instant::now();
     for _ in 0..iters {
-        let _ = ev.evaluate_board(&b);
+        let _ = ev.evaluate_board(&b).expect("eval");
     }
     let ms = t0.elapsed().as_secs_f64() * 1000.0;
     let us = ms * 1000.0 / iters as f64;
@@ -192,7 +192,7 @@ fn cmd_diff(model: &str, positions: &str, tol: f32) -> i32 {
                 return 1;
             }
         };
-        let r1 = ev.evaluate_board(&b);
+        let r1 = ev.evaluate_board(&b).expect("eval");
         let before = ev.current_features().to_vec();
         let mut ev2_tokens = {
             let tr = ev.trace();

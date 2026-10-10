@@ -21,6 +21,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 #include <cmath>
 #include <cstdint>
 #include <fstream>
+#include <map>
 #include <new>
 #include <set>
 #include <sstream>
@@ -38,6 +39,7 @@ std::string extractString(const std::string& h, const std::string& key) {
   if (p == std::string::npos) return "";
   p += pat.size();
   size_t q = h.find('"', p);
+  if (q == std::string::npos) return "";
   return h.substr(p, q - p);
 }
 
@@ -606,6 +608,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
   std::vector<float> archFlat;
   std::set<std::string> seenNames;
   size_t totalBytes = 0;
+  std::map<std::string, std::vector<int>> fileShapes;
   try {
   for (const TensorMeta& t : metas) {
     if (!seenNames.insert(t.name).second) {
@@ -720,6 +723,7 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
         }
       }
     } else {
+      fileShapes[t.name] = t.shape;
       std::vector<float> buf(count);
       f.read(reinterpret_cast<char*>(buf.data()), count * 4);
       if (!f) {
@@ -753,8 +757,21 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     return false;
   }
   {
+    std::vector<std::string> gotNames;
+    std::vector<std::vector<int>> gotShapes;
+    std::vector<const float*> gotData;
+    out.arch->getTensors(gotNames, gotShapes, gotData);
+    for (size_t i = 0; i < gotNames.size(); ++i) {
+      auto it = fileShapes.find(gotNames[i]);
+      if (it == fileShapes.end() || it->second != gotShapes[i]) {
+        err = "arch shape mismatch " + gotNames[i];
+        return false;
+      }
+    }
+  }
+  {
     std::string cs = pickString(header, "model_hash", "checksum");
-    bool needHash = (fmt == 2) || useVar;
+    bool needHash = useVar;
     if (needHash && cs.empty()) {
       err = "model missing checksum";
       return false;

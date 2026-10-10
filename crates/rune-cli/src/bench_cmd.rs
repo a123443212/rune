@@ -41,7 +41,7 @@ pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     let b = Board::startpos();
     let t0 = Instant::now();
     for _ in 0..iters {
-        let _ = ev_g.evaluate_board(&b);
+        let _ = ev_g.evaluate_board(&b).expect("eval");
     }
     let g_ms = t0.elapsed().as_secs_f64() * 1000.0;
     let t1 = Instant::now();
@@ -66,14 +66,14 @@ pub fn run(model: &str, compiled: &str, iters: usize) -> i32 {
     let c1 = compute_context(&b1);
     let t2 = Instant::now();
     for _ in 0..iters {
-        ev_g.refresh(&b);
+        ev_g.refresh(&b).expect("refresh");
         ev_g.update_incremental(&f0, &f1, &c1);
         let _ = ev_g.evaluate();
     }
     let i_us = t2.elapsed().as_secs_f64() * 1000000.0 / iters as f64;
     println!("incremental_us_per_eval {:.3}", i_us);
     println!("incremental_eval_per_sec {:.0}", 1000000.0 / i_us);
-    ev_g.refresh(&b);
+    ev_g.refresh(&b).expect("refresh");
     let t3 = Instant::now();
     for _ in 0..iters {
         let _ = ev_g.evaluate_value_only();

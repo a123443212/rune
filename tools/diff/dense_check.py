@@ -41,13 +41,28 @@ def load_torch_dense(path):
     m = DenseModel(variant=header.get("variant", "B"), token_dims=list(dims),
                    pooling=header.get("pooling", "none"),
                    pool_clip=bool(header.get("pool_clip", True)),
-                   gate_on=bool(header.get("gate_on", False)))
+                   gate_on=bool(header.get("gate_on", False)),
+                   shared_width=int(header.get("shared_width", 32)))
     sd = m.state_dict()
     for g in range(9):
         sd[f"embedder.tables.{g}.weight"].copy_(
             torch.from_numpy(dequant(arrays[f"emb{g}"], None, header, f"emb{g}")))
     for ek, pk in HEAD_MAP:
         sd[pk].copy_(torch.from_numpy(dequant(arrays[ek], None, header, ek).reshape(sd[pk].shape)))
+    pool_map = {}
+    for t in range(8):
+        pool_map[f"pool_w{t}"] = [f"pool.pw.{t}"]
+        pool_map[f"pool_b{t}"] = [f"pool.pb.{t}", f"pool.tok_b.{t}"]
+        pool_map[f"pool_s{t}"] = [f"pool.tok_s.{t}"]
+    pool_map["pool_S"] = ["pool.shared_s"]
+    pool_map["gate_a"] = ["gate.ga"]
+    pool_map["gate_b"] = ["gate.gb"]
+    for ek, pks in pool_map.items():
+        if ek in arrays:
+            for pk in pks:
+                if pk in sd and tuple(arrays[ek].shape) == tuple(sd[pk].shape):
+                    sd[pk].copy_(torch.from_numpy(dequant(arrays[ek], None, header, ek).reshape(sd[pk].shape)))
+                    break
     m.load_state_dict(sd)
     m.eval()
     return m

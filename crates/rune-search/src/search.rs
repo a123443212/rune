@@ -138,8 +138,10 @@ impl SearchStats {
     }
 }
 
-fn parse_pos(fen: &str) -> Chess {
-    Fen::from_str(fen).ok().and_then(|f: Fen| f.into_position(shakmaty::CastlingMode::Standard).ok()).unwrap_or_default()
+fn parse_pos(fen: &str) -> Result<Chess, String> {
+    Fen::from_str(fen)
+        .map_err(|_| "bad fen".to_string())
+        .and_then(|f: Fen| f.into_position(shakmaty::CastlingMode::Standard).map_err(|_| "bad position".to_string()))
 }
 
 pub struct AlphaBeta<F>
@@ -159,10 +161,19 @@ where
         AlphaBeta { eval, cfg, stats: SearchStats::default() }
     }
 
-    pub fn search(&mut self, fen: &str, depth: usize) -> (f32, Option<String>) {
+    pub fn try_search(&mut self, fen: &str, depth: usize) -> Result<(f32, Option<String>), String> {
+        let pos = parse_pos(fen)?;
+        Ok(self.search_pos(&pos, depth))
+    }
+
+    pub fn try_search_lazy(&mut self, fen: &str, depth: usize, cheap: &mut impl FnMut(&str) -> f32) -> Result<(f32, Option<String>), String> {
+        let pos = parse_pos(fen)?;
+        Ok(self.search_lazy_pos(&pos, depth, cheap))
+    }
+
+    fn search_pos(&mut self, pos: &Chess, depth: usize) -> (f32, Option<String>) {
         let t0 = std::time::Instant::now();
         self.stats = SearchStats::default();
-        let pos = parse_pos(fen);
         let mut legal = pos.legal_moves();
         order_moves(&mut legal);
         let mut best: Option<f32> = None;
@@ -172,7 +183,7 @@ where
         let mut hist = vec![pos.zobrist_hash::<shakmaty::zobrist::Zobrist64>(shakmaty::EnPassantMode::Legal).0];
         let mut tt = SearchTt::default();
         for m in &legal {
-            let child = apply_uci_move(&pos, m);
+            let child = apply_uci_move(pos, m);
             let v = -self.negamax(&child, depth.saturating_sub(1), 1, -beta, -alpha, &mut hist, &mut tt);
             self.stats.nodes += 1;
             self.stats.root_count += 1;
@@ -191,7 +202,7 @@ where
         let s = best.unwrap_or_else(|| {
             self.stats.nodes += 1;
             self.stats.evals += 1;
-            terminal_score(&pos, 0)
+            terminal_score(pos, 0)
         });
         self.stats.seconds = t0.elapsed().as_secs_f64();
         self.stats.root_score = s;
@@ -199,10 +210,16 @@ where
         (s, best_m)
     }
 
-    pub fn search_lazy(&mut self, fen: &str, depth: usize, cheap: &mut impl FnMut(&str) -> f32) -> (f32, Option<String>) {
+    pub fn search(&mut self, fen: &str, depth: usize) -> (f32, Option<String>) {
+        match self.try_search(fen, depth) {
+            Ok(v) => v,
+            Err(_) => (f32::NAN, None),
+        }
+    }
+
+    fn search_lazy_pos(&mut self, pos: &Chess, depth: usize, cheap: &mut impl FnMut(&str) -> f32) -> (f32, Option<String>) {
         let t0 = std::time::Instant::now();
         self.stats = SearchStats::default();
-        let pos = parse_pos(fen);
         let mut legal = pos.legal_moves();
         order_moves(&mut legal);
         let mut best: Option<f32> = None;
@@ -212,7 +229,7 @@ where
         let mut hist = vec![pos.zobrist_hash::<shakmaty::zobrist::Zobrist64>(shakmaty::EnPassantMode::Legal).0];
         let mut tt = SearchTt::default();
         for m in &legal {
-            let child = apply_uci_move(&pos, m);
+            let child = apply_uci_move(pos, m);
             let v = -self.negamax_lazy(&child, depth.saturating_sub(1), 1, -beta, -alpha, &mut hist, &mut tt, cheap);
             self.stats.nodes += 1;
             self.stats.root_count += 1;
@@ -231,12 +248,19 @@ where
         let s = best.unwrap_or_else(|| {
             self.stats.nodes += 1;
             self.stats.evals += 1;
-            terminal_score(&pos, 0)
+            terminal_score(pos, 0)
         });
         self.stats.seconds = t0.elapsed().as_secs_f64();
         self.stats.root_score = s;
         self.stats.root_move = best_m.clone();
         (s, best_m)
+    }
+
+    pub fn search_lazy(&mut self, fen: &str, depth: usize, cheap: &mut impl FnMut(&str) -> f32) -> (f32, Option<String>) {
+        match self.try_search_lazy(fen, depth, cheap) {
+            Ok(v) => v,
+            Err(_) => (f32::NAN, None),
+        }
     }
 
     fn leaf_full(&mut self, pos: &Chess) -> f32 {

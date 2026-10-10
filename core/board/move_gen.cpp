@@ -48,7 +48,13 @@ void Board::addPawnMoves(int sq, std::vector<Move>& out) const {
     if (!onBoard(f + df, r + d)) continue;
     int to = makeSq(f + df, r + d);
     if (!squares_[to].empty() && squares_[to].color != p.color) pushPromo(sq, to);
-    if (to == epSquare_) out.push_back(Move{static_cast<uint8_t>(sq), static_cast<uint8_t>(to), PieceType::None});
+    if (to == epSquare_) {
+      int capSq = makeSq(fileOf(to), r);
+      Piece cap = squares_[capSq];
+      if (!cap.empty() && cap.type == PieceType::Pawn && cap.color != p.color) {
+        out.push_back(Move{static_cast<uint8_t>(sq), static_cast<uint8_t>(to), PieceType::None});
+      }
+    }
   }
 }
 
@@ -104,20 +110,28 @@ void Board::addKingMoves(int sq, std::vector<Move>& out) const {
     }
   }
   if (p.color == Color::White && sq == makeSq(4, 0)) {
-    if ((castling_ & kCastleWK) && squares_[makeSq(5, 0)].empty() && squares_[makeSq(6, 0)].empty()) {
+    Piece rookK = squares_[makeSq(7, 0)];
+    Piece rookQ = squares_[makeSq(0, 0)];
+    if ((castling_ & kCastleWK) && squares_[makeSq(5, 0)].empty() && squares_[makeSq(6, 0)].empty() &&
+        !rookK.empty() && rookK.type == PieceType::Rook && rookK.color == Color::White) {
       out.push_back(Move{4, 6, PieceType::None});
     }
     if ((castling_ & kCastleWQ) && squares_[makeSq(3, 0)].empty() && squares_[makeSq(2, 0)].empty() &&
-        squares_[makeSq(1, 0)].empty()) {
+        squares_[makeSq(1, 0)].empty() &&
+        !rookQ.empty() && rookQ.type == PieceType::Rook && rookQ.color == Color::White) {
       out.push_back(Move{4, 2, PieceType::None});
     }
   }
   if (p.color == Color::Black && sq == makeSq(4, 7)) {
-    if ((castling_ & kCastleBK) && squares_[makeSq(5, 7)].empty() && squares_[makeSq(6, 7)].empty()) {
+    Piece rookK = squares_[makeSq(7, 7)];
+    Piece rookQ = squares_[makeSq(0, 7)];
+    if ((castling_ & kCastleBK) && squares_[makeSq(5, 7)].empty() && squares_[makeSq(6, 7)].empty() &&
+        !rookK.empty() && rookK.type == PieceType::Rook && rookK.color == Color::Black) {
       out.push_back(Move{60, 62, PieceType::None});
     }
     if ((castling_ & kCastleBQ) && squares_[makeSq(3, 7)].empty() && squares_[makeSq(2, 7)].empty() &&
-        squares_[makeSq(1, 7)].empty()) {
+        squares_[makeSq(1, 7)].empty() &&
+        !rookQ.empty() && rookQ.type == PieceType::Rook && rookQ.color == Color::Black) {
       out.push_back(Move{60, 58, PieceType::None});
     }
   }

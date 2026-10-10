@@ -28,7 +28,14 @@ _d = find_binding()
 if _d and _d not in sys.path:
     sys.path.insert(0, _d)
 
-import rune_bindings as rb
+try:
+    import rune_bindings as rb
+    HAS_BINDINGS = True
+except ImportError:
+    HAS_BINDINGS = False
+
+import pytest
+needs_bindings = pytest.mark.skipif(not HAS_BINDINGS, reason="bindings not built")
 
 from training.export.export import export_model, load_exported_arrays
 from training.export.quantize import fake_quantize
@@ -46,7 +53,7 @@ def cpp_eval(path, fen):
                          header.get("alpha", 1.0), header["geometric_bias"] == "dynamic")
     else:
         m = rb.RuneModel(arch)
-    for g in range(8):
+    for g in range(9):
         arr = arrays[f"emb{g}"]
         if str(arr.dtype) in ("int8", "int16"):
             arr = arr.astype("float32") * header["scales"][f"emb{g}"]
@@ -73,6 +80,8 @@ def test_int16_export_roundtrip(tmp_path):
 
 
 def test_quant_consistency_all_modes(tmp_path):
+    if not HAS_BINDINGS:
+        pytest.skip("bindings not built")
     torch.manual_seed(22)
     fen = "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1"
     for arch, kw in [("RUNE-MLP", {}), ("RUNE-REL-02", {"dynamic_bias": True})]:

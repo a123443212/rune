@@ -19,13 +19,21 @@ import sys
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import pytest
 from tests.conftest import find_binding
 
 _d = find_binding()
 if _d and _d not in sys.path:
     sys.path.insert(0, _d)
 
-import rune_bindings as rb
+try:
+    import rune_bindings as rb
+    HAS_BINDINGS = True
+except ImportError:
+    HAS_BINDINGS = False
+    rb = None
+
+pytestmark = pytest.mark.skipif(not HAS_BINDINGS, reason="bindings not built")
 
 from training.datasets.composition import composition
 from training.datasets.siblings import build_sibling_pairs

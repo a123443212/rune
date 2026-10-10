@@ -81,7 +81,7 @@ def token_features_v02(state, size=9):
             ci = 0
         else:
             ci = 1
-        key = (ci * 181 + sq) % 361
+        key = ci * 361 + sq
         feats.append((0, key))
         feats.append((6, sq % 361))
         k = libs[sq]

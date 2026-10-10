@@ -58,7 +58,7 @@ pub fn run(generic: &str, compiled: &str, positions: &str, tol: f32) -> i32 {
                 return 1;
             }
         };
-        let r1 = ev_g.evaluate_board(&b);
+        let r1 = ev_g.evaluate_board(&b).expect("eval");
         let r2 = ev_c.evaluate_board(&b);
         let d = (r1.value - r2.value).abs();
         if d.is_nan() {

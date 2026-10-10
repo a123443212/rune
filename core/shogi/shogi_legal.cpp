@@ -145,7 +145,6 @@ bool pawnDropMate(const ShogiBoard& board, int to) {
   shogiPseudoMoves(fb, pseudo);
   for (const auto& mv : pseudo) {
     if (mv.drop) continue;
-    if (mv.to == to) return false;
     ShogiBoard trial = nb;
     if (!doMove(trial, mv, foe)) continue;
     if (!shogiKingInCheck(trial, foe)) return false;

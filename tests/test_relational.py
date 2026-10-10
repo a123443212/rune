@@ -52,7 +52,7 @@ FENS = [
 
 def copy_to_cpp(tm, cm):
     emb = tm.embedding_tensors()
-    for g in range(8):
+    for g in range(9):
         cm.set_embedding(g, [float(x) for x in emb[f"emb{g}"].numpy().reshape(-1)])
     arch = tm.arch_tensors()
     names = tm.export_order()
@@ -67,7 +67,7 @@ def batch_for(tm, fen):
 
     feats = extract_features(fen)
     ids, masks = [], []
-    for g in range(8):
+    for g in range(9):
         idx = [i for gg, i in feats if gg == g]
         ids.append(torch.tensor([idx if idx else [0]]))
         masks.append(torch.tensor([[1.0] * len(idx) if idx else [0.0]]))

@@ -34,8 +34,8 @@ pub fn value_to_cp(v: f32) -> i32 {
 
 pub fn search_depth(ev: &mut Evaluator, fen: &str, depth: usize) -> SearchOutcome {
     let mut eval_fn = |f: &str| match Board::parse_fen(f) {
-        Ok(b) => ev.evaluate_board(&b).value,
-        Err(_) => 0.0,
+        Ok(b) => ev.evaluate_board(&b).map(|r| r.value).unwrap_or(f32::NAN),
+        Err(_) => f32::NAN,
     };
     let t0 = Instant::now();
     let mut ab = rune_search::AlphaBeta::new(&mut eval_fn, LazyConfig { mode: LazyMode::L0, margin: 0.08, max_refine: 1, threshold: 0.5 });
@@ -53,8 +53,15 @@ pub fn search_timed(ev: &mut Evaluator, fen: &str, budget_ms: u64, max_depth: us
         if t0.elapsed().as_millis() as u64 >= budget_ms {
             break;
         }
+        let deadline = t0.elapsed().as_millis() as u64;
+        if deadline >= budget_ms {
+            break;
+        }
         let r = search_depth(ev, fen, d);
-        if r.bestmove.is_empty() {
+        if r.bestmove.is_empty() || !r.value.is_finite() {
+            break;
+        }
+        if t0.elapsed().as_millis() as u64 >= budget_ms {
             break;
         }
         best = r;

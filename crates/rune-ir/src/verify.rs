@@ -32,7 +32,7 @@ pub fn verify(ir: &RuneIr) -> Vec<String> {
     }
     let kinds: Vec<&str> = ir.ops.iter().map(|o| o.kind.as_str()).collect();
     let family = arch_family(&ir.model.architecture);
-    if family == "unknown" {
+    if family == "unknown" || family == "legacy" {
         errs.push(format!("unsupported architecture {}", ir.model.architecture));
         return errs;
     }
@@ -44,7 +44,7 @@ pub fn verify(ir: &RuneIr) -> Vec<String> {
     let ids: Vec<&str> = ir.ops.iter().map(|o| o.id.as_str()).collect();
     for f in &ir.fusion {
         for op in &f.ops {
-            if !kinds.contains(&op.as_str()) {
+            if !ids.contains(&op.as_str()) && !kinds.contains(&op.as_str()) {
                 errs.push(format!("fusion {} references missing op {}", f.id, op));
             }
         }
@@ -77,7 +77,7 @@ pub fn verify(ir: &RuneIr) -> Vec<String> {
             errs.push(format!("unsupported policy_size {}", ir.model.policy_size));
         }
     } else {
-        if ir.model.tokens == 0 || ir.model.tokens > 16 {
+        if ir.model.tokens == 0 || ir.model.tokens > 19 {
             errs.push(format!("unsupported tokens {}", ir.model.tokens));
         }
         if ir.model.token_dim == 0 || ir.model.token_dim > 128 {

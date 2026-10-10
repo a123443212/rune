@@ -68,8 +68,8 @@ fn accumulator_refresh_equals_incremental() {
     let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
     let mut ev_full = Evaluator::load(&p).expect("load");
     let mut ev_inc = Evaluator::load(&p).expect("load");
-    ev_full.refresh(&b1);
-    ev_inc.refresh(&b0);
+    ev_full.refresh(&b1).expect("refresh");
+    ev_inc.refresh(&b0).expect("refresh");
     ev_inc.update_incremental(&f0, &f1, &compute_context(&b1));
     let r1 = ev_full.evaluate();
     let r2 = ev_inc.evaluate();
@@ -122,7 +122,7 @@ fn model_fixtures_load_and_eval() {
         let p = PathBuf::from(format!("../../spec/test-vectors/models/{}", n));
         let mut ev = Evaluator::load(&p).expect(n);
         let b = Board::startpos();
-        let r = ev.evaluate_board(&b);
+        let r = ev.evaluate_board(&b).expect("eval");
         assert!(r.value >= -1.0 && r.value <= 1.0, "{}", n);
     }
 }
@@ -131,7 +131,7 @@ fn startpos_value_matches_golden_triangle() {
     let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
     let mut ev = Evaluator::load(&p).expect("load");
     let b = Board::startpos();
-    let r = ev.evaluate_board(&b);
+    let r = ev.evaluate_board(&b).expect("eval");
     assert!((r.value - 0.05041957).abs() < 2e-5, "got {}", r.value);
 }
 #[test]
@@ -141,8 +141,8 @@ fn quant_model_close_to_fp32() {
     let mut ef = Evaluator::load(&pf).unwrap();
     let mut ei = Evaluator::load(&pi).unwrap();
     let b = Board::startpos();
-    let rf = ef.evaluate_board(&b);
-    let ri = ei.evaluate_board(&b);
+    let rf = ef.evaluate_board(&b).expect("eval");
+    let ri = ei.evaluate_board(&b).expect("eval");
     assert!((rf.value - ri.value).abs() < 0.01, "fp32 {} int8 {}", rf.value, ri.value);
 }
 #[test]
@@ -154,7 +154,7 @@ fn push_pop_roundtrip() {
     b1.apply_uci("e2e4").unwrap();
     let f0 = extract_features(&b0);
     let f1 = extract_features(&b1);
-    ev.refresh(&b0);
+    ev.refresh(&b0).expect("refresh");
     let r0 = ev.evaluate();
     ev.push();
     ev.update_incremental(&f0, &f1, &compute_context(&b1));
@@ -176,7 +176,7 @@ fn value_only_matches_full() {
         "r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1",
     ] {
         let b = Board::parse_fen(fen).unwrap();
-        ev.refresh(&b);
+        ev.refresh(&b).expect("refresh");
         let r = ev.evaluate();
         let v = ev.evaluate_value_only();
         assert!((r.value - v).abs() < 1e-6, "{} got {} vs {}", fen, r.value, v);
@@ -193,8 +193,8 @@ fn large_diff_matches_refresh() {
     let p = PathBuf::from("../../spec/test-vectors/models/small-gab-fp32.rune");
     let mut ev_full = Evaluator::load(&p).expect("load");
     let mut ev_inc = Evaluator::load(&p).expect("load");
-    ev_full.refresh(&b1);
-    ev_inc.refresh(&b0);
+    ev_full.refresh(&b1).expect("refresh");
+    ev_inc.refresh(&b0).expect("refresh");
     ev_inc.update_incremental(&f0, &f1, &compute_context(&b1));
     let r1 = ev_full.evaluate();
     let r2 = ev_inc.evaluate();
@@ -303,7 +303,7 @@ fn dynamic_bias_matches_cache() {
         alpha,
     };
     let b = Board::parse_fen("r3k2r/p1ppqpb1/bn2pnp1/3PN3/1p2P3/2N2Q1p/PPPBBPPP/R3K2R w KQkq - 0 1").unwrap();
-    ev.refresh(&b);
+    ev.refresh(&b).expect("refresh");
     let tr = ev.trace();
     let ctx = compute_context(&b);
     let mut cache = RelationalCache::configure(w, 8);
@@ -331,7 +331,7 @@ fn bucket_heads_match_golden() {
     for v in g["vectors"].as_array().unwrap() {
         let fen = v["fen"].as_str().unwrap();
         let b = Board::parse_fen(fen).unwrap();
-        let r = ev.evaluate_board(&b);
+        let r = ev.evaluate_board(&b).expect("eval");
         assert_eq!(ev.phase(), v["phase"].as_u64().unwrap() as u8, "{}", fen);
         assert!((r.value - v["value"].as_f64().unwrap() as f32).abs() < 1e-5, "{}", fen);
         for i in 0..3 {
@@ -352,7 +352,7 @@ fn bucket_phase_boundaries() {
     for (fen, want) in cases {
         let b = Board::parse_fen(fen).unwrap();
         assert_eq!(b.game_phase(), want, "{}", fen);
-        ev.refresh(&b);
+        ev.refresh(&b).expect("refresh");
         assert_eq!(ev.phase(), want, "{}", fen);
     }
 }
@@ -366,7 +366,7 @@ fn multi_head_matches_golden() {
     for v in g["vectors"].as_array().unwrap() {
         let fen = v["fen"].as_str().unwrap();
         let b = Board::parse_fen(fen).unwrap();
-        let r = ev.evaluate_board(&b);
+        let r = ev.evaluate_board(&b).expect("eval");
         assert!((r.value - v["value"].as_f64().unwrap() as f32).abs() < 1e-5, "{}", fen);
         for i in 0..3 {
             let d = (r.wdl[i] - v["wdl"][i].as_f64().unwrap() as f32).abs();

@@ -36,6 +36,7 @@ class EmbeddingTables {
   std::vector<float>& groupData(int group) { return tables_[group]; }
   const std::vector<float>& groupData(int group) const { return tables_[group]; }
   size_t numFloats() const;
+  int vocab(int group) const;
 
  private:
   std::vector<float> tables_[GroupedFeatureSet::kNumGroups];

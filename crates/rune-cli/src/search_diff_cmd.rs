@@ -44,7 +44,7 @@ pub fn run(model_a: &str, model_b: &str, fen: &str, depth: usize, tol: f32) -> i
         let mut eval_fn = move |fl: &str| {
             cc.set(cc.get() + 1);
             match Board::parse_fen(fl) {
-                Ok(b) => eva.evaluate_board(&b).value,
+                Ok(b) => eva.evaluate_board(&b).map(|r| r.value).unwrap_or(f32::NAN),
                 Err(_) => 0.0,
             }
         };
@@ -57,7 +57,7 @@ pub fn run(model_a: &str, model_b: &str, fen: &str, depth: usize, tol: f32) -> i
         let mut eval_fn = move |fl: &str| {
             cc.set(cc.get() + 1);
             match Board::parse_fen(fl) {
-                Ok(b) => evb.evaluate_board(&b).value,
+                Ok(b) => evb.evaluate_board(&b).map(|r| r.value).unwrap_or(f32::NAN),
                 Err(_) => 0.0,
             }
         };

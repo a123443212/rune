@@ -49,7 +49,7 @@ def main():
     else:
         model = build_model(args.arch)
         loader, _ = make_loader(pool, batch_size=256, shuffle=False)
-    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu", weights_only=True))
     model.eval()
     out = []
     with torch.no_grad():

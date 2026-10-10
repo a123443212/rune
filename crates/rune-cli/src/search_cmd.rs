@@ -46,7 +46,7 @@ pub fn run(model: &str, fen: &str, depth: usize, lazy: &str, threshold: f32) -> 
     let mut eval_fn = move |f: &str| {
         cc.set(cc.get() + 1);
         match Board::parse_fen(f) {
-            Ok(b) => ev.evaluate_board(&b).value,
+            Ok(b) => ev.evaluate_board(&b).map(|r| r.value).unwrap_or(f32::NAN),
             Err(_) => 0.0,
         }
     };
@@ -65,7 +65,7 @@ pub fn run(model: &str, fen: &str, depth: usize, lazy: &str, threshold: f32) -> 
         let mut cheap_fn = move |f: &str| {
             match Board::parse_fen(f) {
                 Ok(b) => {
-                    ev_cheap.refresh(&b);
+                    ev_cheap.refresh(&b).expect("refresh");
                     ev_cheap.evaluate_value_only()
                 }
                 Err(_) => 0.0,

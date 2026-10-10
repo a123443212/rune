@@ -49,7 +49,7 @@ def build_classic(model_spec, tensor_metas, target):
         for tm in tensor_metas:
             if tm.get("name") == nm:
                 tensors.append(_tensor_entry(nm, tm.get("shape", []), tm.get("dtype", "float32"), "row-major", True, [0, 12]))
-    for g in range(8):
+    for g in range(9):
         nm = "emb%d" % g
         for tm in tensor_metas:
             if tm.get("name") == nm:

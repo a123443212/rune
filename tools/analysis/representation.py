@@ -229,7 +229,7 @@ def load_model(variant, token_dims, pooling, gate_on, checkpoint):
     model = build_dense_model(variant=variant, token_dims=token_dims,
                               pooling=pooling, gate_on=gate_on)
     if checkpoint:
-        state = torch.load(checkpoint, map_location="cpu")
+        state = torch.load(checkpoint, map_location="cpu", weights_only=True)
         model.load_state_dict(state)
     return model
 

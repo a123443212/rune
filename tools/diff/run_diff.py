@@ -43,7 +43,8 @@ def py_forward(model_path, fen):
     feats = extract_features(fen)
     acc = np.zeros((8, 32), dtype=np.float64)
     for g, i in feats:
-        acc[g] += arrays["emb" + str(g)][i]
+        t = 0 if g == 8 else g
+        acc[t] += arrays["emb" + str(g)][i]
     tok = np.clip(acc, 0, 1).astype(np.float32)
     stages = {"features": feats, "accumulator": acc.reshape(-1).tolist(), "tokens": tok.reshape(-1).tolist()}
     arch = header.get("architecture_id", header.get("arch"))
@@ -52,7 +53,14 @@ def py_forward(model_path, fen):
         K = tok @ arrays["wk"].T + arrays["bk"]
         V = tok @ arrays["wvv"].T + arrays["bvv"]
         S = Q @ K.T + arrays["gab"]
-        G = np.clip(S, 0, 1)
+        gate = header.get("gate", "clip")
+        if gate == "hard_sigmoid":
+            G = np.clip(0.2 * S + 0.5, 0, 1)
+        elif gate == "screlu":
+            c = np.clip(S, 0, 1)
+            G = c * c
+        else:
+            G = np.clip(S, 0, 1)
         Y = G @ V
         mixed = tok + Y
         stages.update({"q": Q.reshape(-1).tolist(), "k": K.reshape(-1).tolist(), "v": V.reshape(-1).tolist(), "scores": S.reshape(-1).tolist(), "gates": G.reshape(-1).tolist()})

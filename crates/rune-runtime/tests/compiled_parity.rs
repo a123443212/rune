@@ -112,7 +112,7 @@ fn reference_and_compiled_match_on_sparse_fixtures() {
         let mut optimized = CompiledEvaluator::load(&compiled).expect("load compiled evaluator");
         for fen in positions {
             let board = Board::parse_fen(fen).expect("parse position");
-            let reference_result = reference.evaluate_board(&board);
+            let reference_result = reference.evaluate_board(&board).expect("eval");
             let compiled_result = optimized.evaluate_board(&board);
             assert_eval_close(
                 &format!("{} at {}", fixture, fen),
@@ -127,14 +127,14 @@ fn reference_and_compiled_match_on_sparse_fixtures() {
         let before_features = extract_features(&before);
         let after_features = extract_features(&after);
         let context = compute_context(&after);
-        reference.refresh(&before);
+        reference.refresh(&before).expect("refresh");
         optimized.refresh(&before);
         reference.update_incremental(&before_features, &after_features, &context);
         optimized.update_incremental(&before_features, &after_features, &context);
         let reference_incremental = reference.evaluate();
         let compiled_incremental = optimized.evaluate();
         assert_eval_close(fixture, &reference_incremental, &compiled_incremental);
-        let reference_full = reference.evaluate_board(&after);
+        let reference_full = reference.evaluate_board(&after).expect("eval");
         let compiled_full = optimized.evaluate_board(&after);
         assert_eval_close(fixture, &reference_incremental, &reference_full);
         assert_eval_close(fixture, &compiled_incremental, &compiled_full);

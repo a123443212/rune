@@ -43,11 +43,16 @@ bool Board::setFen(const std::string& fen) {
   if (!(ss >> placement >> side >> castle >> ep >> half >> full)) return false;
   int rank = 7;
   int file = 0;
+  int slashes = 0;
   for (char c : placement) {
     if (c == '/') {
+      if (file != 8) return false;
       rank -= 1;
       file = 0;
+      slashes += 1;
+      if (rank < 0) return false;
     } else if (std::isdigit(static_cast<unsigned char>(c))) {
+      if (c == '0' || c == '9') return false;
       file += c - '0';
       if (file > 8) return false;
     } else {
@@ -67,6 +72,7 @@ bool Board::setFen(const std::string& fen) {
       file += 1;
     }
   }
+  if (slashes != 7 || file != 8 || rank != 0) return false;
   if (side != "w" && side != "b") return false;
   side_ = (side == "b") ? Color::Black : Color::White;
   castling_ = 0;
@@ -84,7 +90,10 @@ bool Board::setFen(const std::string& fen) {
     if (ep.size() != 2) return false;
     int f = ep[0] - 'a';
     int r = ep[1] - '1';
-    if (onBoard(f, r)) epSquare_ = makeSq(f, r);
+    if (!onBoard(f, r)) return false;
+    if (ep[0] < 'a' || ep[0] > 'h') return false;
+    if (ep[1] != '3' && ep[1] != '6') return false;
+    epSquare_ = makeSq(f, r);
   }
   try {
     int halfV = std::stoi(half);

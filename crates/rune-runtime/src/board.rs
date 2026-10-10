@@ -127,6 +127,9 @@ impl Board {
                     return Err(RuntimeError::BadFen("too many ranks".to_string()));
                 }
             } else if c.is_ascii_digit() {
+                if c == '0' || c == '9' {
+                    return Err(RuntimeError::BadFen("bad digit".to_string()));
+                }
                 file += c.to_digit(10).unwrap() as i32;
                 if file > 8 {
                     return Err(RuntimeError::BadFen("rank overflow".to_string()));
@@ -275,6 +278,34 @@ impl Board {
             };
         }
         let moved = self.sq[from].ok_or_else(|| RuntimeError::BadUci("empty from".to_string()))?;
+        if moved.color != self.stm {
+            return Err(RuntimeError::BadUci("wrong side".to_string()));
+        }
+        if let Some(dest) = self.sq[to] {
+            if dest.color == moved.color {
+                return Err(RuntimeError::BadUci("own capture".to_string()));
+            }
+        }
+        if promo != 0 {
+            if moved.kind != PAWN {
+                return Err(RuntimeError::BadUci("promo".to_string()));
+            }
+            let tr = sq_rank(to);
+            if (moved.color == WHITE && tr != 7) || (moved.color == BLACK && tr != 0) {
+                return Err(RuntimeError::BadUci("promo rank".to_string()));
+            }
+        }
+        if moved.kind == PAWN && (sq_rank(to) == 7 || sq_rank(to) == 0) && promo == 0 {
+            let df = (sq_file(to) - sq_file(from)).abs();
+            let dr = sq_rank(to) - sq_rank(from);
+            let fwd = if moved.color == WHITE { 1 } else { -1 };
+            let is_cap = df == 1 && dr == fwd && self.sq[to].is_some();
+            let is_push = df == 0 && (dr == fwd || dr == 2 * fwd) && self.sq[to].is_none();
+            let is_ep = to as i16 == self.ep_sq && self.sq[to].is_none() && df == 1 && dr == fwd;
+            if is_cap || is_push || is_ep {
+                return Err(RuntimeError::BadUci("promo required".to_string()));
+            }
+        }
         let mut cap_sq = to;
         let mut captured = self.sq[to];
         let mut was_ep = false;
@@ -283,14 +314,38 @@ impl Board {
             let dir = if moved.color == WHITE { -1 } else { 1 };
             let f = sq_file(to);
             let r = sq_rank(to) + dir;
+            if !on_board(f, r) {
+                return Err(RuntimeError::BadUci("bad ep".to_string()));
+            }
             cap_sq = make_sq(f, r);
             captured = self.sq[cap_sq];
+            match captured {
+                Some(cp) if cp.kind == PAWN && cp.color != moved.color => {}
+                _ => return Err(RuntimeError::BadUci("bad ep capture".to_string())),
+            }
         }
         let mut was_castle = false;
         if moved.kind == KING {
             let df = sq_file(to) - sq_file(from);
             if df.abs() == 2 {
                 was_castle = true;
+                let need = if moved.color == WHITE {
+                    if to == make_sq(6, 0) { 1 } else if to == make_sq(2, 0) { 2 } else { 0 }
+                } else {
+                    if to == make_sq(6, 7) { 4 } else if to == make_sq(2, 7) { 8 } else { 0 }
+                };
+                if need == 0 || (self.castle_mask & need) == 0 {
+                    return Err(RuntimeError::BadUci("bad castle".to_string()));
+                }
+                let r = sq_rank(from);
+                let (rf, rt) = if sq_file(to) == 6 { (make_sq(7, r), make_sq(5, r)) } else { (make_sq(0, r), make_sq(3, r)) };
+                match self.sq[rf] {
+                    Some(rp) if rp.kind == ROOK && rp.color == moved.color => {}
+                    _ => return Err(RuntimeError::BadUci("no rook".to_string())),
+                }
+                if self.sq[rt].is_some() {
+                    return Err(RuntimeError::BadUci("blocked castle".to_string()));
+                }
             }
         }
         let undo = Undo {

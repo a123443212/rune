@@ -46,7 +46,12 @@ def dequant(arr, header, name):
     return np.asarray(arr, dtype=np.float32)
 def load_torch_adaptive(path):
     header, arrays = load_exported_arrays(path)
-    m = AdaptiveModel(dim=header.get("token_dim", 16))
+    m = AdaptiveModel(dim=int(header.get("token_dim", 16)),
+                      cheap_pooling=str(header.get("cheap_pooling", header.get("pooling", "none"))),
+                      alpha=float(header.get("alpha", 1.0)),
+                      threshold=float(header.get("threshold", 0.5)),
+                      t_high=header.get("t_high", None),
+                      t_low=header.get("t_low", None))
     sd = m.state_dict()
     for g in range(9):
         sd[f"embedder.tables.{g}.weight"].copy_(torch.from_numpy(dequant(arrays[f"emb{g}"], header, f"emb{g}")))

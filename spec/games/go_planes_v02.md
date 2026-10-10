@@ -54,11 +54,11 @@ lib1, lib2, lib3, empty, phase`.
 
 ## Token features (shared 8-token stack)
 
-Same 9 groups and vocabs as v01:
-`[361,361,361,64,64,361,361,64,18]`.
+Same 9 groups, vocabs v02:
+`[722,722,361,64,64,361,361,64,18]`.
 Sorted unique `(group,index)` list:
 
-- group 0: `(ci*181+sq)%361` per stone, `ci` relative color.
+- group 0: `ci*361+sq` per stone, `ci` relative color.
 - group 6: `sq%361` occupancy per stone.
 - group 1: low-liberty stones (`<=2`), same key as group 0.
 - group 5: atari stones (`==1`), `sq%361`.

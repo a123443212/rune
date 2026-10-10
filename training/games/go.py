@@ -44,7 +44,7 @@ def parse_state(state, size=9):
 class GoGame(GameSpec):
     game_id = "go"
     num_groups = 9
-    vocabs = (361, 361, 361, 64, 64, 361, 361, 64, 18)
+    vocabs = (722, 722, 361, 64, 64, 361, 361, 64, 18)
     tokens = 8
     token_dim = 32
     context_dim = CONTEXT_DIM
@@ -67,7 +67,7 @@ class GoGame(GameSpec):
                 mine = (ch == "X" and stm == 0) or (ch == "O" and stm == 1)
                 ci = 0 if mine else 1
                 sq = r * n + c
-                feats.append((0, (ci * 181 + sq) % 361))
+                feats.append((0, ci * 361 + sq))
                 feats.append((6, sq % 361))
         feats.append((7, stm))
         feats.append((7, 2))

@@ -83,7 +83,7 @@ def main():
 
     params = json.loads(args.params_json)
     model, has_unc = build_teacher_model(args.arch, params)
-    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu"))
+    model.load_state_dict(torch.load(args.checkpoint, map_location="cpu", weights_only=True))
     model.eval()
     with open(args.checkpoint, "rb") as f:
         ckpt_hash = hashlib.sha256(f.read()).hexdigest()[:16]

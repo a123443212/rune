@@ -41,7 +41,7 @@ void GoTokenV02::extract(const GoState& st, std::vector<ActiveFeature>& out) {
     int8_t v = raw[static_cast<size_t>(sq)];
     if (v == 0) continue;
     int ci = ((v == 1 && stm == kBlack) || (v == -1 && stm == kWhite)) ? 0 : 1;
-    uint16_t key = static_cast<uint16_t>((ci * 181 + sq) % 361);
+    uint16_t key = static_cast<uint16_t>(ci * 361 + sq);
     ActiveFeature f;
     f.group = 0;
     f.index = key;

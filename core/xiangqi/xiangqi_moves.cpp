@@ -156,22 +156,6 @@ void kingDests(const XiangqiBoard& board, int sq, uint8_t color, std::vector<int
   for (int k = 0; k < 4; ++k) {
     if (inPalace(f + df[k], r + dr[k], color)) out.push_back(makeSq(f + df[k], r + dr[k]));
   }
-  uint8_t foe = (color == kRed) ? kBlack : kRed;
-  for (int t = 0; t < 90; ++t) {
-    XiangqiPiece p = board.at(t);
-    if (!p.present || p.kind != kKing || p.color != foe) continue;
-    if (sqFile(t) != f) continue;
-    int lo = (sq < t) ? sq : t;
-    int hi = (sq < t) ? t : sq;
-    bool blocked = false;
-    for (int m = lo + 9; m < hi; m += 9) {
-      if (board.at(m).present) {
-        blocked = true;
-        break;
-      }
-    }
-    if (!blocked) out.push_back(t);
-  }
 }
 
 }

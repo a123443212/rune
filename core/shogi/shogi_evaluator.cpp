@@ -18,11 +18,18 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 
 #include "core/shogi/shogi_evaluator.h"
 
+#include <stdexcept>
+
 namespace rune {
 namespace shogi {
 
 ShogiEvaluator::ShogiEvaluator(const EmbeddingTables* tables, const IArchitecture* arch)
     : arch_(arch) {
+  if (!tables) throw std::invalid_argument("null tables");
+  if (!arch) throw std::invalid_argument("null arch");
+  for (int g = 0; g < 9; ++g) {
+    if (tables->vocab(g) < ShogiFeatureSet::vocabSize(g)) throw std::invalid_argument("tables too small");
+  }
   acc_.bind(tables);
   for (int i = 0; i < 256; ++i) tokenBuf_[i] = 0.0f;
   for (int i = 0; i < 12; ++i) ctx_[i] = 0.0f;

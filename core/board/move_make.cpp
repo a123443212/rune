@@ -30,8 +30,11 @@ void Board::applyMove(const Move& m, Piece& captured) {
   squares_[m.to] = placed;
   if (isEp) {
     int capSq = makeSq(fileOf(m.to), rankOf(m.from));
-    captured = squares_[capSq];
-    squares_[capSq] = Piece{};
+    Piece cap = squares_[capSq];
+    if (!cap.empty() && cap.type == PieceType::Pawn && cap.color != moving.color) {
+      captured = cap;
+      squares_[capSq] = Piece{};
+    }
   }
   bool isCastle = (moving.type == PieceType::King && rankOf(m.from) == rankOf(m.to) &&
                    (m.to == m.from + 2 || (m.to + 2 == m.from)));
@@ -48,18 +51,20 @@ void Board::applyMove(const Move& m, Piece& captured) {
 }
 
 void Board::moveRookForCastle(int kingTo) {
+  auto moveRook = [&](int from, int to) {
+    Piece r = squares_[from];
+    if (r.empty() || r.type != PieceType::Rook) return;
+    squares_[to] = r;
+    squares_[from] = Piece{};
+  };
   if (kingTo == makeSq(6, 0)) {
-    squares_[makeSq(5, 0)] = squares_[makeSq(7, 0)];
-    squares_[makeSq(7, 0)] = Piece{};
+    moveRook(makeSq(7, 0), makeSq(5, 0));
   } else if (kingTo == makeSq(2, 0)) {
-    squares_[makeSq(3, 0)] = squares_[makeSq(0, 0)];
-    squares_[makeSq(0, 0)] = Piece{};
+    moveRook(makeSq(0, 0), makeSq(3, 0));
   } else if (kingTo == makeSq(6, 7)) {
-    squares_[makeSq(5, 7)] = squares_[makeSq(7, 7)];
-    squares_[makeSq(7, 7)] = Piece{};
+    moveRook(makeSq(7, 7), makeSq(5, 7));
   } else if (kingTo == makeSq(2, 7)) {
-    squares_[makeSq(3, 7)] = squares_[makeSq(0, 7)];
-    squares_[makeSq(0, 7)] = Piece{};
+    moveRook(makeSq(0, 7), makeSq(3, 7));
   }
 }
 
@@ -90,14 +95,27 @@ bool Board::makeMove(const Move& m) {
     int pass = (m.to > m.from) ? m.from + 1 : m.from - 1;
     Color enemy = opposite(side_);
     if (inCheck(side_) || isAttacked(pass, enemy)) return false;
+    int rookFrom = -1;
+    if (m.to == makeSq(6, 0)) rookFrom = makeSq(7, 0);
+    else if (m.to == makeSq(2, 0)) rookFrom = makeSq(0, 0);
+    else if (m.to == makeSq(6, 7)) rookFrom = makeSq(7, 7);
+    else if (m.to == makeSq(2, 7)) rookFrom = makeSq(0, 7);
+    else return false;
+    Piece rook = squares_[rookFrom];
+    if (rook.empty() || rook.type != PieceType::Rook || rook.color != side_) return false;
+  }
+  bool epAttempt = (moving.type == PieceType::Pawn && m.to == epSquare_ && squares_[m.to].empty() &&
+               fileOf(m.from) != fileOf(m.to));
+  if (epAttempt) {
+    Piece cap = squares_[makeSq(fileOf(m.to), rankOf(m.from))];
+    if (cap.empty() || cap.type != PieceType::Pawn || cap.color == side_) return false;
   }
   BoardSnapshot snap;
   snap.move = m;
   snap.captured = squares_[m.to];
   snap.castling = castling_;
   snap.epSquarePrev = epSquare_;
-  snap.isEp = (moving.type == PieceType::Pawn && m.to == epSquare_ && squares_[m.to].empty() &&
-               fileOf(m.from) != fileOf(m.to));
+  snap.isEp = epAttempt;
   if (snap.isEp) {
     snap.captured = squares_[makeSq(fileOf(m.to), rankOf(m.from))];
   }

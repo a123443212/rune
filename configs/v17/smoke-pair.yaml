@@ -21,7 +21,15 @@ architecture:
   token_dim: 32
   gate: clip
   alpha: 1.0
-  pair: true
+  pair: false
+
+pair_legs:
+  control:
+    model: rune_attn_gab
+    pair: false
+  candidate:
+    model: rune_attn_gab_pair
+    pair: true
 
 training:
   lr: 0.0003

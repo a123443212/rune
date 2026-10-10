@@ -28,7 +28,7 @@ namespace {
 
 void writeHeaderFields(std::ostringstream& h, const ModelSpec& spec, const std::string& quantization,
                        const float* scales) {
-  h << "{\"format\":1";
+  h << "{\"format\":2";
   h << ",\"arch\":\"" << spec.arch << "\"";
   h << ",\"arch_version\":\"" << spec.archVersion << "\"";
   h << ",\"feature_set\":\"" << spec.featureSet << "\"";
@@ -264,7 +264,7 @@ bool saveDenseRuneFile(const std::string& path, const ModelSpec& spec,
   std::string checksum = toHex(fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()),
                                          payload.size()));
   std::ostringstream h;
-  h << "{\"format\":1";
+  h << "{\"format\":2";
   h << ",\"arch\":\"" << spec.arch << "\"";
   h << ",\"arch_version\":\"" << spec.archVersion << "\"";
   h << ",\"feature_set\":\"" << spec.featureSet << "\"";
@@ -388,7 +388,7 @@ bool saveAdaptiveRuneFile(const std::string& path, const ModelSpec& spec,
   std::string checksum = toHex(fnv1aHash(reinterpret_cast<const uint8_t*>(payload.data()),
                                          payload.size()));
   std::ostringstream h;
-  h << "{\"format\":1";
+  h << "{\"format\":2";
   h << ",\"arch\":\"" << spec.arch << "\"";
   h << ",\"arch_version\":\"" << spec.archVersion << "\"";
   h << ",\"feature_set\":\"" << spec.featureSet << "\"";

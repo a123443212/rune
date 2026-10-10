@@ -14,11 +14,14 @@
 # software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
 # OR CONDITIONS OF ANY KIND, either express or implied.
 
+import hashlib
 import json
+import math
 import os
 import time
 
 import torch
+import torch.nn.functional as F
 
 from training.datasets.rune_dataset import make_loader
 from training.losses.composite import CompositeLoss
@@ -28,9 +31,6 @@ from training.trainer.system_stats import file_size_bytes, git_commit, hardware_
 
 
 def derive_seed(config):
-    import hashlib
-    import json
-
     key = json.dumps({"seed": config.get("seed", 0), "arch": config.get("arch"),
                       "rel": config.get("rel_params", {})}, sort_keys=True)
     return int(hashlib.sha256(key.encode()).hexdigest(), 16) % (2 ** 31)
@@ -196,8 +196,6 @@ class Trainer:
             v_pred, w_pred = out
             losses = self.loss_fn(v_pred, w_pred, value, wdl, rank)
         if self.is_distill and teach is not None:
-            import torch.nn.functional as F
-
             sv, sw, su = self.student_outputs(out)
             tv = teach["v"].to(self.device)
             tw = teach["w"].to(self.device)
@@ -222,8 +220,6 @@ class Trainer:
         return {k: v.item() for k, v in losses.items()}
 
     def window_stats(self):
-        import math
-
         grads = [g for g in self.grad_window if math.isfinite(g)]
         elapsed = time.time() - self.train_start
         return {
@@ -279,13 +275,11 @@ class Trainer:
                 v_pred, w_pred = out
                 losses = self.loss_fn(v_pred, w_pred, value.to(self.device), wdl.to(self.device))
             if self.is_distill and teach is not None:
-                import torch.nn.functional as _F
-
                 sv, sw, su = self.student_outputs(out)
                 tv = teach["v"].to(self.device)
                 tw = teach["w"].to(self.device)
                 tu = teach["u"].to(self.device)
-                dlosses = self.distill_fn(sv, sw, tv, _F.one_hot(tw, 3).float(),
+                dlosses = self.distill_fn(sv, sw, tv, F.one_hot(tw, 3).float(),
                                           value.to(self.device), wdl.to(self.device),
                                           teacher_u=tu, student_u=su,
                                           teacher_probs=teach.get("wp", None),
@@ -370,7 +364,7 @@ class Trainer:
         meta_path = os.path.join(ckpt_dir, "meta.json")
         if not (os.path.exists(model_path) and os.path.exists(meta_path)):
             return False
-        self.model.load_state_dict(torch.load(model_path, map_location=self.device))
+        self.model.load_state_dict(torch.load(model_path, map_location=self.device, weights_only=True))
         with open(meta_path) as f:
             meta = json.load(f)
         self.positions_seen = meta.get("positions_seen", 0)

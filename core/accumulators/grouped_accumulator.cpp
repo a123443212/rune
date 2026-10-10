@@ -20,6 +20,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 
 #include <cmath>
 #include <cstdint>
+#include <stdexcept>
 
 namespace rune {
 
@@ -60,10 +61,18 @@ void EmbeddingTables::init(int seed) {
 }
 
 float EmbeddingTables::get(int group, int index, int dim) const {
+  if (group < 0 || group >= GroupedFeatureSet::kNumGroups) throw std::out_of_range("bad group");
+  int vs = static_cast<int>(tables_[group].size() / GroupedFeatureSet::kTokenDim);
+  if (index < 0 || index >= vs) throw std::out_of_range("bad index");
+  if (dim < 0 || dim >= GroupedFeatureSet::kTokenDim) throw std::out_of_range("bad dim");
   return tables_[group][static_cast<size_t>(index) * GroupedFeatureSet::kTokenDim + dim];
 }
 
 void EmbeddingTables::set(int group, int index, int dim, float v) {
+  if (group < 0 || group >= GroupedFeatureSet::kNumGroups) throw std::out_of_range("bad group");
+  int vs = static_cast<int>(tables_[group].size() / GroupedFeatureSet::kTokenDim);
+  if (index < 0 || index >= vs) throw std::out_of_range("bad index");
+  if (dim < 0 || dim >= GroupedFeatureSet::kTokenDim) throw std::out_of_range("bad dim");
   tables_[group][static_cast<size_t>(index) * GroupedFeatureSet::kTokenDim + dim] = v;
 }
 
@@ -71,6 +80,11 @@ size_t EmbeddingTables::numFloats() const {
   size_t n = 0;
   for (int g = 0; g < GroupedFeatureSet::kNumGroups; ++g) n += tables_[g].size();
   return n;
+}
+
+int EmbeddingTables::vocab(int group) const {
+  if (group < 0 || group >= GroupedFeatureSet::kNumGroups) return 0;
+  return static_cast<int>(tables_[group].size() / GroupedFeatureSet::kTokenDim);
 }
 
 GroupedAccumulator::GroupedAccumulator() {
@@ -84,9 +98,12 @@ GroupedAccumulator::GroupedAccumulator(const EmbeddingTables* tables) : tables_(
 }
 
 void GroupedAccumulator::refresh(const std::vector<ActiveFeature>& features) {
+  if (!tables_) throw std::logic_error("accumulator not bound");
   for (int g = 0; g < kTokens; ++g)
     for (int d = 0; d < kDim; ++d) acc_[g][d] = 0.0f;
   for (const ActiveFeature& f : features) {
+    if (f.group >= GroupedFeatureSet::kNumGroups) throw std::out_of_range("bad group");
+    if (f.index >= tables_->vocab(f.group)) throw std::out_of_range("bad index");
     int t = GroupedFeatureSet::tokenForGroup(f.group);
     for (int d = 0; d < kDim; ++d) acc_[t][d] += tables_->get(f.group, f.index, d);
   }
@@ -94,11 +111,16 @@ void GroupedAccumulator::refresh(const std::vector<ActiveFeature>& features) {
 
 void GroupedAccumulator::applyDiff(const std::vector<ActiveFeature>& added,
                                    const std::vector<ActiveFeature>& removed) {
+  if (!tables_) throw std::logic_error("accumulator not bound");
   for (const ActiveFeature& f : added) {
+    if (f.group >= GroupedFeatureSet::kNumGroups) throw std::out_of_range("bad group");
+    if (f.index >= tables_->vocab(f.group)) throw std::out_of_range("bad index");
     int t = GroupedFeatureSet::tokenForGroup(f.group);
     for (int d = 0; d < kDim; ++d) acc_[t][d] += tables_->get(f.group, f.index, d);
   }
   for (const ActiveFeature& f : removed) {
+    if (f.group >= GroupedFeatureSet::kNumGroups) throw std::out_of_range("bad group");
+    if (f.index >= tables_->vocab(f.group)) throw std::out_of_range("bad index");
     int t = GroupedFeatureSet::tokenForGroup(f.group);
     for (int d = 0; d < kDim; ++d) acc_[t][d] -= tables_->get(f.group, f.index, d);
   }

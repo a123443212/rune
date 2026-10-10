@@ -21,7 +21,8 @@ use crate::compiled_loader::CompiledHeader;
 use crate::error::{Result, RuntimeError};
 use crate::evaluator::FULL_REFRESH_LIMIT;
 use crate::features::{compute_context, extract_features, CONTEXT_DIM};
-use crate::mixer::{dyn_factors, HeadWeights};
+use crate::mixer::{dyn_factors, HeadWeights, MixerWeights};
+use crate::mixer_dual::DualMixer;
 use crate::mixer_mh::MultiHeadMixer;
 use crate::model_config::{resolve_model_config, ExecutionTarget};
 use rune_model as model;
@@ -42,6 +43,7 @@ pub struct CompiledEvaluator {
     gate: Gate,
     alpha: f32,
     mh: Option<MultiHeadMixer>,
+    dual: Option<DualMixer>,
     head: Vec<HeadWeights>,
     phase: u8,
     tokens: usize,
@@ -84,7 +86,7 @@ impl CompiledEvaluator {
             }
             tables.data[g].copy_from_slice(arr);
         }
-        let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-REL-02";
+        let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-REL-02" || arch == "RUNE-ATTN-DUAL";
         let (wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate, alpha);
         if has_mixer {
             wq = need_vec(&m.arrays, "wq")?;
@@ -237,6 +239,53 @@ impl CompiledEvaluator {
         } else {
             None
         };
+        let dual = if arch == "RUNE-ATTN-DUAL" {
+            let wq2 = need_vec(&m.arrays, "wq2")?;
+            let bq2 = need_vec(&m.arrays, "bq2")?;
+            let wk2 = need_vec(&m.arrays, "wk2")?;
+            let bk2 = need_vec(&m.arrays, "bk2")?;
+            let wv2 = need_vec(&m.arrays, "wvv2").or_else(|_| need_vec(&m.arrays, "wv2"))?;
+            let bv2 = need_vec(&m.arrays, "bvv2").or_else(|_| need_vec(&m.arrays, "bv2"))?;
+            let gab2 = match m.arrays.get("gab2") {
+                Some(v) => v.clone(),
+                None => vec![0.0; tokens * tokens],
+            };
+            let first = MixerWeights {
+                tokens,
+                dim,
+                wq: wq.clone(),
+                bq: bq.clone(),
+                wk: wk.clone(),
+                bk: bk.clone(),
+                wv: wv.clone(),
+                bv: bv.clone(),
+                gab: gab.clone(),
+                dyn_u: Vec::new(),
+                dyn_w: Vec::new(),
+                ctx_dim: 0,
+                gate,
+                alpha,
+            };
+            let second = MixerWeights {
+                tokens,
+                dim,
+                wq: wq2,
+                bq: bq2,
+                wk: wk2,
+                bk: bk2,
+                wv: wv2,
+                bv: bv2,
+                gab: gab2,
+                dyn_u: Vec::new(),
+                dyn_w: Vec::new(),
+                ctx_dim: 0,
+                gate,
+                alpha: 1.0,
+            };
+            Some(DualMixer { first, second })
+        } else {
+            None
+        };
         let arena = Arena::new(header.memory_bytes.max(8192));
         Ok(CompiledEvaluator {
             tables,
@@ -253,6 +302,7 @@ impl CompiledEvaluator {
             gate,
             alpha,
             mh,
+            dual,
             head: heads,
             phase: 1,
             tokens,
@@ -424,9 +474,9 @@ impl CompiledEvaluator {
         self.tokens_into(&mut tok);
         let t = self.tokens;
         let d = self.dim;
-        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02";
+        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
         let mut mixed = tok.to_vec();
-        if has_mixer && t == 8 && d == 32 && !self.dyn_on() {
+        if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
             let mut q = vec![0.0f32; 256];
             let mut k = vec![0.0f32; 256];
             let mut vv = vec![0.0f32; 256];
@@ -441,6 +491,11 @@ impl CompiledEvaluator {
         } else if has_mixer {
             self.mix_into(&tok, &mut mixed);
         }
+        if let Some(du) = &self.dual {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            du.forward(&mixed, &mut out);
+            mixed = out;
+        }
         if let Some(mh) = &self.mh {
             let mut out = vec![0.0f32; self.tokens * self.dim];
             mh.forward(&tok, &mut out);
@@ -452,9 +507,9 @@ impl CompiledEvaluator {
     pub fn forward_tokens_compiled(&mut self, tok: &[f32]) -> crate::evaluator::EvalResult {
         let t = self.tokens;
         let d = self.dim;
-        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02";
+        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
         let mut mixed = tok.to_vec();
-        if has_mixer && t == 8 && d == 32 && !self.dyn_on() {
+        if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
             let mut q = vec![0.0f32; 256];
             let mut k = vec![0.0f32; 256];
             let mut vv = vec![0.0f32; 256];
@@ -467,7 +522,12 @@ impl CompiledEvaluator {
             fused::mix_residual_8x32(&g, &vv, tok, self.alpha, &mut tmp, &mut out);
             mixed = out;
         } else if has_mixer {
-            self.mix_into(&tok, &mut mixed);
+            self.mix_into(tok, &mut mixed);
+        }
+        if let Some(du) = &self.dual {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            du.forward(&mixed, &mut out);
+            mixed = out;
         }
         if let Some(mh) = &self.mh {
             let mut out = vec![0.0f32; self.tokens * self.dim];

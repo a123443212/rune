@@ -70,6 +70,41 @@ impl<S: GameState> Mcts<S> {
         ((self.rng >> 11) as f32) / (u64::MAX >> 11) as f32
     }
 
+    fn gamma_sample(&mut self, alpha: f32) -> f32 {
+        if alpha <= 0.0 {
+            return 1.0;
+        }
+        if (alpha - 1.0).abs() < 1e-6 {
+            return -self.next_rand().max(1e-6).ln().max(1e-6);
+        }
+        if alpha < 1.0 {
+            let g = self.gamma_sample(alpha + 1.0);
+            let u = self.next_rand().max(1e-9);
+            return g * u.powf(1.0 / alpha);
+        }
+        let d = alpha - 1.0 / 3.0;
+        let c = 1.0 / (9.0 * d).sqrt();
+        loop {
+            let mut x = 0.0;
+            for _ in 0..4 {
+                x += self.next_rand();
+            }
+            x = (x - 2.0) * 1.7;
+            let v = (1.0 + c * x).powi(3);
+            if v <= 0.0 {
+                continue;
+            }
+            let u = self.next_rand().max(1e-9);
+            let x2 = x * x;
+            if u < 1.0 - 0.0331 * x2 * x2 {
+                return (d * v).max(1e-6);
+            }
+            if u.ln() < 0.5 * x2 + d * (1.0 - v + v.ln()) {
+                return (d * v).max(1e-6);
+            }
+        }
+    }
+
     fn expand(&mut self, idx: usize, eval: &mut impl FnMut(&S) -> (f32, Vec<f32>)) -> f32 {
         let st = self.states[idx].clone();
         if st.is_terminal() {
@@ -115,9 +150,10 @@ impl<S: GameState> Mcts<S> {
             priors.clone_from_slice(&p0);
         }
         if self.cfg.dirichlet_eps > 0.0 {
+            let alpha = if self.cfg.dirichlet_alpha > 0.0 { self.cfg.dirichlet_alpha } else { 1.0 };
             let mut s = 0.0f32;
             for i in 0..n {
-                let g = -(-self.next_rand().max(1e-6)).ln().max(1e-6);
+                let g = self.gamma_sample(alpha);
                 priors[i] = g;
                 s += g;
             }

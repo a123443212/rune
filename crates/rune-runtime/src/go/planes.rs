@@ -17,7 +17,7 @@
 use super::board::liberty_map;
 use super::state::{komi_bucket, move_bucket, GoState};
 
-pub const GO_VOCABS: [usize; 9] = [361, 361, 361, 64, 64, 361, 361, 64, 18];
+pub const GO_VOCABS: [usize; 9] = [722, 722, 361, 64, 64, 361, 361, 64, 18];
 pub const GO_CONTEXT_DIM: usize = 12;
 pub const FEATURE_VERSION_V02: &str = "go_planes_v02";
 pub const PLANES_V02: usize = 8;
@@ -75,7 +75,7 @@ pub fn token_features_v02(st: &GoState) -> Vec<(u8, u16)> {
             continue;
         }
         let ci: usize = if (v == 1 && stm == 0) || (v == -1 && stm == 1) { 0 } else { 1 };
-        let key = ((ci * 181 + sq) % 361) as u16;
+        let key = (ci * 361 + sq) as u16;
         feats.push((0, key));
         feats.push((6, (sq % 361) as u16));
         let k = libs[sq];
