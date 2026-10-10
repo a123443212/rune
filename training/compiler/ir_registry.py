@@ -15,7 +15,7 @@
 # OR CONDITIONS OF ANY KIND, either express or implied.
 
 IR_VERSION = "1.1"
-SPEC_VERSION = "RUNE-11"
+SPEC_VERSION = "RUNE-12"
 COMPILER_VERSION = "0.12.0"
 
 CLASSIC_REQUIRED = ["FeatureUpdate", "AccumulatorUpdate", "Tokenize", "Q", "K", "V", "Score", "Bias", "Gate", "Mix", "Residual", "HeadH1", "HeadH2", "Value", "WDL"]

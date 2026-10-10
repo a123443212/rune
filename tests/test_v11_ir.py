@@ -62,4 +62,4 @@ def test_ir_requires_bias():
 def test_ir_version_independent():
     from training.compiler.ir import SPEC_VERSION
     assert IR_VERSION == "1.1"
-    assert SPEC_VERSION == "RUNE-11"
+    assert SPEC_VERSION == "RUNE-12"

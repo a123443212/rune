@@ -1,4 +1,4 @@
-# Architecture specification (RUNE v0.10 runtime slice)
+# Architecture specification (RUNE v0.12 runtime slice)
 
 Canonical table. `architecture-spec.json` next to this file is the
 machine-readable form; this text explains it.

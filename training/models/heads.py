@@ -75,8 +75,8 @@ class SfnnHead(nn.Module):
         in_dim = input_dim if input_dim is not None else TOKENS * TOKEN_DIM
         self.fc1 = nn.Linear(in_dim, hidden1)
         self.fc2 = nn.Linear(hidden1 * 2 if pair else hidden1, hidden2)
-        self.fcv = nn.Linear(32, 1)
-        self.fcwdl = nn.Linear(32, 3)
+        self.fcv = nn.Linear(hidden2, 1)
+        self.fcwdl = nn.Linear(hidden2, 3)
 
     def forward(self, flat):
         pre = self.fc1(flat)

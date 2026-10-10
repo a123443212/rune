@@ -755,8 +755,20 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     if (out.isInt8 || out.isInt16) out.flexQ.quantizeFrom(out.flexEmbeddings, out.layout, out.flexScales);
   }
   if (!out.arch->setTensors(archNames, archFlat)) {
-    err = "arch tensor mismatch";
-    return false;
+    std::vector<std::vector<int>> archShapes;
+    archShapes.reserve(archNames.size());
+    for (const std::string& n : archNames) {
+      auto it = fileShapes.find(n);
+      if (it == fileShapes.end()) {
+        err = "arch tensor mismatch";
+        return false;
+      }
+      archShapes.push_back(it->second);
+    }
+    if (!out.arch->setTensorsShaped(archNames, archShapes, archFlat)) {
+      err = "arch tensor mismatch";
+      return false;
+    }
   }
   {
     std::vector<std::string> gotNames;

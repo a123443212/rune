@@ -40,6 +40,9 @@ class SfnnBaseline : public IArchitecture {
   void getTensors(std::vector<std::string>& names, std::vector<std::vector<int>>& shapes,
                   std::vector<const float*>& data) const override;
   bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) override;
+  bool setTensorsShaped(const std::vector<std::string>& names,
+                        const std::vector<std::vector<int>>& shapes,
+                        const std::vector<float>& flat) override;
   ModelSpec spec() const override;
 
   std::vector<HeadBucket> heads_;

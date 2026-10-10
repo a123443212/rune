@@ -73,8 +73,14 @@ class IArchitecture {
   virtual const char* archId() const = 0;
   virtual const char* archVersion() const = 0;
   virtual void getTensors(std::vector<std::string>& names, std::vector<std::vector<int>>& shapes,
-                          std::vector<const float*>& data) const = 0;
+                           std::vector<const float*>& data) const = 0;
   virtual bool setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) = 0;
+  virtual bool setTensorsShaped(const std::vector<std::string>& names,
+                                const std::vector<std::vector<int>>& shapes,
+                                const std::vector<float>& flat) {
+    (void)shapes;
+    return setTensors(names, flat);
+  }
   virtual ModelSpec spec() const = 0;
 };
 

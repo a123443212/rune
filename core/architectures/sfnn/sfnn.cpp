@@ -215,6 +215,38 @@ bool SfnnBaseline::setTensors(const std::vector<std::string>& names, const std::
   return offset == flat.size();
 }
 
+bool SfnnBaseline::setTensorsShaped(const std::vector<std::string>& names,
+                                     const std::vector<std::vector<int>>& shapes,
+                                     const std::vector<float>& flat) {
+  if (names.size() != shapes.size() || names.empty()) return false;
+  bool swiglu = (names[0] == "wgate" || names[0] == "wgate_b0");
+  size_t perHead = swiglu ? 10 : 8;
+  if (names.size() != perHead && names.size() != perHead * 3) return false;
+  size_t nbuckets = names.size() / perHead;
+  std::vector<std::string> want;
+  headWantNames(want, nbuckets, swiglu, "wv", "bv");
+  if (names != want) return false;
+  std::vector<HeadBucket> heads;
+  size_t off = 0;
+  int maxH1 = 0;
+  int maxH2 = 0;
+  for (size_t bucket = 0; bucket < nbuckets; ++bucket) {
+    HeadBucket head;
+    int hidden1 = 0;
+    int hidden2 = 0;
+    if (!readHeadBucket(shapes, flat, bucket * perHead, swiglu, kIn, head, off, hidden1, hidden2)) {
+      return false;
+    }
+    if (hidden1 > maxH1) maxH1 = hidden1;
+    if (hidden2 > maxH2) maxH2 = hidden2;
+    heads.push_back(std::move(head));
+  }
+  if (off != flat.size()) return false;
+  heads_ = std::move(heads);
+  scratch_.assign(static_cast<size_t>(maxH1) * 3 + static_cast<size_t>(maxH2), 0.0f);
+  return true;
+}
+
 ModelSpec SfnnBaseline::spec() const {
   ModelSpec modelSpec;
   modelSpec.arch = archId();

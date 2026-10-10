@@ -213,6 +213,36 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
   return off == flat.size();
 }
 
+bool GroupedMlp::setTensorsShaped(const std::vector<std::string>& names,
+                                  const std::vector<std::vector<int>>& shapes,
+                                  const std::vector<float>& flat) {
+  if (names.size() != shapes.size() || names.empty()) return false;
+  bool swiglu = (names[0] == "wgate" || names[0] == "wgate_b0");
+  size_t perHead = swiglu ? 10 : 8;
+  if (names.size() != perHead && names.size() != perHead * 3) return false;
+  size_t nbuckets = names.size() / perHead;
+  std::vector<std::string> want;
+  headWantNames(want, nbuckets, swiglu, "wv", "bv");
+  if (names != want) return false;
+  std::vector<HeadBucket> heads;
+  size_t off = 0;
+  int maxH1 = 0;
+  int maxH2 = 0;
+  for (size_t b = 0; b < nbuckets; ++b) {
+    HeadBucket h;
+    int h1 = 0;
+    int h2 = 0;
+    if (!readHeadBucket(shapes, flat, b * perHead, swiglu, kIn, h, off, h1, h2)) return false;
+    if (h1 > maxH1) maxH1 = h1;
+    if (h2 > maxH2) maxH2 = h2;
+    heads.push_back(std::move(h));
+  }
+  if (off != flat.size()) return false;
+  heads_ = std::move(heads);
+  scratch_.assign(static_cast<size_t>(maxH1) * 3 + static_cast<size_t>(maxH2), 0.0f);
+  return true;
+}
+
 ModelSpec GroupedMlp::spec() const {
   ModelSpec s;
   s.arch = archId();

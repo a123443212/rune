@@ -1,14 +1,14 @@
-# Versioning (RUNE v0.11)
+# Versioning (RUNE v0.12)
 
 Four independent versions. Bumping one never implies the others.
 
-- `RUNE-11 runtime spec` — this directory. Bumped when any
-  normative semantics change. v11 adds the ResNet op registry
-  (`StemConv`, `Conv2D`, `ResidualAdd`, `Relu`, `GlobalPool`,
-  `Flatten`, `FeaturePlanes`, `PolicyLogits`, `Policy`), the dual
-  value/policy head, the MCTS `GameState`/`PolicyNet` contract, and
-  the `go` game (`go_planes_v01`). Readers accept `RUNE-10`
-  artifacts unchanged.
+- `RUNE-12 runtime spec` — this directory. Bumped when any
+  normative semantics change. v12 adds the `RUNE-ATTN-SOFT`
+  architecture (softmax-scaled mixer, `Softmax` IR op as a `Gate`
+  alternative), the `value_swiglu` head (`arch_version` 0.3.0), and
+  marks `RUNE-ATTN`, `RUNE-ATTN-DUAL`, `RUNE-ATTN-MH4`,
+  `RUNE-REL-LITE`, `RUNE-MLP-S`, `RUNE-SFNN-C` frozen (load only).
+  Readers accept `RUNE-10` and `RUNE-11` artifacts unchanged.
 - `RUNE model format version` — `format` header field, currently 2.
   Bumped only for framing/header changes. Readers accept 1 and 2.
 - `RUNE architecture version` — per arch id (`0.1.0`, `0.2.0`, ...).

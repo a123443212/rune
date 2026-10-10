@@ -14,7 +14,7 @@
 // software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
 // OR CONDITIONS OF ANY KIND, either express or implied.
 
-pub const RUNTIME_SPEC: &str = "RUNE-11";
+pub const RUNTIME_SPEC: &str = "RUNE-12";
 pub const FEATURE_VERSION: &str = "grouped_hkav2_fullthreats_v02";
 pub const GAME_CHESS: &str = "chess";
 pub const GAME_SHOGI: &str = "shogi";

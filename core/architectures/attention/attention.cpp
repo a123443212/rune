@@ -272,6 +272,53 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
   return off == flat.size();
 }
 
+bool RuneAttnModel::setTensorsShaped(const std::vector<std::string>& names,
+                                     const std::vector<std::vector<int>>& shapes,
+                                     const std::vector<float>& flat) {
+  if (names.size() != shapes.size() || names.size() < 7) return false;
+  const char* mixKeys[7] = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab"};
+  for (int i = 0; i < 7; ++i) {
+    if (names[static_cast<size_t>(i)] != mixKeys[i]) return false;
+  }
+  if (!shapeIsMat(shapes[0], 32, 32) || !shapeIsVec(shapes[1], 32) ||
+      !shapeIsMat(shapes[2], 32, 32) || !shapeIsVec(shapes[3], 32) ||
+      !shapeIsMat(shapes[4], 32, 32) || !shapeIsVec(shapes[5], 32) ||
+      !shapeIsMat(shapes[6], 8, 8)) {
+    return false;
+  }
+  bool swiglu = (names[7] == "wgate" || names[7] == "wgate_b0");
+  size_t perHead = swiglu ? 10 : 8;
+  if (names.size() != 7 + perHead && names.size() != 7 + perHead * 3) return false;
+  size_t nbuckets = (names.size() - 7) / perHead;
+  std::vector<std::string> want(mixKeys, mixKeys + 7);
+  headWantNames(want, nbuckets, swiglu, "wvo", "bvo");
+  if (names != want) return false;
+  std::vector<std::vector<float>*> slots = {&attn.wq, &attn.bq, &attn.wk, &attn.bk, &attn.wv,
+                                            &attn.bv, &attn.gab};
+  size_t off = 0;
+  for (auto* slot : slots) {
+    if (off + slot->size() > flat.size()) return false;
+    for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+    off += slot->size();
+  }
+  std::vector<HeadBucket> heads;
+  int maxH1 = 0;
+  int maxH2 = 0;
+  for (size_t b = 0; b < nbuckets; ++b) {
+    HeadBucket h;
+    int h1n = 0;
+    int h2n = 0;
+    if (!readHeadBucket(shapes, flat, 7 + b * perHead, swiglu, 256, h, off, h1n, h2n)) return false;
+    if (h1n > maxH1) maxH1 = h1n;
+    if (h2n > maxH2) maxH2 = h2n;
+    heads.push_back(std::move(h));
+  }
+  if (off != flat.size()) return false;
+  heads_ = std::move(heads);
+  scratch_.assign(256 + static_cast<size_t>(maxH1) * 3 + static_cast<size_t>(maxH2), 0.0f);
+  return true;
+}
+
 ModelSpec RuneAttnModel::spec() const {
   ModelSpec s;
   s.arch = archId();

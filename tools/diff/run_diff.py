@@ -48,7 +48,9 @@ def py_forward(model_path, fen):
     tok = np.clip(acc, 0, 1).astype(np.float32)
     stages = {"features": feats, "accumulator": acc.reshape(-1).tolist(), "tokens": tok.reshape(-1).tolist()}
     arch = header.get("architecture_id", header.get("arch"))
-    if arch in ("RUNE-ATTN", "RUNE-ATTN-GAB"):
+    if arch == "RUNE-ATTN":
+        arch = "RUNE-ATTN-GAB"
+    if arch == "RUNE-ATTN-GAB":
         Q = tok @ arrays["wq"].T + arrays["bq"]
         K = tok @ arrays["wk"].T + arrays["bk"]
         V = tok @ arrays["wvv"].T + arrays["bvv"]

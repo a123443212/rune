@@ -40,7 +40,7 @@ def verify_ir(ir):
     errors = []
     if ir.get("ir_version") not in ("1.0", "1.1"):
         errors.append("bad ir_version %s" % str(ir.get("ir_version")))
-    if ir.get("spec_version", "RUNE-10") not in ("RUNE-10", "RUNE-11"):
+    if ir.get("spec_version", "RUNE-10") not in ("RUNE-10", "RUNE-11", "RUNE-12"):
         errors.append("bad spec_version %s" % str(ir.get("spec_version")))
     errors += verify_arch(ir)
     errors += verify_target(ir)
