@@ -138,7 +138,7 @@ impl<S: GameState> Mcts<S> {
             self.path.clear();
             self.path.push(0);
             while self.nodes[idx].expanded && !self.nodes[idx].children.is_empty() {
-                idx = select_child::<S>(&self.nodes, idx, self.cfg.cpuct, self.cfg.fpu);
+                idx = select_child(&self.nodes, idx, self.cfg.cpuct, self.cfg.fpu);
                 self.path.push(idx);
             }
             let leaf_value = if self.nodes[idx].expanded {

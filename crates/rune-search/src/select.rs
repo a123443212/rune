@@ -1,7 +1,6 @@
-use crate::game::GameState;
 use crate::mcts::Node;
 
-pub fn select_child<S: GameState>(nodes: &[Node], idx: usize, cpuct: f32, fpu: f32) -> usize {
+pub(crate) fn select_child(nodes: &[Node], idx: usize, cpuct: f32, fpu: f32) -> usize {
     let node = &nodes[idx];
     let mut total_visits = 0u32;
     for c in node.children.iter() {

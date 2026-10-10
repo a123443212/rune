@@ -43,6 +43,8 @@ enum Cmd {
     TargetStats(TargetStatsArgs),
     CascadePlan(CascadePlanArgs),
     Benchmark(BenchArgs),
+    FromMarlin(FromMarlinArgs),
+    FromPlain(FromPlainArgs),
 }
 
 #[derive(Args)]
@@ -324,6 +326,30 @@ struct BenchArgs {
     threads: usize,
     #[arg(long, default_value_t = 2000)]
     n: usize,
+}
+
+#[derive(Args)]
+struct FromMarlinArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[command(flatten)]
+    common: Common,
+    #[arg(long, default_value_t = 4)]
+    every: usize,
+    #[arg(long, default_value_t = 120)]
+    max_plies: usize,
+}
+
+#[derive(Args)]
+struct FromPlainArgs {
+    #[arg(long)]
+    input: PathBuf,
+    #[arg(long)]
+    out: PathBuf,
+    #[command(flatten)]
+    common: Common,
 }
 
 fn parse_compression(s: &str) -> Result<Compression> {
@@ -1014,6 +1040,24 @@ fn run() -> Result<()> {
         }
         Cmd::Benchmark(a) => {
             run_benchmark(a)?;
+        }
+        Cmd::FromMarlin(a) => {
+            let mut cfg = base_cfg(&a.common);
+            cfg.every_plies = a.every;
+            cfg.max_plies = a.max_plies;
+            let t0 = std::time::Instant::now();
+            let mut st = StageStats::default();
+            let recs = rune_data_core::marlin::import_marlin(&a.input, &cfg, &mut st)?;
+            let dt = t0.elapsed().as_secs_f64();
+            save_stage(&a.out, &recs, &cfg, stage_map("from_marlin", st), dt)?;
+        }
+        Cmd::FromPlain(a) => {
+            let cfg = base_cfg(&a.common);
+            let t0 = std::time::Instant::now();
+            let mut st = StageStats::default();
+            let recs = rune_data_core::plain::import_plain(&a.input, &cfg, &mut st)?;
+            let dt = t0.elapsed().as_secs_f64();
+            save_stage(&a.out, &recs, &cfg, stage_map("from_plain", st), dt)?;
         }
     }
     Ok(())

@@ -1,0 +1,9 @@
+[package]
+name = "rune-uci"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+rune-runtime = { path = "../rune-runtime" }
+rune-search = { path = "../rune-search" }
+shakmaty = "0.30"

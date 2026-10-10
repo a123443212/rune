@@ -326,16 +326,6 @@ std::string zeroHashValues(const std::string& header) {
   return out;
 }
 
-std::string toHex16(uint64_t v) {
-  static const char* digits = "0123456789abcdef";
-  std::string s(16, '0');
-  for (int i = 15; i >= 0; --i) {
-    s[i] = digits[v & 15];
-    v >>= 4;
-  }
-  return s;
-}
-
 void fillSpec(const std::string& header, ModelSpec& spec) {
   spec.arch = pickString(header, "architecture_id", "arch");
   spec.archVersion = pickString(header, "architecture_version", "arch_version");

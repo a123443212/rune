@@ -407,6 +407,15 @@ name = "rune-spec"
 version = "0.10.0"
 
 [[package]]
+name = "rune-uci"
+version = "0.1.0"
+dependencies = [
+ "rune-runtime",
+ "rune-search",
+ "shakmaty",
+]
+
+[[package]]
 name = "serde"
 version = "1.0.229"
 source = "registry+https://github.com/rust-lang/crates.io-index"
