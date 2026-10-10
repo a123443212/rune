@@ -109,6 +109,8 @@ def main():
     ap.add_argument("--model-b", type=str, default="")
     ap.add_argument("--channels", type=int, default=8)
     ap.add_argument("--blocks", type=int, default=2)
+    ap.add_argument("--elo0", type=float, default=0.0)
+    ap.add_argument("--elo1", type=float, default=70.0)
     args = ap.parse_args()
     from training.games.go_v02 import GoGameV02
     game = GoGameV02(size=args.board)
@@ -123,17 +125,32 @@ def main():
     else:
         eval_b = synthetic_eval(game)
     wins = 0.0
+    nw = 0
+    nl = 0
+    nd = 0
     t0 = time.perf_counter()
     for i in range(args.games):
         if i % 2 == 0:
             r, _, _ = play_one(game, eval_a, eval_b, args.sims, args.sims, args.max_moves, args.seed + i)
-            wins += r
+            ra = r
         else:
             r, _, _ = play_one(game, eval_b, eval_a, args.sims, args.sims, args.max_moves, args.seed + i)
-            wins += 1.0 - r
+            ra = 1.0 - r
+        wins += ra
+        if ra == 1.0:
+            nw += 1
+        elif ra == 0.0:
+            nl += 1
+        else:
+            nd += 1
     dt = time.perf_counter() - t0
     elo, err = elo_from_score(wins, args.games)
+    from tools.match.go_sprt import sprt_bounds, sprt_decide, sprt_llr
+    llr = sprt_llr(nw, nl, nd, args.elo0, args.elo1)
+    lower, upper = sprt_bounds()
+    decision = sprt_decide(llr, lower, upper)
     print(f"games={args.games} score={wins:.1f} elo={elo:.1f}+-{err:.1f} seconds={dt:.2f}")
+    print(f"w={nw} l={nl} d={nd} llr={llr:.3f} bounds=[{lower:.3f},{upper:.3f}] sprt={decision}")
 
 
 if __name__ == "__main__":

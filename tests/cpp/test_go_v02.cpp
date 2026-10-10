@@ -1,6 +1,8 @@
+#include <fstream>
 #include <string>
 #include <vector>
 
+#include "core/go/go_model.h"
 #include "core/go/go_planes_v02.h"
 #include "core/go/go_resnet.h"
 #include "core/go/go_rules.h"
@@ -181,6 +183,56 @@ void testResnetV02() {
   CHECK_CLOSE(s, 1.0, 1e-5);
 }
 
+bool readGoldenValue(const std::string& path, std::string& state, double& value) {
+  std::ifstream f(path, std::ios::binary);
+  if (!f) return false;
+  std::string text((std::istreambuf_iterator<char>(f)), std::istreambuf_iterator<char>());
+  size_t p = text.find("\"state\"");
+  if (p == std::string::npos) return false;
+  size_t a = text.find('"', p + 7);
+  if (a == std::string::npos) return false;
+  size_t b = text.find('"', a + 1);
+  if (b == std::string::npos) return false;
+  state = text.substr(a + 1, b - a - 1);
+  size_t q = text.find("\"value\"", b);
+  if (q == std::string::npos) return false;
+  size_t c = text.find(':', q);
+  if (c == std::string::npos) return false;
+  size_t d = text.find_first_of(",}", c + 1);
+  if (d == std::string::npos) return false;
+  try {
+    value = std::stod(text.substr(c + 1, d - c - 1));
+    return true;
+  } catch (...) {
+    return false;
+  }
+}
+
+void testFixtureV02() {
+  GoResnetFile file;
+  std::string err;
+  CHECK(loadGoResnetFile("spec/test-vectors/models/resnet9-8plane-fp32.rune", file, err));
+  CHECK(file.sizes.board == 9);
+  CHECK(file.sizes.channels == 8);
+  CHECK(file.sizes.blocks == 2);
+  CHECK(file.sizes.inPlanes == 8);
+  CHECK(file.featureVersion == "go_planes_v02");
+  CHECK(file.weights.stemW.size() == 8 * 8 * 9);
+  std::string state;
+  double want = 0.0;
+  CHECK(readGoldenValue("spec/test-vectors/resnet/eval_v02.json", state, want));
+  GoState st;
+  CHECK(st.setState(state));
+  std::vector<float> planes;
+  extractPlanesV02(st, planes);
+  CHECK(planes.size() == 8 * 81);
+  GoResnetOutput r = forwardGoResnet(file.weights, file.sizes, planes.data());
+  CHECK_CLOSE(r.value, want, 1e-4);
+  GoResnetScratch sc;
+  GoResnetOutput rf = forwardGoResnetFast(file.weights, file.sizes, planes.data(), sc);
+  CHECK_CLOSE(rf.value, want, 1e-4);
+}
+
 }
 
 void testGoV02() {
@@ -190,4 +242,5 @@ void testGoV02() {
   testRulesV02();
   testTokenV02();
   testResnetV02();
+  testFixtureV02();
 }

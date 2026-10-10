@@ -31,6 +31,7 @@ add_library(rune_core STATIC
   core/go/go_planes.cpp
   core/go/go_planes_v02.cpp
   core/go/go_token_v02.cpp
+  core/go/go_model.cpp
   core/go/go_evaluator.cpp
   core/go/go_resnet.cpp
   core/go/go_scratch.cpp
