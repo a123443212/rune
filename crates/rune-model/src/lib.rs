@@ -156,7 +156,7 @@ pub fn load(path: &Path) -> Result<RuneModel, LoadError> {
     }
     let tokens = need_usize(&hv, "tokens")?;
     let token_dim = need_usize(&hv, "token_dim")?;
-    if tokens == 0 || tokens > 16 || token_dim == 0 || token_dim > 128 {
+    if tokens == 0 || tokens > 19 || token_dim == 0 || token_dim > 128 {
         return Err(LoadError::ShapeMismatch("tokens or dim out of range".to_string()));
     }
     let tlist = hv.get("tensor_metadata").or_else(|| hv.get("tensors")).ok_or_else(|| LoadError::BadHeader("missing tensors".to_string()))?;

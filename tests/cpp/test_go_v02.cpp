@@ -233,6 +233,36 @@ void testFixtureV02() {
   CHECK_CLOSE(rf.value, want, 1e-4);
 }
 
+void testBigFixturesV02() {
+  const int boards[2] = {13, 19};
+  for (int k = 0; k < 2; ++k) {
+    int n = boards[k];
+    GoResnetFile file;
+    std::string err;
+    std::string model = "spec/test-vectors/models/resnet" + std::to_string(n) +
+                        "-8plane-fp32.rune";
+    CHECK(loadGoResnetFile(model, file, err));
+    CHECK(file.sizes.board == n);
+    CHECK(file.sizes.inPlanes == 8);
+    CHECK(file.featureVersion == "go_planes_v02");
+    std::string golden = "spec/test-vectors/resnet/eval_v02_" + std::to_string(n) + ".json";
+    std::string state;
+    double want = 0.0;
+    CHECK(readGoldenValue(golden, state, want));
+    GoState st;
+    CHECK(st.setState(state));
+    CHECK(st.board.size() == n);
+    std::vector<float> planes;
+    extractPlanesV02(st, planes);
+    CHECK(planes.size() == static_cast<size_t>(8 * n * n));
+    GoResnetOutput r = forwardGoResnet(file.weights, file.sizes, planes.data());
+    CHECK_CLOSE(r.value, want, 1e-4);
+    float ctx[12];
+    st.contextV02(ctx);
+    CHECK(ctx[10] > 0.9f);
+  }
+}
+
 }
 
 void testGoV02() {
@@ -243,4 +273,5 @@ void testGoV02() {
   testTokenV02();
   testResnetV02();
   testFixtureV02();
+  testBigFixturesV02();
 }
