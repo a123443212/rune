@@ -1,131 +1,107 @@
 # RUNE — Relational Unified Neural Evaluator
 
-Research framework for CPU-efficient neural game evaluation: chess, shogi,
-xiangqi, and go. Small networks over sparse features with incremental
-updates, developed generation by generation (configs `v01`–`v17`), each
-gated on measured evidence, never on novelty.
+CPU-efficient neural evaluation for chess, shogi, xiangqi, and go.
+Small networks over sparse features with incremental updates, built in
+three matching implementations (C++, Python/PyTorch, Rust) that are
+kept in parity against golden fixtures. Research proceeds generation
+by generation (`configs/v01`–`configs/v17`); nothing promotes on
+novelty alone — only on measured wins against a re-run control.
 
-## Contract
+## How it works
 
-These hold for every generation. Changing one is a breaking change,
-not a new experiment.
+A position becomes a sorted list of `(group, index)` sparse features
+(9 groups for chess). An accumulator sums one embedding row per active
+feature into 8 tokens, a mixer (attention / gated relational / dual /
+multi-head / dense pooling / adaptive refine) mixes the tokens, and a
+value+WDL head scores them. C++ and Rust reuse the same math with
+incremental refresh (`refresh` vs `updateIncremental`); Python is the
+training reference. `tools/diff/` proves the three agree within the
+tolerances in `spec/`.
 
-- Three subsystems meet only through artifacts: datasets
-  (`.rune-data` plus manifests) and models (`.rune` plus hashes).
-  No subsystem reaches into another's internals.
-- Evaluation values are **side-to-move-relative**. Records stamp
-  their perspective; mismatches are rejected, never coerced.
-- Determinism: same input plus config plus seed yields the same
-  bytes, proven by manifest, dataset, and model hashes.
-- Loaders fail closed on anything they do not recognize: bad magic,
-  bad FEN/SFEN, out-of-vocab indices, shape mismatches, checksum
-  mismatches. Exact tolerances live in `spec/`, never in prose.
-- No claim without a matched-condition experiment behind it:
-  one changed variable at a time against a re-run control.
-- Per-metric reporting. No composite scores, no hidden capacity wins.
-- Smaller, simpler, faster wins ties against cleverer.
-- Failed experiments are logged, never deleted.
-- Teacher supervision is never free: generation, labeling, and
-  storage costs are reported alongside any claim built on them.
+Supported games and feature sets:
 
-## What is in this repo
+| Game    | Feature version              | Notes                                    |
+|---------|------------------------------|------------------------------------------|
+| Chess   | `grouped_hkav2_fullthreats_v02` | 9 groups, 8 tokens × 32 dims          |
+| Shogi   | `shogi_raw_v01`              | SFEN input                               |
+| Xiangqi | `xiangqi_raw_v01`            | FEN input                                |
+| Go      | `go_planes_v01` / `go_planes_v02` | 9/13/19 boards; v02 groups 0–1 use disjoint `ci*361+sq` |
 
-- `core/` — native C++ runtime: board rules, feature sets,
-  accumulators, architectures (MLP, attention, dual, multi-head,
-  relational, dense, adaptive), SIMD kernels, model I/O (format 2),
-  search, benchmarks. Tests in `tests/cpp/`.
-- `training/` — Python/PyTorch mirror: per-game feature code
-  (`training/games/`), models (`training/models/`), losses, datasets
-  and sharding (`training/datasets/`), trainer, export to `.rune`
-  (`training/export/`), experiment screening. Tests in `tests/`.
+Architectures: `RUNE-MLP`, `RUNE-SFNN` (+ compact/small variants),
+`RUNE-ATTN` / `RUNE-ATTN-GAB` / `RUNE-ATTN-DUAL` / `RUNE-ATTN-MH4`,
+`RUNE-REL-02` (6/8/10 tokens), `RUNE-REL-LITE`, dense `RUNE-03-*`
+and adaptive `RUNE-04`/`RUNE-05` (C++ training path).
+
+## Layout
+
+- `core/` — C++ runtime: rules, features, accumulators, architectures,
+  SIMD kernels, model I/O (`.rune` format 2), search, benchmarks.
+  C++ tests live in `tests/cpp/`.
+- `training/` — PyTorch side: game mirrors, models, losses, datasets
+  and hash-sharding, trainer, `.rune` export, screening harness.
+  Python tests live in `tests/`.
 - `crates/` — Rust workspace: `rune-spec`, `rune-model`, `rune-kernel`,
   `rune-runtime` (reference + compiled evaluators), `rune-search`
-  (alpha-beta, MCTS), `rune-ir`/`rune-compiler`, `rune-cli`,
-  `rune-uci`, and the data engine (`rune-data-core`, `rune-data-cli`).
-- `configs/` — experiment generations `v01`–`v17`; newest dir is current.
-- `spec/` — normative contracts: `VERSIONS.md`, `games/`, `features/`,
-  `model-format/`, `ir/`, `quantization/`, plus golden fixtures in
-  `spec/test-vectors/` that every implementation must satisfy.
-- `tools/` — parity and analysis scripts: `diff/` (python vs C++ vs
-  Rust value checks), `bench/`, `analysis/`, `dataset/`, `compile/`.
-- `bindings/` — pybind11 bridge used by the Python parity tests.
+  (alpha-beta + MCTS), `rune-ir` / `rune-compiler`, `rune-cli`,
+  `rune-uci`, data engine (`rune-data-core`, `rune-data-cli`).
+- `configs/` — experiment generations; the newest directory is current.
+- `spec/` — normative contracts (`VERSIONS.md`, `games/`, `features/`,
+  `model-format/`, `ir/`, `quantization/`) and golden fixtures in
+  `spec/test-vectors/` that all three runtimes must satisfy.
+- `tools/` — `diff/` (cross-runtime parity), `bench/`, `analysis/`,
+  `dataset/`, `match/` (engine games), `search/`, `inspect/`.
+- `bindings/` — pybind11 bridge backing the Python parity tests.
 
-Games and their feature versions: chess
-(`grouped_hkav2_fullthreats_v02`, 9 groups), shogi (`shogi_raw_v01`),
-xiangqi (`xiangqi_raw_v01`), go (`go_planes_v01`/`go_planes_v02`;
-v02 token groups 0–1 use disjoint `ci*361+sq` encoding).
+Subsystems meet only through artifacts: `.rune-data` + manifests for
+data, `.rune` + payload/header hashes for models.
 
-## Build and test
-
-Each subsystem builds with its own toolchain and tests itself:
+## Quickstart
 
 ```bash
+pip install -r requirements.txt
 cmake -S . -B build -DRUNE_BUILD_BINDINGS=OFF && cmake --build build -j4
 ctest --test-dir build
-
-pip install -r requirements.txt
 pytest tests/
-
 cargo test --workspace --locked
 ```
 
-`scripts/python_test.sh` runs the Python suite the way CI does.
-For Python↔C++ parity tests, build with bindings on
-(`-DRUNE_BUILD_BINDINGS=ON`, needs matching CPython headers and
-pybind11) so `rune_bindings` imports instead of skipping.
+`scripts/python_test.sh` runs the Python suite the way CI does. For the
+Python↔C++ parity tests, rebuild with `-DRUNE_BUILD_BINDINGS=ON`
+(requires matching CPython headers and pybind11) so `rune_bindings`
+imports instead of skipping. Checkpoints must always be loaded with
+`torch.load(..., weights_only=True)`.
 
-Built CLIs document themselves. When in doubt, ask them:
+## Using it
 
 ```bash
-cargo run -p <cli-crate> -- --help
-python <tool-script> --help
+cargo run -p rune-cli -- --help
+python tools/diff/cross_check.py --help
+python tools/diff/run_diff.py --help
 ```
 
-## Reproduce an experiment
+Typical loop: build a pool → label with a teacher → train/screen from
+a generation config → hash-shard the dataset → export `.rune` →
+parity-check across runtimes → engine matches at fixed nodes and
+fixed time. UCI is served by `rune-uci` (`position`/`go`/`stop`);
+time control is side-aware and bad positions are reported, never
+silently kept.
 
-Every generation follows the same stages. Find the current
-generation's config dir (`ls configs`, newest is current), then walk
-the stages:
+## Experiment rules
 
-1. Build a position pool from games.
-2. Label it with an engine teacher at recorded depths,
-   deterministically, keeping provenance and hashes.
-3. Train and screen from the generation config: same seed,
-   same data, one variable per leg against a re-run control
-   (`training/experiments/screening.py`, per-leg flags such as
-   `pair_legs` override the global `architecture` section).
-4. Shard the set with the data engine: validate, dedup on full
-   state, hash-shard, manifest.
-5. Export the model (`training/export/export.py`) and verify payload
-   and header hashes; never load checkpoints with bare
-   `torch.load` — always `weights_only=True`.
-6. Check parity (`tools/diff/`) then play engine matches at fixed
-   nodes and at fixed time.
-
-Every run records config, seed, dataset, teacher, and model
-hashes, hyperparameters, and position counts in `metrics.json`.
-Interpretation rules live with the generation config, not here.
+- One changed variable per leg against a re-run control; per-leg flags
+  (e.g. `pair_legs`) override the global `architecture` section.
+- Per-metric tables, no composite scores; capacity and teacher costs
+  (generation, labeling, storage) are reported with every claim.
+- Every run records config, seed, dataset/teacher/model hashes, and
+  position counts in `metrics.json`. Failed runs stay in the log.
 
 ## Map
 
-Do not document the current state here — it rots. Derive it:
+State rots here, so derive it instead:
 
 ```bash
-git log --oneline -10        # what changed lately; newest is current
-ls configs                   # experiment generations; newest dir is current
-cat spec/VERSIONS.md         # what the version numbers mean
-ls spec/test-vectors         # golden fixtures every implementation must satisfy
+git log --oneline -10
+ls configs
+cat spec/VERSIONS.md
+ls spec/test-vectors
 ```
-
-## Conventions
-
-Decided once, followed everywhere. Details and tolerances are
-normative in `spec/`; this list is only an index:
-
-- Negamax values, stamped perspective, reject on mismatch.
-- Deterministic bytes from input plus config plus seed.
-- Priced teachers: report generation, labeling, and storage.
-- Evidence-gated versions: novelty alone promotes nothing.
-- Fail loud: null components, bad indices, bad shapes, bad
-  positions, and bad time controls are errors, never silent zeros
-  or silent fallbacks.
