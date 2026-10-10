@@ -1,3 +1,19 @@
+// RUNE — Relational Unified Neural Evaluator
+// Copyright (C) 2026 a123443212
+//
+// SPDX-License-Identifier: MIT OR Apache-2.0
+//
+// This project is dual-licensed under the MIT License and the
+// Apache License, Version 2.0. You may choose either license
+// when using, copying, modifying, or distributing this software.
+//
+// MIT License: https://opensource.org/license/mit
+// Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, this
+// software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
+// OR CONDITIONS OF ANY KIND, either express or implied.
+
 use super::{mat_mul, mat_mul_tt, mat_vec, mat_vec_clipped};
 
 pub fn qkv_fused_8x32(wq: &[f32], bq: &[f32], wk: &[f32], bk: &[f32], wv: &[f32], bv: &[f32], x: &[f32], q: &mut [f32], k: &mut [f32], v: &mut [f32]) {
