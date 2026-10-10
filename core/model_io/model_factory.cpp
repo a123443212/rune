@@ -3,6 +3,7 @@
 #include "core/architectures/attention/attention.h"
 #include "core/architectures/attention/multi_head.h"
 #include "core/architectures/mlp/mlp.h"
+#include "core/architectures/sfnn/sfnn.h"
 
 namespace rune {
 

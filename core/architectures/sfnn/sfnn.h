@@ -3,23 +3,21 @@
 #include <vector>
 
 #include "core/architectures/base/architecture.h"
-#include "core/architectures/sfnn/sfnn.h"
-#include "core/simd/simd.h"
 
 namespace rune {
 
-class GroupedMlp : public IArchitecture {
+class SfnnBaseline : public IArchitecture {
  public:
   static constexpr int kIn = 256;
-  static constexpr int kH1 = 128;
+  static constexpr int kH1 = 256;
   static constexpr int kH2 = 32;
 
-  GroupedMlp();
+  SfnnBaseline();
 
   void forward(const float* tokens, float& value, float* wdl, int phase = 1) const override;
   size_t parameterCount() const override;
   size_t modelSizeBytes() const override;
-  const char* archId() const override { return "RUNE-MLP"; }
+  const char* archId() const override { return "RUNE-SFNN"; }
   const char* archVersion() const override { return "0.1.0"; }
   void getTensors(std::vector<std::string>& names, std::vector<std::vector<int>>& shapes,
                   std::vector<const float*>& data) const override;

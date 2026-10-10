@@ -1,5 +1,3 @@
-use std::cell::RefCell;
-use std::collections::HashMap;
 use std::path::Path;
 use rune_kernel as kernel;
 use rune_model as model;
@@ -7,9 +5,12 @@ use rune_spec as spec;
 use crate::accumulator::{Accumulator, Tables};
 use crate::board::Board;
 use crate::error::{Result, RuntimeError};
-use crate::features::{compute_context, diff_features, extract_features, CONTEXT_DIM};
+use crate::features::{compute_context, diff_features, extract_features};
 use crate::mixer::{HeadTrace, HeadWeights, MixerTrace, MixerWeights};
 use crate::mixer_mh::MultiHeadMixer;
+use crate::model_config::{resolve_model_config, ExecutionTarget};
+use crate::evaluator_spatial::SpatialExecutor;
+use crate::sparse_model::SparseModel;
 
 pub(crate) const FULL_REFRESH_LIMIT: usize = 64;
 #[derive(Debug, Clone)]
@@ -36,8 +37,7 @@ pub struct Evaluator {
     mixer: Option<MixerWeights>,
     mh: Option<MultiHeadMixer>,
     heads: Vec<HeadWeights>,
-    pub(crate) resnet: Option<crate::resnet::ResnetWeights>,
-    pub(crate) scratch: RefCell<crate::resnet_scratch::Scratch>,
+    pub(crate) spatial: Option<SpatialExecutor>,
     phase: u8,
     arch_id: String,
     game: String,
@@ -48,231 +48,28 @@ pub struct Evaluator {
     ctx: Vec<f32>,
     stack: Vec<(Vec<f32>, Vec<(u8, u16)>, Vec<f32>, u8)>,
 }
-fn need_vec(arrays: &HashMap<String, Vec<f32>>, name: &str) -> Result<Vec<f32>> {
-    arrays.get(name).cloned().ok_or_else(|| RuntimeError::TensorMissing(name.to_string()))
-}
-fn scalar_of(arrays: &HashMap<String, Vec<f32>>, name: &str) -> Result<f32> {
-    let v = need_vec(arrays, name)?;
-    if v.is_empty() {
-        return Err(RuntimeError::Shape(name.to_string()));
-    }
-    Ok(v[0])
-}
 impl Evaluator {
     pub fn load(path: &Path) -> Result<Evaluator> {
         let m = model::load(path).map_err(|e| RuntimeError::InvalidState(e.to_string()))?;
         Evaluator::from_model(&m)
     }
     pub fn from_model(m: &model::RuneModel) -> Result<Evaluator> {
-        let game = m.header.game.clone();
-        let want_feat = spec::game_feature_version(&game).ok_or_else(|| RuntimeError::GameMismatch(game.clone()))?;
-        if m.header.feature_version != want_feat {
-            return Err(RuntimeError::FeatureMismatch(m.header.feature_version.clone()));
-        }
-        let arch = m.header.architecture_id.clone();
-        let is_resnet = arch.starts_with("RUNE-RESNET");
-        let supported = arch == "RUNE-SFNN"
-            || arch == "RUNE-MLP"
-            || arch == "RUNE-ATTN"
-            || arch == "RUNE-ATTN-GAB"
-            || arch == "RUNE-ATTN-MH4"
-            || arch == "RUNE-REL-02"
-            || is_resnet;
-        if !supported {
-            return Err(RuntimeError::UnsupportedArch(arch));
-        }
-        let tokens = m.header.tokens;
-        let dim = m.header.token_dim;
-        let flex = arch == "RUNE-REL-02";
-        if is_resnet {
-            if tokens == 0 || tokens > 19 {
-                return Err(RuntimeError::Shape("board".to_string()));
-            }
-            if dim == 0 || dim > 256 {
-                return Err(RuntimeError::Shape("channels".to_string()));
-            }
-        } else if flex {
-            if tokens != 6 && tokens != 8 && tokens != 10 {
-                return Err(RuntimeError::Shape("tokens".to_string()));
-            }
-            if dim != 24 && dim != 32 && dim != 40 {
-                return Err(RuntimeError::Shape("token dim".to_string()));
-            }
-        } else if tokens != 8 || dim != 32 {
-            return Err(RuntimeError::Shape("tokens".to_string()));
-        }
-        let vocabs = if game == spec::GAME_SHOGI {
-            crate::shogi::SHOGI_VOCABS
-        } else if game == spec::GAME_XIANGQI {
-            crate::xiangqi::XIANGQI_VOCABS
-        } else {
-            spec::VOCAB_SIZES
-        };
+        let config = resolve_model_config(m, ExecutionTarget::Reference)?;
+        let game = config.game.clone();
+        let arch = config.architecture_id.clone();
+        let tokens = config.tokens;
+        let dim = config.dim;
+        let vocabs = config.vocabs;
+        let is_resnet = config.is_resnet;
         if is_resnet {
             let tables = Tables::zeros(dim, vocabs);
-            let rw = crate::resnet::ResnetWeights::from_arrays(&m.arrays, &m.header.raw)?;
+            let spatial = SpatialExecutor::from_model(m)?;
             let acc = Accumulator::new(tokens, dim);
-            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), resnet: Some(rw), scratch: RefCell::new(crate::resnet_scratch::Scratch::default()), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
+            return Ok(Evaluator { tables, mixer: None, mh: None, heads: Vec::new(), spatial: Some(spatial), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() });
         }
-        let mut tables = Tables::zeros(dim, vocabs);
-        for g in 0..9 {
-            let k = format!("emb{}", g);
-            let arr = m.arrays.get(&k).ok_or_else(|| RuntimeError::TensorMissing(k.clone()))?;
-            if arr.len() != vocabs[g] * dim {
-                return Err(RuntimeError::Shape(k));
-            }
-            tables.data[g].copy_from_slice(arr);
-        }
-        let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-REL-02";
-        let mixer = if has_mixer {
-            let wq = need_vec(&m.arrays, "wq")?;
-            let bq = need_vec(&m.arrays, "bq")?;
-            let wk = need_vec(&m.arrays, "wk")?;
-            let bk = need_vec(&m.arrays, "bk")?;
-            let wv = need_vec(&m.arrays, "wvv").or_else(|_| need_vec(&m.arrays, "wv"))?;
-            let bv = need_vec(&m.arrays, "bvv").or_else(|_| need_vec(&m.arrays, "bv"))?;
-            if wq.len() != dim * dim || wk.len() != dim * dim || wv.len() != dim * dim {
-                return Err(RuntimeError::Shape("mixer mat".to_string()));
-            }
-            if bq.len() != dim || bk.len() != dim || bv.len() != dim {
-                return Err(RuntimeError::Shape("mixer bias".to_string()));
-            }
-            let gab_key = if m.arrays.contains_key("gabS") { "gabS" } else { "gab" };
-            let gab = match m.arrays.get(gab_key) {
-                Some(v) => v.clone(),
-                None if arch == "RUNE-ATTN" => vec![0.0; tokens * tokens],
-                None => return Err(RuntimeError::TensorMissing(gab_key.to_string())),
-            };
-            if gab.len() != tokens * tokens {
-                return Err(RuntimeError::Shape("gab".to_string()));
-            }
-            let gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
-                None => rune_kernel::Gate::Clip,
-                Some(s) => rune_kernel::Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
-            };
-            let alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
-            let (dyn_u, dyn_w, ctx_dim) = if arch == "RUNE-REL-02" {
-                let cd = m.header.raw.get("context_dim").and_then(|x| x.as_u64()).unwrap_or(0) as usize;
-                let want_cd = if game == spec::GAME_SHOGI {
-                    crate::shogi::SHOGI_CONTEXT_DIM
-                } else if game == spec::GAME_XIANGQI {
-                    crate::xiangqi::XIANGQI_CONTEXT_DIM
-                } else {
-                    CONTEXT_DIM
-                };
-                let pair = (m.arrays.get("dynU"), m.arrays.get("dynW"));
-                match pair {
-                    (Some(u), Some(w)) => {
-                        if cd == 0 || cd != want_cd || u.len() != tokens * cd || w.len() != tokens * cd {
-                            return Err(RuntimeError::Shape("dyn".to_string()));
-                        }
-                        (u.clone(), w.clone(), cd)
-                    }
-                    (None, None) => (Vec::new(), Vec::new(), 0),
-                    _ => return Err(RuntimeError::Shape("dyn pair".to_string())),
-                }
-            } else {
-                (Vec::new(), Vec::new(), 0)
-            };
-            Some(MixerWeights { tokens, dim, wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate, alpha })
-        } else {
-            None
-        };
-        let buckets = m.header.raw.get("head_buckets").and_then(|x| x.as_u64()).unwrap_or(1);
-        if buckets != 1 && buckets != 3 {
-            return Err(RuntimeError::InvalidState("unsupported head_buckets (want 1 or 3)".to_string()));
-        }
-        let mh = if arch == "RUNE-ATTN-MH4" {
-            if tokens != 8 || dim != 32 {
-                return Err(RuntimeError::Shape("tokens".to_string()));
-            }
-            let gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
-                None => rune_kernel::Gate::Clip,
-                Some(s) => rune_kernel::Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
-            };
-            let mut wq = Vec::new();
-            let mut bq = Vec::new();
-            let mut wk = Vec::new();
-            let mut bk = Vec::new();
-            let mut wv = Vec::new();
-            let mut bv = Vec::new();
-            let mut gab = Vec::new();
-            for h in 0..4 {
-                let s = format!("_h{}", h);
-                let q = need_vec(&m.arrays, &format!("wq{}", s))?;
-                let b = need_vec(&m.arrays, &format!("bq{}", s))?;
-                let k = need_vec(&m.arrays, &format!("wk{}", s))?;
-                let kb = need_vec(&m.arrays, &format!("bk{}", s))?;
-                let v = need_vec(&m.arrays, &format!("wv{}", s))?;
-                let vb = need_vec(&m.arrays, &format!("bv{}", s))?;
-                let g = need_vec(&m.arrays, &format!("gab{}", s))?;
-                if q.len() != 8 * 32 || b.len() != 8 || k.len() != 8 * 32 || kb.len() != 8 {
-                    return Err(RuntimeError::Shape("mh mat".to_string()));
-                }
-                if v.len() != 8 * 32 || vb.len() != 8 || g.len() != 64 {
-                    return Err(RuntimeError::Shape("mh mat".to_string()));
-                }
-                wq.push(q);
-                bq.push(b);
-                wk.push(k);
-                bk.push(kb);
-                wv.push(v);
-                bv.push(vb);
-                gab.push(g);
-            }
-            let wo = need_vec(&m.arrays, "wo")?;
-            let bwo = need_vec(&m.arrays, "bwo")?;
-            if wo.len() != 32 * 32 || bwo.len() != 32 {
-                return Err(RuntimeError::Shape("mh wo".to_string()));
-            }
-            Some(MultiHeadMixer {
-                heads: 4,
-                head_dim: 8,
-                tokens,
-                dim,
-                wq,
-                bq,
-                wk,
-                bk,
-                wv,
-                bv,
-                gab,
-                wo,
-                bwo,
-                gate,
-            })
-        } else {
-            None
-        };
-        let mut heads: Vec<HeadWeights> = Vec::new();
-        for b in 0..buckets {
-            let suffix = if buckets == 1 { String::new() } else { format!("_b{}", b) };
-            let w1 = need_vec(&m.arrays, &format!("w1{}", suffix))?;
-            let b1 = need_vec(&m.arrays, &format!("b1{}", suffix))?;
-            let w2 = need_vec(&m.arrays, &format!("w2{}", suffix))?;
-            let b2 = need_vec(&m.arrays, &format!("b2{}", suffix))?;
-            let wvo = need_vec(&m.arrays, &format!("wvo{}", suffix))
-                .or_else(|_| need_vec(&m.arrays, &format!("wv{}", suffix)))?;
-            let bvo = scalar_of(&m.arrays, &format!("bvo{}", suffix))
-                .or_else(|_| scalar_of(&m.arrays, &format!("bv{}", suffix)))?;
-            let wwdl = need_vec(&m.arrays, &format!("wwdl{}", suffix))?;
-            let bwdl = need_vec(&m.arrays, &format!("bwdl{}", suffix))?;
-            let h1 = b1.len();
-            let h2 = b2.len();
-            let input = tokens * dim;
-            if w1.len() != h1 * input || (w2.len() != h2 * h1 && w2.len() != h2 * h1 * 2) {
-                return Err(RuntimeError::Shape("head mat".to_string()));
-            }
-            if wvo.len() != h2 {
-                return Err(RuntimeError::Shape("wvo".to_string()));
-            }
-            if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
-                return Err(RuntimeError::Shape("wdl".to_string()));
-            }
-            heads.push(HeadWeights { input, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
-        }
+        let sparse = SparseModel::from_model(m, &config)?;
         let acc = Accumulator::new(tokens, dim);
-        Ok(Evaluator { tables, mixer, mh, heads, resnet: None, scratch: RefCell::new(crate::resnet_scratch::Scratch::default()), phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
+        Ok(Evaluator { tables: sparse.tables, mixer: sparse.mixer, mh: sparse.multi_head, heads: sparse.heads, spatial: None, phase: 1, arch_id: arch, game, tokens, dim, acc, feats: Vec::new(), ctx: Vec::new(), stack: Vec::new() })
     }
     pub fn arch_id(&self) -> &str {
         &self.arch_id

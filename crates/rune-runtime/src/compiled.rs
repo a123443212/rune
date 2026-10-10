@@ -7,6 +7,7 @@ use crate::evaluator::FULL_REFRESH_LIMIT;
 use crate::features::{compute_context, extract_features, CONTEXT_DIM};
 use crate::mixer::{dyn_factors, HeadWeights};
 use crate::mixer_mh::MultiHeadMixer;
+use crate::model_config::{resolve_model_config, ExecutionTarget};
 use rune_model as model;
 use std::path::Path;
 
@@ -53,24 +54,11 @@ impl CompiledEvaluator {
     }
 
     pub fn from_model(m: &model::RuneModel, header: CompiledHeader) -> Result<CompiledEvaluator> {
-        let arch = m.header.architecture_id.clone();
-        if arch != "RUNE-SFNN" && arch != "RUNE-MLP" && arch != "RUNE-ATTN" && arch != "RUNE-ATTN-GAB" && arch != "RUNE-ATTN-MH4" && arch != "RUNE-REL-02" {
-            return Err(RuntimeError::UnsupportedArch(arch));
-        }
-        let tokens = m.header.tokens;
-        let dim = m.header.token_dim;
-        let flex = arch == "RUNE-REL-02";
-        if flex {
-            if tokens != 6 && tokens != 8 && tokens != 10 {
-                return Err(RuntimeError::Shape("tokens".to_string()));
-            }
-            if dim != 24 && dim != 32 && dim != 40 {
-                return Err(RuntimeError::Shape("token dim".to_string()));
-            }
-        } else if tokens != 8 || dim != 32 {
-            return Err(RuntimeError::Shape("tokens".to_string()));
-        }
-        let vocabs = rune_spec::VOCAB_SIZES;
+        let config = resolve_model_config(m, ExecutionTarget::Compiled)?;
+        let arch = config.architecture_id;
+        let tokens = config.tokens;
+        let dim = config.dim;
+        let vocabs = config.vocabs;
         let mut tables = Tables::zeros(dim, vocabs);
         for g in 0..9 {
             let k = format!("emb{}", g);

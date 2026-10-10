@@ -58,6 +58,7 @@ add_library(rune_core STATIC
   core/accumulators/flex_accumulator.cpp
   core/architectures/base/architecture.cpp
   core/architectures/mlp/mlp.cpp
+  core/architectures/sfnn/sfnn.cpp
   core/architectures/attention/attention.cpp
   core/architectures/attention/multi_head.cpp
   core/architectures/relational/context.cpp

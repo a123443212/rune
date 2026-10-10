@@ -2,24 +2,12 @@ import torch
 import torch.nn as nn
 
 from training.features.python_features import TOKENS, TOKEN_DIM
+from training.models.activations import apply_gate, clip01
 
 NUM_HEADS = 4
 HEAD_DIM = 8
 
 assert NUM_HEADS * HEAD_DIM == TOKEN_DIM
-
-
-def clip01(x):
-    return torch.clamp(x, 0.0, 1.0)
-
-
-def apply_gate(name, s):
-    if name == "hard_sigmoid":
-        return torch.clamp(0.2 * s + 0.5, 0.0, 1.0)
-    if name == "screlu":
-        c = torch.clamp(s, 0.0, 1.0)
-        return c * c
-    return torch.clamp(s, 0.0, 1.0)
 
 
 class RuneMultiHeadMixer(nn.Module):
