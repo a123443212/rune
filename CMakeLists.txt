@@ -19,9 +19,13 @@ add_library(rune_core STATIC
   core/board/move_gen.cpp
   core/board/move_make.cpp
   core/shogi/shogi_board.cpp
+  core/shogi/shogi_moves.cpp
+  core/shogi/shogi_legal.cpp
   core/shogi/shogi_features.cpp
   core/shogi/shogi_evaluator.cpp
   core/xiangqi/xiangqi_board.cpp
+  core/xiangqi/xiangqi_moves.cpp
+  core/xiangqi/xiangqi_legal.cpp
   core/xiangqi/xiangqi_features.cpp
   core/xiangqi/xiangqi_evaluator.cpp
   core/go/go_board.cpp
@@ -90,7 +94,9 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_board.cpp
     tests/cpp/test_features.cpp
     tests/cpp/test_shogi.cpp
+    tests/cpp/test_shogi_legal.cpp
     tests/cpp/test_xiangqi.cpp
+    tests/cpp/test_xiangqi_legal.cpp
     tests/cpp/test_go.cpp
     tests/cpp/test_go_v02.cpp
     tests/cpp/test_arch.cpp

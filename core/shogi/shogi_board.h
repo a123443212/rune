@@ -47,8 +47,11 @@ class ShogiBoard {
   bool setSfen(const std::string& sfen);
 
   ShogiPiece at(int sq) const { return squares_[sq]; }
+  void setSquare(int sq, ShogiPiece p) { squares_[sq] = p; }
   uint8_t sideToMove() const { return side_; }
+  void setSide(uint8_t s) { side_ = s; }
   uint8_t hand(uint8_t color, int type) const { return hand_[color][type]; }
+  void setHand(uint8_t color, int type, uint8_t n) { hand_[color][type] = n; }
   uint32_t moveNo() const { return moveNo_; }
 
   uint32_t handTotal() const;

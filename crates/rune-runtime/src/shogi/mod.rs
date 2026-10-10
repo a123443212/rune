@@ -1,3 +1,5 @@
+pub mod legal;
+pub mod moves;
 use crate::error::{Result, RuntimeError};
 pub const SHOGI_GROUPS: usize = 9;
 pub const SHOGI_TOKENS: usize = 8;

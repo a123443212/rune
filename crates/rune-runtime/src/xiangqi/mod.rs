@@ -1,3 +1,5 @@
+pub mod legal;
+pub mod moves;
 use crate::error::{Result, RuntimeError};
 pub const XIANGQI_GROUPS: usize = 9;
 pub const XIANGQI_TOKENS: usize = 8;

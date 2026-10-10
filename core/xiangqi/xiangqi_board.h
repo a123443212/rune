@@ -37,6 +37,7 @@ class XiangqiBoard {
   bool setFen(const std::string& fen);
 
   XiangqiPiece at(int sq) const { return squares_[sq]; }
+  void setSquare(int sq, XiangqiPiece p) { squares_[sq] = p; }
   uint8_t sideToMove() const { return side_; }
   uint32_t moveNo() const { return moveNo_; }
   uint32_t pieceCount() const;

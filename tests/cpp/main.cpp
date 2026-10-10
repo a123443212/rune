@@ -31,7 +31,9 @@ int main() {
   testSerialization();
   testPairHead();
   testShogi();
+  testShogiLegal();
   testXiangqi();
+  testXiangqiLegal();
   testGo();
   testGoV02();
   testQuantization();
