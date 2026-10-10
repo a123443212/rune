@@ -45,7 +45,7 @@ def build_classic(model_spec, tensor_metas, target):
         for tm in tensor_metas:
             if tm.get("name") == nm:
                 tensors.append(_tensor_entry(nm, tm.get("shape", []), tm.get("dtype", "float32"), "row-major", True, [0, 12]))
-    for nm in ("w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"):
+    for nm in ("w1", "b1", "wgate", "bgate", "wup", "bup", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"):
         for tm in tensor_metas:
             if tm.get("name") == nm:
                 tensors.append(_tensor_entry(nm, tm.get("shape", []), tm.get("dtype", "float32"), "row-major", True, [0, 12]))
@@ -64,7 +64,10 @@ def build_classic(model_spec, tensor_metas, target):
     ops.append(_op_entry("op05", "V", ["tokens", "wvv", "bvv"], ["V"], {"tokens": tokens, "dim": dim}))
     ops.append(_op_entry("op06", "Score", ["Q", "K"], ["scores"], {"tokens": tokens, "dim": dim}))
     ops.append(_op_entry("op07", "Bias", ["scores", "gabS"], ["biased"], {"tokens": tokens, "clamp": [-0.25, 0.25]}))
-    ops.append(_op_entry("op08", "Gate", ["biased"], ["gate"], {"tokens": tokens, "gate": gate}))
+    if arch == "RUNE-ATTN-SOFT":
+        ops.append(_op_entry("op08", "Softmax", ["biased"], ["gate"], {"tokens": tokens}))
+    else:
+        ops.append(_op_entry("op08", "Gate", ["biased"], ["gate"], {"tokens": tokens, "gate": gate}))
     ops.append(_op_entry("op09", "Mix", ["gate", "V"], ["mixed_raw"], {"tokens": tokens, "dim": dim}))
     ops.append(_op_entry("op10", "Residual", ["tokens", "mixed_raw"], ["mixed"], {"tokens": tokens, "dim": dim, "alpha": alpha}))
     ops.append(_op_entry("op11", "HeadH1", ["mixed"], ["h1"], {"input": tokens * dim, "output": ir["model"]["head_h1"]}))

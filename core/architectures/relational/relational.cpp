@@ -20,6 +20,8 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 
 #include <cmath>
 
+#include "core/architectures/heads/swiglu_head.h"
+
 namespace rune {
 
 namespace {
@@ -156,6 +158,10 @@ void RelationalModel::forwardWithContext(const float* tokens, const float* ctx, 
   bool isPair = (h.w2.size() == static_cast<size_t>(h2n) * static_cast<size_t>(h1n) * 2);
   float* mixed = scratch_.data();
   mixer.forward(tokens, ctx, mixed);
+  if (headIsSwiGlu(h)) {
+    swigluForward(h, mixed, in, value, wdl, swi_);
+    return;
+  }
   if (isPair) {
     float* pre = scratch_.data() + in;
     float* h1p = scratch_.data() + in + h1n;
@@ -187,7 +193,8 @@ size_t RelationalModel::parameterCount() const {
   size_t n = mixer.parameterCount();
   for (const HeadBucket& h : heads_) {
     n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
-         h.bvo.size() + h.wwdl.size() + h.bwdl.size();
+         h.bvo.size() + h.wwdl.size() + h.bwdl.size() + h.wgate.size() + h.bgate.size() +
+         h.wup.size() + h.bup.size();
   }
   return n;
 }
@@ -214,6 +221,19 @@ void RelationalModel::getTensors(std::vector<std::string>& names,
     for (size_t b = 0; b < heads_.size(); ++b) {
       std::string suffix = "_b" + std::to_string(b);
       const HeadBucket& h = heads_[b];
+      if (headIsSwiGlu(h)) {
+        names.insert(names.end(), {"wgate" + suffix, "bgate" + suffix, "wup" + suffix, "bup" + suffix,
+                                   "w2" + suffix, "b2" + suffix, "wvo" + suffix, "bvo" + suffix,
+                                   "wwdl" + suffix, "bwdl" + suffix});
+        int h1nn = static_cast<int>(h.bgate.size());
+        int h2nn = static_cast<int>(h.b2.size());
+        shapes.insert(shapes.end(), {{h1nn, in}, {h1nn}, {h1nn, in}, {h1nn}, {h2nn, h1nn}, {h2nn},
+                                     {1, h2nn}, {1}, {3, h2nn}, {3}});
+        data.insert(data.end(), {h.wgate.data(), h.bgate.data(), h.wup.data(), h.bup.data(),
+                                 h.w2.data(), h.b2.data(), h.wvo.data(), h.bvo.data(),
+                                 h.wwdl.data(), h.bwdl.data()});
+        continue;
+      }
       names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
                                  "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
       int h1nn = static_cast<int>(h.b1.size());
@@ -224,7 +244,19 @@ void RelationalModel::getTensors(std::vector<std::string>& names,
                                h.bvo.data(), h.wwdl.data(), h.bwdl.data()});
     }
   } else {
-    names.insert(names.end(), {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"});
+    if (headIsSwiGlu(heads_[0])) {
+      const HeadBucket& h = heads_[0];
+      names.insert(names.end(), {"wgate", "bgate", "wup", "bup", "w2", "b2", "wvo", "bvo",
+                                 "wwdl", "bwdl"});
+      int h1nn = static_cast<int>(h.bgate.size());
+      int h2nn = static_cast<int>(h.b2.size());
+      shapes.insert(shapes.end(), {{h1nn, in}, {h1nn}, {h1nn, in}, {h1nn}, {h2nn, h1nn}, {h2nn},
+                                   {1, h2nn}, {1}, {3, h2nn}, {3}});
+      data.insert(data.end(), {h.wgate.data(), h.bgate.data(), h.wup.data(), h.bup.data(),
+                               h.w2.data(), h.b2.data(), h.wvo.data(), h.bvo.data(),
+                               h.wwdl.data(), h.bwdl.data()});
+    } else {
+      names.insert(names.end(), {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"});
     int h1nn = static_cast<int>(heads_[0].b1.size());
     int h2nn = static_cast<int>(heads_[0].b2.size());
     int w2c = h2nn == 0 ? 0 : static_cast<int>(heads_[0].w2.size() / static_cast<size_t>(h2nn));
@@ -232,6 +264,7 @@ void RelationalModel::getTensors(std::vector<std::string>& names,
     data.insert(data.end(), {heads_[0].w1.data(), heads_[0].b1.data(), heads_[0].w2.data(),
                              heads_[0].b2.data(), heads_[0].wvo.data(), heads_[0].bvo.data(),
                              heads_[0].wwdl.data(), heads_[0].bwdl.data()});
+    }
   }
 }
 
@@ -242,17 +275,22 @@ bool RelationalModel::setTensors(const std::vector<std::string>& names,
     want.push_back("dynU");
     want.push_back("dynW");
   }
+  size_t mixBase = want.size();
   size_t nbuckets = 1;
-  if (names.size() > want.size() + 8) {
+  bool swiglu = names.size() > mixBase && (names[mixBase] == "wgate" || names[mixBase] == "wgate_b0");
+  size_t perHead = swiglu ? 10 : 8;
+  std::vector<const char*> headNames = {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
+  if (swiglu) headNames = {"wgate", "bgate", "wup", "bup", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
+  if (names.size() > mixBase + perHead) {
     nbuckets = 3;
     for (int b = 0; b < 3; ++b) {
       std::string suffix = "_b" + std::to_string(b);
-      for (const char* n : {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"}) {
+      for (const char* n : headNames) {
         want.push_back(std::string(n) + suffix);
       }
     }
   } else {
-    for (const char* n : {"w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"}) want.push_back(n);
+    for (const char* n : headNames) want.push_back(n);
   }
   if (names.size() != want.size()) return false;
   for (size_t i = 0; i < want.size(); ++i) {
@@ -270,27 +308,47 @@ bool RelationalModel::setTensors(const std::vector<std::string>& names,
   size_t rem = flat.size() > mixTotal ? flat.size() - mixTotal : 0;
   size_t singlePer = 128 * in + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
   size_t pairPer = 128 * in + 128 + 32 * 256 + 32 + 32 + 1 + 3 * 32 + 3;
-  bool isP = (rem == pairPer * nbuckets);
-  bool isS = (rem == singlePer * nbuckets);
-  if (!isP && !isS) return false;
+  size_t swigluPer = 128 * in + 128 + 128 * in + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
+  bool isSwi = swiglu && (rem == swigluPer * nbuckets);
+  bool isP = !swiglu && (rem == pairPer * nbuckets);
+  bool isS = !swiglu && (rem == singlePer * nbuckets);
+  if (!isSwi && !isP && !isS) return false;
   size_t w2nn = isP ? 32 * 256 : 32 * 128;
   heads_.clear();
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
-    h.w1.assign(128 * in, 0.0f);
-    h.b1.assign(128, 0.0f);
-    h.w2.assign(w2nn, 0.0f);
-    h.b2.assign(32, 0.0f);
-    h.wvo.assign(32, 0.0f);
-    h.bvo.assign(1, 0.0f);
-    h.wwdl.assign(3 * 32, 0.0f);
-    h.bwdl.assign(3, 0.0f);
+    if (isSwi) {
+      h.wgate.assign(128 * in, 0.0f);
+      h.bgate.assign(128, 0.0f);
+      h.wup.assign(128 * in, 0.0f);
+      h.bup.assign(128, 0.0f);
+      h.w2.assign(32 * 128, 0.0f);
+      h.b2.assign(32, 0.0f);
+      h.wvo.assign(32, 0.0f);
+      h.bvo.assign(1, 0.0f);
+      h.wwdl.assign(3 * 32, 0.0f);
+      h.bwdl.assign(3, 0.0f);
+    } else {
+      h.w1.assign(128 * in, 0.0f);
+      h.b1.assign(128, 0.0f);
+      h.w2.assign(w2nn, 0.0f);
+      h.b2.assign(32, 0.0f);
+      h.wvo.assign(32, 0.0f);
+      h.bvo.assign(1, 0.0f);
+      h.wwdl.assign(3 * 32, 0.0f);
+      h.bwdl.assign(3, 0.0f);
+    }
     heads_.push_back(std::move(h));
   }
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket& h = heads_[b];
-    std::vector<std::vector<float>*> hs = {&h.w1, &h.b1, &h.w2, &h.b2,
-                                           &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    std::vector<std::vector<float>*> hs;
+    if (isSwi) {
+      hs = {&h.wgate, &h.bgate, &h.wup, &h.bup, &h.w2, &h.b2,
+            &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    } else {
+      hs = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    }
     for (auto* slot : hs) slots.push_back(slot);
   }
   size_t off = 0;
@@ -305,8 +363,11 @@ bool RelationalModel::setTensors(const std::vector<std::string>& names,
 ModelSpec RelationalModel::spec() const {
   ModelSpec s;
   s.arch = archId();
-  bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
-  s.archVersion = isPair ? "0.2.1" : archVersion();
+  bool swi = !heads_.empty() && headIsSwiGlu(heads_[0]);
+  bool isPair = !swi && !heads_.empty() &&
+                heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
+  s.archVersion = swi ? "0.3.0" : (isPair ? "0.2.1" : archVersion());
+  s.head = swi ? "value_swiglu" : (isPair ? "value_wdl_pair" : "value_wdl");
   s.tokens = mixer.config().tokens;
   s.tokenDim = mixer.config().dim;
   s.attention = "gated_relational";

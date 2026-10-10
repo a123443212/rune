@@ -58,6 +58,13 @@ pub fn run(model: &str, out: &str, isa: &str, cpu: &str) -> i32 {
     header["kernel_plan_hash"] = serde_json::Value::String(ph.clone());
     let src = serde_json::to_vec(&m.header.raw).unwrap_or_default();
     header["source_hash"] = serde_json::Value::String(rune_compiler::source_hash(&src, &payload));
+    let mut hash_header = header.clone();
+    for k in ["model_hash", "checksum", "header_hash"] {
+        hash_header[k] = serde_json::Value::String("0000000000000000".to_string());
+    }
+    let mut hb = serde_json::to_vec(&hash_header).unwrap_or_default();
+    hb.extend_from_slice(&payload);
+    header["header_hash"] = serde_json::Value::String(rune_model::model_hash_hex(&hb));
     let bytes = rune_compiler::write_compiled(header, &payload);
     match std::fs::write(out, &bytes) {
         Ok(()) => {

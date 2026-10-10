@@ -177,6 +177,17 @@ def load_model_for_match(arch_id, runepath, build_dir):
         if header["geometric_bias"] == "dynamic":
             names += ["dynU", "dynW"]
         names += ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
+    if header.get("head") == "value_swiglu":
+        swapped = []
+        for n in names:
+            if n == "w1" or n.startswith("w1_b"):
+                sfx = n[2:]
+                swapped += ["wgate" + sfx, "bgate" + sfx, "wup" + sfx, "bup" + sfx]
+            elif n == "b1" or n.startswith("b1_b"):
+                continue
+            else:
+                swapped.append(n)
+        names = swapped
     flat = []
     for n in names:
         flat.extend([float(x) for x in arrays[n].reshape(-1)])

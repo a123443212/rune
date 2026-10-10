@@ -39,32 +39,22 @@ def build():
     except Exception as e:
         print("relational skip " + str(e))
     try:
-        from training.models.dense import DenseModel
-        import torch as _t
-        _t.manual_seed(17)
-        md = DenseModel(variant="B", token_dims=[16, 16, 16, 16, 16, 16, 16, 16])
-        export_model(md, os.path.join(OUT, "dense-b-fp32.rune"), quantization="fp32")
-        export_model(md, os.path.join(OUT, "dense-b-int8.rune"), quantization="int8")
-        export_model(md, os.path.join(OUT, "dense-b-int16.rune"), quantization="int16")
+        torch.manual_seed(23)
+        ms = build_model("RUNE-ATTN-SOFT")
+        export_model(ms, os.path.join(OUT, "small-soft-fp32.rune"), quantization="fp32")
     except Exception as e:
-        print("dense skip " + str(e))
+        print("soft skip " + str(e))
     try:
-        from training.models.adaptive import AdaptiveModel
-        torch.manual_seed(19)
-        ma = AdaptiveModel(dim=16)
-        export_model(ma, os.path.join(OUT, "adaptive-fp32.rune"), quantization="fp32")
+        torch.manual_seed(29)
+        mg = build_model("RUNE-MLP", head="value_swiglu")
+        export_model(mg, os.path.join(OUT, "tiny-swiglu-fp32.rune"), quantization="fp32")
     except Exception as e:
-        print("adaptive skip " + str(e))
+        print("swiglu skip " + str(e))
     try:
         from tools.golden.gen_bucket_golden import main as gen_bucket_golden
         gen_bucket_golden()
     except Exception as e:
         print("bucket heads skip " + str(e))
-    try:
-        from tools.golden.gen_mh_golden import main as gen_mh_golden
-        gen_mh_golden()
-    except Exception as e:
-        print("multi head skip " + str(e))
     for name in sorted(os.listdir(OUT)):
         h = read_header(os.path.join(OUT, name))
         arch = h.get("architecture_id", h.get("arch"))

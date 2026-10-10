@@ -1,0 +1,72 @@
+# RUNE — Relational Unified Neural Evaluator
+# Copyright (C) 2026 a123443212
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# This project is dual-licensed under the MIT License and the
+# Apache License, Version 2.0. You may choose either license
+# when using, copying, modifying, or distributing this software.
+#
+# MIT License: https://opensource.org/license/mit
+# Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, this
+# software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
+# OR CONDITIONS OF ANY KIND, either express or implied.
+experiment:
+  name: rune_v18_smoke_soft
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/v18_smoke_soft
+data:
+  dataset: smoke_v16
+  teacher: synthetic_smoke
+  positions:
+    - 10000
+
+models:
+  - rune_attn_gab
+  - rune_attn_soft
+  - rune_mlp_swiglu
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  gate: clip
+  alpha: 1.0
+  pair: false
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: false
+
+repro:
+  pool: /tmp/smoke_pool.jsonl
+  labeled: synthetic
+  teacher_ckpt: none
+
+interpretation: >
+  Pass gate: control (rune_attn_gab) and candidates (rune_attn_soft,
+  rune_mlp_swiglu) finish screening, metrics.json written per milestone,
+  per-metric table with no composite score. Smoke alone promotes nothing;
+  needs a full-scale leg vs re-run control + engine_match SPRT.

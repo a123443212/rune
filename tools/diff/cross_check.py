@@ -55,6 +55,16 @@ def py_value(model, fen):
         V = tok @ arrays["wvv"].T + arrays["bvv"]
         S = Q @ K.T + arrays["gab"]
         mixed = tok + gate_fn(header.get("gate", "clip"), S) @ V
+    elif arch == "RUNE-ATTN-SOFT":
+        import math
+        Q = tok @ arrays["wq"].T + arrays["bq"]
+        K = tok @ arrays["wk"].T + arrays["bk"]
+        V = tok @ arrays["wvv"].T + arrays["bvv"]
+        S = Q @ K.T / math.sqrt(tok.shape[1]) + arrays["gab"]
+        S = S - S.max(axis=1, keepdims=True)
+        E = np.exp(S)
+        W = E / E.sum(axis=1, keepdims=True)
+        mixed = tok + W @ V
     elif arch == "RUNE-REL-02":
         if header.get("geometric_bias") == "dynamic":
             raise RuntimeError("dynamic relational bias needs board context")
@@ -91,8 +101,14 @@ def py_value(model, fen):
     else:
         raise ValueError(f"cross_check unsupported arch {arch}")
     flat = mixed.reshape(-1)
-    h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
-    h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)
+    if header.get("head") == "value_swiglu":
+        g = flat @ arrays["wgate"].T + arrays["bgate"]
+        u = flat @ arrays["wup"].T + arrays["bup"]
+        h = (g / (1.0 + np.exp(-g))) * u
+        h2 = np.clip(h @ arrays["w2"].T + arrays["b2"], 0, 1)
+    else:
+        h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
+        h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)
     wvo = arrays.get("wvo", arrays.get("wv"))
     bvo = arrays.get("bvo", arrays.get("bv"))
     v = float(np.tanh(h2 @ wvo.T + bvo).reshape(-1)[0])

@@ -50,7 +50,7 @@ bool verifyIr(const RuneIr& ir, std::string& err) {
     if (o.kind == "V") need[5] = true;
     if (o.kind == "Score") need[6] = true;
     if (o.kind == "Bias") need[7] = true;
-    if (o.kind == "Gate") need[8] = true;
+    if (o.kind == "Gate" || o.kind == "Softmax") need[8] = true;
     if (o.kind == "Mix") need[9] = true;
     if (o.kind == "Residual") need[10] = true;
     if (o.kind == "HeadH1") need[11] = true;
@@ -72,7 +72,7 @@ std::string shapeKey(int tokens, int dim, int h1, int h2, const std::string& kin
     snprintf(b, sizeof(b), "%dx%d", tokens, dim);
     return b;
   }
-  if (kind == "Score" || kind == "Bias" || kind == "Gate") {
+  if (kind == "Score" || kind == "Bias" || kind == "Gate" || kind == "Softmax") {
     snprintf(b, sizeof(b), "%dx%d", tokens, tokens);
     return b;
   }
@@ -102,6 +102,7 @@ std::string shapeKey(int tokens, int dim, int h1, int h2, const std::string& kin
 std::string kernelFor(const std::string& kind, const std::string& shape) {
   if (kind == "Q" || kind == "K" || kind == "V") return shape == "8x32" ? "qkv_fused_8x32" : "matvec_generic";
   if (kind == "Score" || kind == "Bias" || kind == "Gate") return shape == "8x8" ? "score_bias_gate_8x8" : "generic";
+  if (kind == "Softmax") return shape == "8x8" ? "softmax_rows_8x8" : "generic";
   if (kind == "Mix" || kind == "Residual") return shape == "8x32" ? "mix_residual_8x32" : "generic";
   if (kind == "HeadH1" || kind == "HeadH2") return "linear_bias_clip";
   if (kind == "Value") return "dot_tanh";

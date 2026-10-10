@@ -9,14 +9,15 @@ machine-readable form; this text explains it.
 | ------- | ------ | --- | --------- | ---- | ---- | ---- | ------ |
 | RUNE-SFNN | 8 | 32 | none | none | clip | sfnn 256->32 | active |
 | RUNE-MLP | 8 | 32 | none | none | clip | value_wdl 128->32 | active |
-| RUNE-ATTN | 8 | 32 | gated_linear | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
 | RUNE-ATTN-GAB | 8 | 32 | gated_linear | learned gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
-| RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-ATTN-SOFT | 8 | 32 | softmax_scaled | learned gab | softmax | value_wdl 128->32 | active |
 | RUNE-REL-02 | 6/8/10 | 24/32/40 | gated_relational | static/dynamic | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
-| RUNE-MLP-S | 8 | 32 | none | none | clip | value_wdl 64->16 | active |
-| RUNE-SFNN-C | 8 | 32 | none | none | clip | value_wdl 128->16 | active |
-| RUNE-ATTN-DUAL | 8 | 32 | gated_linear_x2 | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
-| RUNE-REL-LITE | 6 | 24 | gated_relational | static | clip/hard_sigmoid/screlu | value_wdl 128->32 | active |
+| RUNE-ATTN | 8 | 32 | gated_linear | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | frozen, load only |
+| RUNE-ATTN-MH4 | 8 | 32 | multi_head | per-head gab | clip/hard_sigmoid/screlu | value_wdl 128->32 | frozen, load only |
+| RUNE-MLP-S | 8 | 32 | none | none | clip | value_wdl 64->16 | frozen, load only |
+| RUNE-SFNN-C | 8 | 32 | none | none | clip | value_wdl 128->16 | frozen, load only |
+| RUNE-ATTN-DUAL | 8 | 32 | gated_linear_x2 | none | clip/hard_sigmoid/screlu | value_wdl 128->32 | frozen, load only |
+| RUNE-REL-LITE | 6 | 24 | gated_relational | static | clip/hard_sigmoid/screlu | value_wdl 128->32 | frozen, load only |
 | RUNE-03-<variant> | 8 | per-group token_dims | pooled | none | clip | dense head_h1->head_h2 | frozen, screening only |
 | RUNE-04 | 8 | 8..64 uniform | adaptive cheap+refine | threshold routing | clip | cheap_hidden + ref_h1->ref_h2 | frozen, screening only |
 | RUNE-05 | 8 | 8..64 uniform | adaptive + uncertainty | threshold routing | clip | RUNE-04 + uncertainty head | frozen, screening only |
@@ -30,7 +31,15 @@ clamped to [-0.25,+0.25]. Gate elementwise per model gate:
 clip01, hard_sigmoid `clamp(0.2*s+0.5,0,1)`, or screlu `clip01(s)^2`. Mix `Y=S@V` (S is TxT, V is TxD).
 Residual `out=x+alpha*Y`.
 
-No softmax, no scaling by sqrt(d), no layer norm in this generation.
+## Softmax mixer (RUNE-ATTN-SOFT, normative order)
+
+Per token i: `Q[i]=Wq*x[i]+bq`, `K[i]=Wk*x[i]+bk`, `V[i]=Wv*x[i]+bv`
+with row-major matVec. Scores `S[a][b]=dot(Q[a],K[b])/sqrt(D)+gab[a][b]`
+with `D=32`, `scale=1/sqrt(D)` in float32. Weights `W[a]=softmax(S[a])`
+rows (max-subtraction, `exp`, normalize; uniform row on non-finite sum).
+Mix `Y=W@V`. Residual `out=x+Y` (`alpha=1.0`). Header `gate` is
+`"softmax"` and is ignored by gated paths. Export order matches
+RUNE-ATTN-GAB (`wq,bq,wk,bk,wvv,bvv,gab` then head).
 
 ## Dual mixer (RUNE-ATTN-DUAL, normative order)
 
@@ -74,6 +83,14 @@ reject any other width. Both paths are bit-deterministic given
 identical input bytes; cross-path equality is not required.
 Uncertainty/stability heads, when present, are extra linear rows
 after wdl and must be compared separately.
+
+SwiGLU path (opt-in, `head="value_swiglu"`, `arch_version` 0.3.0,
+incompatible with `head_pair`): `g=Wgate*flat+bgate`,
+`u=Wup*flat+bup`, `h=silu(g)*u` with `silu(x)=x/(1+exp(-x))`,
+`h2=clip01(W2*h+b2)`, then value/wdl as above. Loaders infer the path
+from tensor presence (`wgate`/`wup`): swiglu heads carry
+`wgate,bgate,wup,bup,w2,b2,wvo,bvo,wwdl,bwdl` (or `wv`/`bv` aliases on
+RUNE-MLP/RUNE-SFNN) with optional `_b{b}` bucket suffixes.
 
 ## Head buckets (normative)
 

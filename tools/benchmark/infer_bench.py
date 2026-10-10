@@ -23,7 +23,7 @@ import time
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", ".."))
 
-ARCHS = ["RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB"]
+ARCHS = ["RUNE-MLP", "RUNE-ATTN-GAB", "RUNE-ATTN-SOFT"]
 REL_VARIANTS = [
     ("RUNE-REL-02", ["--tokens", "8", "--dim", "32", "--bias", "static"]),
     ("RUNE-REL-02", ["--tokens", "8", "--dim", "32", "--bias", "dynamic"]),

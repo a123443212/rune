@@ -75,7 +75,7 @@ def test_trainer_trains_and_checkpoints(tmp_path):
 def test_learning_curve_tiny(tmp_path):
     recs = make_records(64)
     cfg = {
-        "arch": "RUNE-ATTN",
+        "arch": "RUNE-ATTN-GAB",
         "seed": 0,
         "lr": 1e-3,
         "lambda_wdl": 0.5,

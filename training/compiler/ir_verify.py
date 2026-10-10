@@ -23,6 +23,8 @@ def verify_arch(ir):
         return [f"unsupported architecture {arch}"]
     kinds = [o.get("kind") for o in ir.get("ops", [])]
     for need in required_ops(arch):
+        if need == "Gate" and ("Gate" in kinds or "Softmax" in kinds):
+            continue
         if need not in kinds:
             errors.append(f"missing op {need} for {arch}")
     return errors

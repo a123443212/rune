@@ -78,6 +78,7 @@ class RelationalModel : public IArchitecture {
  private:
   const HeadBucket& headFor(int phase) const;
   mutable std::vector<float> scratch_;
+  mutable std::vector<float> swi_;
 };
 
 struct EvalResultFlex {

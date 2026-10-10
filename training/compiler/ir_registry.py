@@ -29,7 +29,7 @@ def arch_family(arch):
         return "resnet"
     if arch in ("RUNE-04", "RUNE-05"):
         return "adaptive"
-    if arch in ("RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-ATTN-MH4", "RUNE-REL-02", "RUNE-03", "RUNE-04", "RUNE-05") or arch.startswith("RUNE-03-"):
+    if arch in ("RUNE-SFNN", "RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-ATTN-SOFT", "RUNE-ATTN-MH4", "RUNE-REL-02", "RUNE-03", "RUNE-04", "RUNE-05") or arch.startswith("RUNE-03-"):
         return "classic"
     return "unknown"
 

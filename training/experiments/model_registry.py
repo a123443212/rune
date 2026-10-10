@@ -19,51 +19,31 @@ import warnings
 
 MODEL_IDS = {
     "rune_mlp": "RUNE-MLP",
-    "rune_attn": "RUNE-ATTN",
+    "rune_mlp_swiglu": "RUNE-MLP",
     "rune_attn_gab": "RUNE-ATTN-GAB",
     "rune_attn_gab_pair": "RUNE-ATTN-GAB",
+    "rune_attn_gab_swiglu": "RUNE-ATTN-GAB",
+    "rune_attn_soft": "RUNE-ATTN-SOFT",
+    "rune_attn_soft_pair": "RUNE-ATTN-SOFT",
+    "rune_sfnn": "RUNE-SFNN",
     "rune_rel_s": "RUNE-REL-02",
     "rune_rel_d": "RUNE-REL-02",
-    "rune_03A": "RUNE-03-A",
-    "rune_03B": "RUNE-03-B",
-    "rune_03C": "RUNE-03-C",
-    "rune_03D": "RUNE-03-D",
-    "rune_04_cheap": "RUNE-04",
-    "rune_04_always": "RUNE-04",
-    "rune_04_adaptive": "RUNE-04",
-    "rune_05_unc": "RUNE-05",
-    "rune_05_routing": "RUNE-05",
-    "rune_05_stab": "RUNE-05",
-    "rune_s1": "RUNE-03-A",
-    "rune_s2": "RUNE-03-A",
-    "rune_s3": "RUNE-03-A",
-    "rune_s4": "RUNE-03-A",
+    "rune_rel_swiglu": "RUNE-REL-02",
 }
 
 CORE_MODELS = ("rune_mlp",)
 EXPERIMENTAL_MODELS = (
-    "rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
-    "rune_03A", "rune_03B", "rune_03C", "rune_03D",
-    "rune_04_cheap", "rune_04_always", "rune_04_adaptive",
-    "rune_05_unc", "rune_05_routing", "rune_05_stab",
-    "rune_s1", "rune_s2", "rune_s3", "rune_s4", "rune_attn_gab_pair",
+    "rune_attn_gab", "rune_rel_s", "rune_rel_d",
+    "rune_attn_gab_pair", "rune_mlp_swiglu", "rune_attn_gab_swiglu",
+    "rune_attn_soft", "rune_attn_soft_pair", "rune_sfnn", "rune_rel_swiglu",
 )
-PAIR_MODELS = frozenset(("rune_attn_gab_pair",))
+PAIR_MODELS = frozenset(("rune_attn_gab_pair", "rune_attn_soft_pair"))
 
-ADAPTIVE_MODES = {
-    "rune_04_cheap": "cheap",
-    "rune_04_always": "always",
-    "rune_04_adaptive": "adaptive",
-    "rune_05_unc": "adaptive",
-    "rune_05_routing": "adaptive",
-    "rune_05_stab": "adaptive",
-}
+SWIGLU_MODELS = frozenset(("rune_mlp_swiglu", "rune_attn_gab_swiglu", "rune_rel_swiglu"))
 
-SEARCH_ROUTING = {
-    "rune_05_unc": "difficulty",
-    "rune_05_routing": "both",
-    "rune_05_stab": "full",
-}
+ADAPTIVE_MODES = {}
+
+SEARCH_ROUTING = {}
 
 CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
 

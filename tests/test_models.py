@@ -48,8 +48,8 @@ def test_parameter_accounting():
         counts[arch] = model.parameter_count()
         assert model.model_size_bytes() == counts[arch] * 4
     assert counts["RUNE-SFNN"] > counts["RUNE-MLP"]
-    assert counts["RUNE-ATTN"] > counts["RUNE-MLP"]
-    assert counts["RUNE-ATTN"] == counts["RUNE-ATTN-GAB"]
+    assert counts["RUNE-ATTN-GAB"] > counts["RUNE-MLP"]
+    assert counts["RUNE-ATTN-SOFT"] == counts["RUNE-ATTN-GAB"]
     mlp_tensors = sum(v.numel() for v in build_model("RUNE-MLP").arch_tensors().values())
     assert mlp_tensors == 37156
 
@@ -81,7 +81,7 @@ def test_attention_equations_numpy():
 
 def test_gab_ablation_switch():
     torch.manual_seed(1)
-    a = build_model("RUNE-ATTN")
+    a = build_model("RUNE-ATTN-GAB")
     g = build_model("RUNE-ATTN-GAB")
     g.attn.load_state_dict(a.attn.state_dict(), strict=False)
     x = torch.randn(3, 8, 32)
@@ -93,6 +93,54 @@ def test_gab_ablation_switch():
         g.attn.gab.fill_(0.5)
         yg2 = g.attn(x)
     assert not torch.allclose(ya, yg2, atol=1e-4)
+
+
+def test_soft_attention_numpy_parity():
+    import math
+    torch.manual_seed(2)
+    model = build_model("RUNE-ATTN-SOFT")
+    model.eval()
+    x = torch.randn(2, 8, 32)
+    with torch.no_grad():
+        y = model.attn(x)
+    xn = x.numpy()
+    wq = model.attn.wq.weight.detach().numpy()
+    bq = model.attn.wq.bias.detach().numpy()
+    wk = model.attn.wk.weight.detach().numpy()
+    bk = model.attn.wk.bias.detach().numpy()
+    wv = model.attn.wv.weight.detach().numpy()
+    bv = model.attn.wv.bias.detach().numpy()
+    gab = model.attn.gab.detach().numpy()
+    for b in range(2):
+        q = xn[b] @ wq.T + bq
+        k = xn[b] @ wk.T + bk
+        v = xn[b] @ wv.T + bv
+        s = q @ k.T / math.sqrt(32) + gab
+        s = s - s.max(axis=1, keepdims=True)
+        e = np.exp(s)
+        w = e / e.sum(axis=1, keepdims=True)
+        expect = xn[b] + w @ v
+        assert np.allclose(y[b].numpy(), expect, atol=1e-5)
+
+
+def test_swiglu_head_numpy_parity():
+    torch.manual_seed(3)
+    model = build_model("RUNE-MLP", head="value_swiglu")
+    model.eval()
+    flat = torch.randn(2, 256)
+    h = model.head
+    with torch.no_grad():
+        v, w = h(flat)
+    fn = flat.numpy()
+    g = fn @ h.fc_gate.weight.detach().numpy().T + h.fc_gate.bias.detach().numpy()
+    u = fn @ h.fc_up.weight.detach().numpy().T + h.fc_up.bias.detach().numpy()
+    silu = g / (1.0 + np.exp(-g))
+    h1 = silu * u
+    h2 = np.clip(h1 @ h.fc2.weight.detach().numpy().T + h.fc2.bias.detach().numpy(), 0, 1)
+    ev = np.tanh(h2 @ h.fcv.weight.detach().numpy().T + h.fcv.bias.detach().numpy()).reshape(-1)
+    ew = h2 @ h.fcwdl.weight.detach().numpy().T + h.fcwdl.bias.detach().numpy()
+    assert np.allclose(v.numpy(), ev, atol=1e-5)
+    assert np.allclose(w.numpy(), ew, atol=1e-5)
 
 
 def test_spec_and_export_order_cover_all_params():

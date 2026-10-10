@@ -30,6 +30,8 @@ pub mod interaction_graph;
 pub mod mixer;
 pub mod mixer_dual;
 pub mod mixer_mh;
+pub mod mixer_soft;
+pub mod head_swiglu;
 mod model_config;
 pub mod policy_head;
 pub mod relational_cache;

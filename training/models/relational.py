@@ -110,7 +110,7 @@ class RelationalHead(nn.Module):
 
 class RuneRelational(nn.Module):
     def __init__(self, tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False, pair=False,
-                 game="chess", vocab_sizes=None, ctx_dim=None):
+                 game="chess", vocab_sizes=None, ctx_dim=None, head="value_wdl"):
         super().__init__()
         from training.games import get as get_game
         self.game = get_game(game)
@@ -120,12 +120,21 @@ class RuneRelational(nn.Module):
         self.alpha = alpha
         self.dynamic_bias = dynamic_bias
         self.pair = pair
+        if head not in ("value_wdl", "value_swiglu"):
+            raise ValueError(f"unknown head {head}")
+        if head == "value_swiglu" and pair:
+            raise ValueError("swiglu head does not support pair")
+        self.head_kind = head
         vocabs = list(vocab_sizes) if vocab_sizes is not None else list(self.game.vocabs)
         cd = ctx_dim if ctx_dim is not None else self.game.context_dim
         self.ctx_dim = cd
         self.embedder = FlexEmbedder(tokens, dim, vocabs)
         self.mixer = RelationalMixer(tokens, dim, gate, alpha, dynamic_bias, ctx_dim=cd)
-        self.head = RelationalHead(tokens, dim, pair=pair)
+        if head == "value_swiglu":
+            from training.models.swiglu_head import SwiGluWdlHead
+            self.head = SwiGluWdlHead(128, 32, tokens * dim)
+        else:
+            self.head = RelationalHead(tokens, dim, pair=pair)
 
     def forward(self, group_ids, group_mask, ctx):
         x = self.embedder(group_ids, group_mask)
@@ -145,6 +154,20 @@ class RuneRelational(nn.Module):
         if self.dynamic_bias:
             d["dynU"] = self.mixer.dyn_u.detach()
             d["dynW"] = self.mixer.dyn_w.detach()
+        if self.head_kind == "value_swiglu":
+            d.update({
+                "wgate": self.head.fc_gate.weight.detach(),
+                "bgate": self.head.fc_gate.bias.detach(),
+                "wup": self.head.fc_up.weight.detach(),
+                "bup": self.head.fc_up.bias.detach(),
+                "w2": self.head.fc2.weight.detach(),
+                "b2": self.head.fc2.bias.detach(),
+                "wvo": self.head.fcv.weight.detach(),
+                "bvo": self.head.fcv.bias.detach(),
+                "wwdl": self.head.fcwdl.weight.detach(),
+                "bwdl": self.head.fcwdl.bias.detach(),
+            })
+            return d
         d.update({
             "w1": self.head.fc1.weight.detach(),
             "b1": self.head.fc1.bias.detach(),
@@ -161,6 +184,8 @@ class RuneRelational(nn.Module):
         order = ["wq", "bq", "wk", "bk", "wvv", "bvv", "gabS"]
         if self.dynamic_bias:
             order += ["dynU", "dynW"]
+        if self.head_kind == "value_swiglu":
+            return order + ["wgate", "bgate", "wup", "bup", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
         return order + ["w1", "b1", "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"]
 
     def embedding_tensors(self):
@@ -173,16 +198,22 @@ class RuneRelational(nn.Module):
         return self.parameter_count() * 4
 
     def model_spec(self, quantization="fp32"):
+        if self.head_kind == "value_swiglu":
+            head_name = "value_swiglu"
+            version = "0.3.0"
+        else:
+            head_name = "value_wdl_pair" if self.pair else "value_wdl"
+            version = "0.2.1" if self.pair else "0.2.0"
         return {
             "game": self.game.game_id,
             "arch": "RUNE-REL-02",
-            "arch_version": "0.2.1" if self.pair else "0.2.0",
+            "arch_version": version,
             "feature_set": self.game.feature_version,
             "tokens": self.tokens,
             "token_dim": self.dim,
             "attention": "gated_relational",
             "geometric_bias": "dynamic" if self.dynamic_bias else "static",
-            "head": "value_wdl_pair" if self.pair else "value_wdl",
+            "head": head_name,
             "head_pair": self.pair,
             "quantization": quantization,
             "gate": self.gate,
@@ -192,6 +223,6 @@ class RuneRelational(nn.Module):
 
 
 def build_rel_model(tokens=8, dim=32, gate="clip", alpha=1.0, dynamic_bias=False, pair=False,
-                    game="chess", vocab_sizes=None, ctx_dim=None):
+                    game="chess", vocab_sizes=None, ctx_dim=None, head="value_wdl"):
     return RuneRelational(tokens, dim, gate, alpha, dynamic_bias, pair=pair,
-                          game=game, vocab_sizes=vocab_sizes, ctx_dim=ctx_dim)
+                          game=game, vocab_sizes=vocab_sizes, ctx_dim=ctx_dim, head=head)

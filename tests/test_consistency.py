@@ -60,7 +60,7 @@ def copy_weights_to_cpp(torch_model, cpp_model):
 @needs_bindings
 def test_embedder_matches_cpp_tokens():
     torch.manual_seed(3)
-    for arch in ["RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-SFNN"]:
+    for arch in ["RUNE-MLP", "RUNE-ATTN-GAB", "RUNE-ATTN-SOFT", "RUNE-SFNN"]:
         tm = build_model(arch)
         tm.eval()
         cm = rb.RuneModel(arch)
@@ -84,7 +84,7 @@ def test_embedder_matches_cpp_tokens():
 @needs_bindings
 def test_full_model_matches_cpp_eval():
     torch.manual_seed(4)
-    for arch in ["RUNE-MLP", "RUNE-ATTN", "RUNE-ATTN-GAB", "RUNE-SFNN"]:
+    for arch in ["RUNE-MLP", "RUNE-ATTN-GAB", "RUNE-ATTN-SOFT", "RUNE-SFNN"]:
         tm = build_model(arch)
         tm.eval()
         cm = rb.RuneModel(arch)

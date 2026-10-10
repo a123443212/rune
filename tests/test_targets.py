@@ -80,9 +80,8 @@ def test_rank_pairs_ties():
 def test_soft_wdl_and_quality_train_step():
     from training.trainer.trainer import Trainer
 
-    cfg = {"arch": "RUNE-03-A", "seed": 0, "lr": 3e-4, "weight_decay": 0.01,
+    cfg = {"arch": "RUNE-MLP", "seed": 0, "lr": 3e-4, "weight_decay": 0.01,
            "batch_size": 4, "lambda_wdl": 0.5, "lambda_rank": 0.0,
-           "dense_params": {},
            "distill": {"enabled": True, "task": "value_wdl", "alpha": 0.5,
                        "soft_wdl": True, "quality_weighted": True}}
     tr = Trainer(cfg)

@@ -1,0 +1,80 @@
+# RUNE — Relational Unified Neural Evaluator
+# Copyright (C) 2026 a123443212
+#
+# SPDX-License-Identifier: MIT OR Apache-2.0
+#
+# This project is dual-licensed under the MIT License and the
+# Apache License, Version 2.0. You may choose either license
+# when using, copying, modifying, or distributing this software.
+#
+# MIT License: https://opensource.org/license/mit
+# Apache License 2.0: https://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, this
+# software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
+# OR CONDITIONS OF ANY KIND, either express or implied.
+experiment:
+  name: rune_v18_leg_a_soft
+  seed: 42
+
+research:
+  allow_experimental: true
+
+out_dir: runs/v18_leg_a
+data:
+  dataset: clean_v16_a
+  teacher: teacher_v16_distill_ckpt
+  positions:
+    - 250000000
+
+models:
+  - rune_attn_gab
+  - rune_attn_soft
+
+architecture:
+  tokens: 8
+  token_dim: 32
+  gate: clip
+  alpha: 1.0
+  pair: false
+
+training:
+  lr: 0.0003
+  weight_decay: 0.01
+  batch_size: 256
+  log_every: 200
+
+loss:
+  value: true
+  wdl: true
+  ranking: false
+
+distillation:
+  enabled: true
+  task: value_wdl
+  alpha: 0.5
+  weight_mode: confidence
+  weight_lo: 0.25
+  weight_hi: 1.0
+  lambda_unc_distill: 0.0
+
+sampling:
+  mode: none
+
+export_quant: fp32
+
+evaluation:
+  validation: true
+  benchmark: true
+  engine_match: true
+
+repro:
+  pool: data/pool_v16.jsonl
+  labeled: data/distilled_v16_250m.jsonl
+  teacher_ckpt: /path/to/teacher.ckpt
+
+interpretation: >
+  Matched-condition leg (one variable vs re-run control):
+  control rune_attn_gab (gated_linear) vs candidate rune_attn_soft
+  (softmax_scaled, same tensors and head). Promote only on per-metric
+  win + engine_match SPRT, no composite score.

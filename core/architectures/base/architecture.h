@@ -80,6 +80,7 @@ class IArchitecture {
 
 struct HeadBucket {
   std::vector<float> w1, b1, w2, b2, wvo, bvo, wwdl, bwdl;
+  std::vector<float> wgate, bgate, wup, bup;
 };
 
 uint64_t fnv1aHash(const std::string& s);

@@ -55,7 +55,7 @@ pub(crate) fn resolve_model_config(
     let is_resnet = architecture_id.starts_with("RUNE-RESNET");
     let is_supported = matches!(
         architecture_id.as_str(),
-        "RUNE-SFNN" | "RUNE-MLP" | "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-ATTN-MH4" | "RUNE-REL-02" | "RUNE-MLP-S" | "RUNE-SFNN-C" | "RUNE-ATTN-DUAL" | "RUNE-REL-LITE"
+        "RUNE-SFNN" | "RUNE-MLP" | "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-ATTN-SOFT" | "RUNE-ATTN-MH4" | "RUNE-REL-02" | "RUNE-MLP-S" | "RUNE-SFNN-C" | "RUNE-ATTN-DUAL" | "RUNE-REL-LITE"
     ) || (is_resnet && target == ExecutionTarget::Reference);
     if !is_supported {
         return Err(RuntimeError::UnsupportedArch(architecture_id));

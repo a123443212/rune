@@ -45,8 +45,21 @@
     8
    ]
   },
-  {
-   "attention": "multi_head",
+   {
+    "dims": [
+     32
+    ],
+    "head": "value_wdl 128->32",
+    "id": "RUNE-ATTN-SOFT",
+    "tokens": [
+     8
+    ],
+    "attention": "softmax_scaled",
+    "bias": "learned gab",
+    "scale": "1/sqrt(dim)"
+   },
+   {
+    "attention": "multi_head",
    "bias": "per_head gab",
    "dims": [
     32
@@ -190,13 +203,29 @@
    "value=tanh(wvo.h2+bvo)",
    "wdl=Wwdl h2+bwdl linear"
   ],
- "mixer_order": [
-  "QKV per token matVec",
-  "S=QK^T + gabS + dynamicBias(clamped)",
-  "gate elementwise",
-  "Y=S@V",
-  "out=x+alpha*Y"
- ],
+  "head_swiglu_order": [
+   "flatten row-major",
+   "g=Wgate*x+bgate",
+   "u=Wup*x+bup",
+   "h=silu(g)*u",
+   "h2=clip01(W2h+b2)",
+   "value=tanh(wvo.h2+bvo)",
+   "wdl=Wwdl h2+bwdl linear"
+  ],
+  "mixer_order": [
+   "QKV per token matVec",
+   "S=QK^T + gabS + dynamicBias(clamped)",
+   "gate elementwise",
+   "Y=S@V",
+   "out=x+alpha*Y"
+  ],
+  "mixer_softmax_order": [
+   "QKV per token matVec",
+   "S=QK^T/sqrt(dim) + gab",
+   "W=softmax(S) rows",
+   "Y=W@V",
+   "out=x+Y"
+  ],
  "quantization": {
   "bound_int16": 32767,
   "bound_int8": 127,

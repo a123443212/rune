@@ -85,6 +85,7 @@ fn head_pair_concat_matches_manual() {
         w1, b1, w2, b2,
         wvo: vec![1.0, -1.0], bvo: 0.0,
         wwdl: vec![1.0, 0.0, 0.0, 1.0, 0.0, 0.0], bwdl: vec![0.0, 0.0, 0.0],
+        swiglu: None,
     };
     assert!(hw.is_pair());
     let (value, wdl, tr) = hw.forward(&flat);
@@ -106,6 +107,7 @@ fn head_pair_concat_matches_manual() {
         w2: hw.w2[..h2 * h1].to_vec(), b2: hw.b2.clone(),
         wvo: hw.wvo.clone(), bvo: hw.bvo,
         wwdl: hw.wwdl.clone(), bwdl: hw.bwdl.clone(),
+        swiglu: None,
     };
     assert!(!single.is_pair());
     let (sv, _, _) = single.forward(&flat);

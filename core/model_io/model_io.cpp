@@ -593,7 +593,9 @@ bool loadRuneFile(const std::string& path, RuneFile& out, std::string& err) {
     flexEmb = &out.flexEmbeddings;
   } else {
     GateFn gate = GateFn::Clip;
-    if (!gateFromString(out.spec.gate, gate)) {
+    if (out.spec.gate == "softmax" && arch == "RUNE-ATTN-SOFT") {
+      gate = GateFn::Clip;
+    } else if (!gateFromString(out.spec.gate, gate)) {
       err = "unknown gate " + out.spec.gate;
       return false;
     }

@@ -26,6 +26,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 #include "core/accumulators/grouped_accumulator.h"
 #include "core/accumulators/token_layout.h"
 #include "core/architectures/attention/attention.h"
+#include "core/architectures/attention/soft_attention.h"
 #include "core/architectures/adaptive/adaptive.h"
 #include "core/architectures/dense/dense.h"
 #include "core/architectures/mlp/mlp.h"
@@ -121,6 +122,7 @@ int main(int argc, char** argv) {
   GroupedMlp mlp;
   RuneAttnModel attn(false);
   RuneAttnModel attnGab(true);
+  RuneSoftAttnModel attnSoft;
   float value;
   float wdl[3];
   report("head_mlp_us", benchUs([&](int) { mlp.forward(tok, value, wdl); }, 5000));
@@ -128,9 +130,11 @@ int main(int argc, char** argv) {
   Evaluator evMlp(&tables, &mlp);
   Evaluator evAttn(&tables, &attn);
   Evaluator evGab(&tables, &attnGab);
+  Evaluator evSoft(&tables, &attnSoft);
   Evaluator* ev = &evGab;
   if (arch == "RUNE-MLP") ev = &evMlp;
   if (arch == "RUNE-ATTN") ev = &evAttn;
+  if (arch == "RUNE-ATTN-SOFT") ev = &evSoft;
   report("full_eval_refresh_us", benchUs([&](int) { ev->evaluateBoard(start); }, 2000));
   ev->refresh(start);
   report("full_eval_incremental_us", benchUs([&](int) { ev->evaluate(); }, 5000));

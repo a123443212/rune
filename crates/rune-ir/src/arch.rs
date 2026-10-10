@@ -27,6 +27,7 @@ pub fn arch_family(arch: &str) -> &'static str {
         || arch == "RUNE-SFNN-C"
         || arch == "RUNE-ATTN"
         || arch == "RUNE-ATTN-GAB"
+        || arch == "RUNE-ATTN-SOFT"
         || arch == "RUNE-ATTN-DUAL"
         || arch == "RUNE-ATTN-MH4"
         || arch == "RUNE-REL-02"

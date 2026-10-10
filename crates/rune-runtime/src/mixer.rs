@@ -159,6 +159,7 @@ pub struct HeadWeights {
     pub bvo: f32,
     pub wwdl: Vec<f32>,
     pub bwdl: Vec<f32>,
+    pub swiglu: Option<crate::head_swiglu::SwiGluHead>,
 }
 #[derive(Debug, Clone, Default)]
 pub struct HeadTrace {
@@ -170,6 +171,9 @@ impl HeadWeights {
         self.w2.len() == self.h2 * self.h1 * 2
     }
     pub fn forward(&self, flat: &[f32]) -> (f32, [f32; 3], HeadTrace) {
+        if let Some(s) = &self.swiglu {
+            return s.forward(flat);
+        }
         if self.is_pair() {
             let mut pre = vec![0.0_f32; self.h1];
             kernel::mat_vec(&self.w1, flat, Some(&self.b1), &mut pre, self.h1, self.input);
@@ -204,6 +208,9 @@ impl HeadWeights {
         (value, wdl, HeadTrace { h1, h2 })
     }
     pub fn forward_value_only(&self, flat: &[f32]) -> f32 {
+        if let Some(s) = &self.swiglu {
+            return s.forward_value_only(flat);
+        }
         if self.h1 <= 256 && self.h2 <= 32 && self.input <= 320 {
             return self.forward_value_stack(flat);
         }

@@ -24,6 +24,7 @@ use crate::features::{compute_context, extract_features, CONTEXT_DIM};
 use crate::mixer::{dyn_factors, HeadWeights, MixerWeights};
 use crate::mixer_dual::DualMixer;
 use crate::mixer_mh::MultiHeadMixer;
+use crate::mixer_soft::{scale_for_dim, soft_forward_into};
 use crate::model_config::{resolve_model_config, ExecutionTarget};
 use rune_model as model;
 use std::path::Path;
@@ -42,6 +43,8 @@ pub struct CompiledEvaluator {
     ctx_dim: usize,
     gate: Gate,
     alpha: f32,
+    soft: bool,
+    soft_scale: f32,
     mh: Option<MultiHeadMixer>,
     dual: Option<DualMixer>,
     head: Vec<HeadWeights>,
@@ -86,7 +89,7 @@ impl CompiledEvaluator {
             }
             tables.data[g].copy_from_slice(arr);
         }
-        let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-REL-02" || arch == "RUNE-ATTN-DUAL";
+        let has_mixer = arch == "RUNE-ATTN" || arch == "RUNE-ATTN-GAB" || arch == "RUNE-ATTN-SOFT" || arch == "RUNE-REL-02" || arch == "RUNE-ATTN-DUAL";
         let (wq, bq, wk, bk, wv, bv, gab, dyn_u, dyn_w, ctx_dim, gate, alpha);
         if has_mixer {
             wq = need_vec(&m.arrays, "wq")?;
@@ -129,7 +132,7 @@ impl CompiledEvaluator {
             dyn_w = pair.1;
             ctx_dim = pair.2;
             gate = match m.header.raw.get("gate").and_then(|x| x.as_str()) {
-                None => Gate::Clip,
+                None | Some("softmax") => Gate::Clip,
                 Some(s) => Gate::from_str(s).ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string()))?,
             };
             alpha = m.header.raw.get("alpha").and_then(|x| x.as_f64()).unwrap_or(1.0) as f32;
@@ -155,8 +158,9 @@ impl CompiledEvaluator {
         let mut heads: Vec<HeadWeights> = Vec::new();
         for b in 0..buckets {
             let suffix = if buckets == 1 { String::new() } else { format!("_b{}", b) };
-            let w1 = need_vec(&m.arrays, &format!("w1{}", suffix))?;
-            let b1 = need_vec(&m.arrays, &format!("b1{}", suffix))?;
+            let is_swiglu = m.arrays.contains_key(&format!("wgate{}", suffix));
+            let w1 = if is_swiglu { Vec::new() } else { need_vec(&m.arrays, &format!("w1{}", suffix))? };
+            let b1 = if is_swiglu { Vec::new() } else { need_vec(&m.arrays, &format!("b1{}", suffix))? };
             let w2 = need_vec(&m.arrays, &format!("w2{}", suffix))?;
             let b2 = need_vec(&m.arrays, &format!("b2{}", suffix))?;
             let wvo = need_vec(&m.arrays, &format!("wvo{}", suffix))
@@ -166,9 +170,42 @@ impl CompiledEvaluator {
                 .and_then(|v| v.first().copied()).unwrap_or(0.0);
             let wwdl = need_vec(&m.arrays, &format!("wwdl{}", suffix))?;
             let bwdl = need_vec(&m.arrays, &format!("bwdl{}", suffix))?;
-            let h1 = b1.len();
             let h2 = b2.len();
-            if w1.len() != h1 * tokens * dim || w2.len() != h2 * h1 {
+            let swiglu = if is_swiglu {
+                let wgate = need_vec(&m.arrays, &format!("wgate{}", suffix))?;
+                let bgate = need_vec(&m.arrays, &format!("bgate{}", suffix))?;
+                let wup = need_vec(&m.arrays, &format!("wup{}", suffix))?;
+                let bup = need_vec(&m.arrays, &format!("bup{}", suffix))?;
+                let h1 = bgate.len();
+                if bup.len() != h1 {
+                    return Err(RuntimeError::Shape("swiglu bias".to_string()));
+                }
+                if wgate.len() != h1 * tokens * dim || wup.len() != h1 * tokens * dim {
+                    return Err(RuntimeError::Shape("swiglu mat".to_string()));
+                }
+                if w2.len() != h2 * h1 {
+                    return Err(RuntimeError::Shape("head mat".to_string()));
+                }
+                Some(crate::head_swiglu::SwiGluHead {
+                    input: tokens * dim,
+                    h1,
+                    h2,
+                    wgate,
+                    bgate,
+                    wup,
+                    bup,
+                    w2: w2.clone(),
+                    b2: b2.clone(),
+                    wvo: wvo.clone(),
+                    bvo,
+                    wwdl: wwdl.clone(),
+                    bwdl: bwdl.clone(),
+                })
+            } else {
+                None
+            };
+            let h1 = if is_swiglu { swiglu.as_ref().map(|s| s.h1).unwrap_or(0) } else { b1.len() };
+            if !is_swiglu && (w1.len() != h1 * tokens * dim || w2.len() != h2 * h1) {
                 return Err(RuntimeError::Shape("head mat".to_string()));
             }
             if wvo.len() != h2 {
@@ -177,7 +214,7 @@ impl CompiledEvaluator {
             if wwdl.len() != 3 * h2 || bwdl.len() != 3 {
                 return Err(RuntimeError::Shape("wdl".to_string()));
             }
-            heads.push(HeadWeights { input: tokens * dim, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl });
+            heads.push(HeadWeights { input: tokens * dim, h1, h2, w1, b1, w2, b2, wvo, bvo, wwdl, bwdl, swiglu: swiglu });
         }
         let mh = if arch == "RUNE-ATTN-MH4" {
             if tokens != 8 || dim != 32 {
@@ -301,6 +338,8 @@ impl CompiledEvaluator {
             ctx_dim,
             gate,
             alpha,
+            soft: arch == "RUNE-ATTN-SOFT",
+            soft_scale: scale_for_dim(dim),
             mh,
             dual,
             head: heads,
@@ -479,9 +518,14 @@ impl CompiledEvaluator {
         self.tokens_into(&mut tok);
         let t = self.tokens;
         let d = self.dim;
-        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
+        let is_soft = self.soft;
+        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-ATTN-SOFT" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
         let mut mixed = tok.to_vec();
-        if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
+        if is_soft {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            soft_forward_into(&self.wq, &self.bq, &self.wk, &self.bk, &self.wv, &self.bv, &self.gab, self.soft_scale, t, d, &tok, &mut out);
+            mixed = out;
+        } else if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
             let mut q = vec![0.0f32; 256];
             let mut k = vec![0.0f32; 256];
             let mut vv = vec![0.0f32; 256];
@@ -512,9 +556,14 @@ impl CompiledEvaluator {
     pub fn forward_tokens_compiled(&mut self, tok: &[f32]) -> crate::evaluator::EvalResult {
         let t = self.tokens;
         let d = self.dim;
-        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
+        let is_soft = self.soft;
+        let has_mixer = self.arch_id == "RUNE-ATTN" || self.arch_id == "RUNE-ATTN-GAB" || self.arch_id == "RUNE-ATTN-SOFT" || self.arch_id == "RUNE-REL-02" || self.arch_id == "RUNE-ATTN-DUAL";
         let mut mixed = tok.to_vec();
-        if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
+        if is_soft {
+            let mut out = vec![0.0f32; self.tokens * self.dim];
+            soft_forward_into(&self.wq, &self.bq, &self.wk, &self.bk, &self.wv, &self.bv, &self.gab, self.soft_scale, t, d, tok, &mut out);
+            mixed = out;
+        } else if has_mixer && t == 8 && d == 32 && !self.dyn_on() && self.dual.is_none() {
             let mut q = vec![0.0f32; 256];
             let mut k = vec![0.0f32; 256];
             let mut vv = vec![0.0f32; 256];

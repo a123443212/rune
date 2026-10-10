@@ -18,7 +18,7 @@ import sys
 
 sys.path.insert(0, ".")
 
-from training.models import adaptive, dense, rune_models
+from training.models import rune_models
 
 MACHINE = "linux-x86_64-cmake-O2-scalar"
 DATE = "2026-10-05"
@@ -26,8 +26,8 @@ DATE = "2026-10-05"
 CANDIDATE_BUILDERS = {
     "C0-MLP": lambda: rune_models.build_model("RUNE-MLP"),
     "C1-ATTN-GAB-8x32": lambda: rune_models.build_model("RUNE-ATTN-GAB"),
-    "C2-Adaptive-04": adaptive.build_adaptive_model,
-    "C3-Dense-B": lambda: dense.build_dense_model(variant="B"),
+    "C2-ATTN-SOFT-8x32": lambda: rune_models.build_model("RUNE-ATTN-SOFT"),
+    "C3-MLP-SWIGLU": lambda: rune_models.build_model("RUNE-MLP", head="value_swiglu"),
 }
 
 CANDIDATES = {
@@ -46,20 +46,19 @@ CANDIDATES = {
         "search": "266n/123e d2, 27.5k nps, det 3/3",
         "evidence": "triangle 9/9, simd 3.7x, fixtures fp32/int8/int16",
     },
-    "C2-Adaptive-04": {
-        "params": 49001,
-        "flops_k": 98,
-        "full_us": 57.8,
-        "cheap_us": 7.9,
-        "search": "not wired (void)cfg",
-        "evidence": "routing 100%, refine-rate unmeasured trained",
-    },
-    "C3-Dense-B": {
-        "params": 42592,
-        "flops_k": 84,
+    "C2-ATTN-SOFT-8x32": {
+        "params": None,
+        "flops_k": None,
         "full_us": None,
-        "search": "rejected by search tool",
-        "evidence": "int8 parity 7e-6, no search bench",
+        "search": "pending measurement",
+        "evidence": "softmax ablation candidate, fixtures pending",
+    },
+    "C3-MLP-SWIGLU": {
+        "params": None,
+        "flops_k": None,
+        "full_us": None,
+        "search": "pending measurement",
+        "evidence": "swiglu head candidate, fixtures pending",
     },
 }
 

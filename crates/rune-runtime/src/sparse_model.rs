@@ -22,14 +22,17 @@ use rune_model::RuneModel;
 use crate::accumulator::Tables;
 use crate::error::{Result, RuntimeError};
 use crate::features::CONTEXT_DIM;
+use crate::head_swiglu::SwiGluHead;
 use crate::mixer::{HeadWeights, MixerWeights};
 use crate::mixer_dual::DualMixer;
 use crate::mixer_mh::MultiHeadMixer;
+use crate::mixer_soft::{scale_for_dim, SoftMixer};
 use crate::model_config::ResolvedModelConfig;
 
 pub(crate) struct SparseModel {
     pub tables: Tables,
     pub mixer: Option<MixerWeights>,
+    pub soft: Option<SoftMixer>,
     pub dual: Option<DualMixer>,
     pub multi_head: Option<MultiHeadMixer>,
     pub heads: Vec<HeadWeights>,
@@ -58,6 +61,7 @@ fn gate_of(model: &RuneModel) -> Result<Gate> {
         .and_then(|value| value.as_str())
     {
         None => Ok(Gate::Clip),
+        Some("softmax") => Ok(Gate::Clip),
         Some(name) => Gate::from_str(name)
             .ok_or_else(|| RuntimeError::InvalidState("unknown gate".to_string())),
     }
@@ -86,7 +90,7 @@ impl SparseModel {
 
         let has_mixer = matches!(
             config.architecture_id.as_str(),
-            "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-REL-02" | "RUNE-REL-LITE" | "RUNE-ATTN-DUAL"
+            "RUNE-ATTN" | "RUNE-ATTN-GAB" | "RUNE-ATTN-SOFT" | "RUNE-REL-02" | "RUNE-REL-LITE" | "RUNE-ATTN-DUAL"
         );
         let mixer = if has_mixer {
             let wq = need_vec(&model.arrays, "wq")?;
@@ -175,6 +179,29 @@ impl SparseModel {
             })
         } else {
             None
+        };
+
+        let (mixer, soft) = if config.architecture_id.as_str() == "RUNE-ATTN-SOFT" {
+            match mixer {
+                Some(mw) => {
+                    let sw = SoftMixer {
+                        tokens: mw.tokens,
+                        dim: mw.dim,
+                        wq: mw.wq,
+                        bq: mw.bq,
+                        wk: mw.wk,
+                        bk: mw.bk,
+                        wv: mw.wv,
+                        bv: mw.bv,
+                        gab: mw.gab,
+                        scale: scale_for_dim(mw.dim),
+                    };
+                    (None, Some(sw))
+                }
+                None => (None, None),
+            }
+        } else {
+            (mixer, None)
         };
 
         let dual = if config.architecture_id == "RUNE-ATTN-DUAL" {
@@ -298,8 +325,17 @@ impl SparseModel {
             } else {
                 format!("_b{}", bucket)
             };
-            let w1 = need_vec(&model.arrays, &format!("w1{}", suffix))?;
-            let b1 = need_vec(&model.arrays, &format!("b1{}", suffix))?;
+            let is_swiglu = model.arrays.contains_key(&format!("wgate{}", suffix));
+            let w1 = if is_swiglu {
+                Vec::new()
+            } else {
+                need_vec(&model.arrays, &format!("w1{}", suffix))?
+            };
+            let b1 = if is_swiglu {
+                Vec::new()
+            } else {
+                need_vec(&model.arrays, &format!("b1{}", suffix))?
+            };
             let w2 = need_vec(&model.arrays, &format!("w2{}", suffix))?;
             let b2 = need_vec(&model.arrays, &format!("b2{}", suffix))?;
             let wvo = need_vec(&model.arrays, &format!("wvo{}", suffix))
@@ -308,10 +344,43 @@ impl SparseModel {
                 .or_else(|_| scalar_of(&model.arrays, &format!("bv{}", suffix)))?;
             let wwdl = need_vec(&model.arrays, &format!("wwdl{}", suffix))?;
             let bwdl = need_vec(&model.arrays, &format!("bwdl{}", suffix))?;
-            let h1 = b1.len();
             let h2 = b2.len();
             let input = config.tokens * config.dim;
-            if w1.len() != h1 * input || (w2.len() != h2 * h1 && w2.len() != h2 * h1 * 2) {
+            let swiglu = if is_swiglu {
+                let wgate = need_vec(&model.arrays, &format!("wgate{}", suffix))?;
+                let bgate = need_vec(&model.arrays, &format!("bgate{}", suffix))?;
+                let wup = need_vec(&model.arrays, &format!("wup{}", suffix))?;
+                let bup = need_vec(&model.arrays, &format!("bup{}", suffix))?;
+                let h1 = bgate.len();
+                if bup.len() != h1 {
+                    return Err(RuntimeError::Shape("swiglu bias".to_string()));
+                }
+                if wgate.len() != h1 * input || wup.len() != h1 * input {
+                    return Err(RuntimeError::Shape("swiglu mat".to_string()));
+                }
+                if w2.len() != h2 * h1 {
+                    return Err(RuntimeError::Shape("head mat".to_string()));
+                }
+                Some(SwiGluHead {
+                    input,
+                    h1,
+                    h2,
+                    wgate,
+                    bgate,
+                    wup,
+                    bup,
+                    w2: w2.clone(),
+                    b2: b2.clone(),
+                    wvo: wvo.clone(),
+                    bvo,
+                    wwdl: wwdl.clone(),
+                    bwdl: bwdl.clone(),
+                })
+            } else {
+                None
+            };
+            let h1 = b1.len();
+            if !is_swiglu && (w1.len() != h1 * input || (w2.len() != h2 * h1 && w2.len() != h2 * h1 * 2)) {
                 return Err(RuntimeError::Shape("head mat".to_string()));
             }
             if wvo.len() != h2 {
@@ -322,7 +391,7 @@ impl SparseModel {
             }
             heads.push(HeadWeights {
                 input,
-                h1,
+                h1: if is_swiglu { swiglu.as_ref().map(|s| s.h1).unwrap_or(0) } else { h1 },
                 h2,
                 w1,
                 b1,
@@ -332,12 +401,14 @@ impl SparseModel {
                 bvo,
                 wwdl,
                 bwdl,
+                swiglu,
             });
         }
 
         Ok(Self {
             tables,
             mixer,
+            soft,
             dual,
             multi_head,
             heads,

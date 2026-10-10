@@ -28,6 +28,7 @@ from training.experiments.model_registry import (
     MODEL_IDS,
     PAIR_MODELS,
     SEARCH_ROUTING,
+    SWIGLU_MODELS,
     experimental_reasons,
     pair_enabled_for_model,
 )
@@ -121,9 +122,15 @@ class ScreeningRunner:
     def run_model(self, model_key, splits, data_info, milestones):
         arch = MODEL_IDS[model_key]
         loss_cfg = self.cfg.get("loss", {})
+        arch_cfg = self.cfg.get("architecture", {})
         tcfg = {
             "arch": arch,
             "pair": pair_enabled_for_model(self.cfg, model_key),
+            "head": "value_swiglu" if model_key in SWIGLU_MODELS else arch_cfg.get("head", "value_wdl"),
+            "head_buckets": self.cfg.get("head_buckets", 1),
+            "head_h1": arch_cfg.get("head_h1", None),
+            "head_h2": arch_cfg.get("head_h2", None),
+            "game": self.cfg.get("game", "chess"),
             "seed": self.seed,
             "lr": self.cfg.get("training", {}).get("lr", 3e-4),
             "weight_decay": self.cfg.get("training", {}).get("weight_decay", 0.01),
@@ -134,21 +141,11 @@ class ScreeningRunner:
             "lambda_unc": 0.2 if loss_cfg.get("uncertainty", False) else 0.0,
             "lambda_stab": 0.1 if loss_cfg.get("stability", False) else 0.0,
             "rel_params": {
-                "tokens": self.cfg.get("architecture", {}).get("tokens", 8),
-                "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
-                "gate": self.cfg.get("architecture", {}).get("gate", "clip"),
-                "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
+                "tokens": arch_cfg.get("tokens", 8),
+                "dim": arch_cfg.get("token_dim", 32),
+                "gate": arch_cfg.get("gate", "clip"),
+                "alpha": arch_cfg.get("alpha", 1.0),
                 "dynamic_bias": model_key == "rune_rel_d",
-            },
-            "dense_params": {
-                "variant": arch.split("-")[-1] if arch.startswith("RUNE-03-") else "A",
-                "token_dims": self.cfg.get("architecture", {}).get("token_dims", [32] * 8),
-                "pooling": self.cfg.get("architecture", {}).get("pooling", "none"),
-                "pool_clip": self.cfg.get("architecture", {}).get("pool_clip", True),
-                "gate_on": self.cfg.get("architecture", {}).get("gate_on", False),
-                "shared_width": self.cfg.get("architecture", {}).get("shared_width", 32),
-                "head_h1": self.cfg.get("architecture", {}).get("head_h1", 128),
-                "head_h2": self.cfg.get("architecture", {}).get("head_h2", 32),
             },
             "distill": {
                 "enabled": self.cfg.get("distillation", {}).get("enabled", False),
@@ -158,23 +155,6 @@ class ScreeningRunner:
                 "weight_lo": self.cfg.get("distillation", {}).get("weight_lo", 0.25),
                 "weight_hi": self.cfg.get("distillation", {}).get("weight_hi", 1.0),
                 "lambda_unc_distill": self.cfg.get("distillation", {}).get("lambda_unc_distill", 0.0),
-            },
-            "adaptive_params": {
-                "mode": ADAPTIVE_MODES.get(model_key, "adaptive"),
-                "search_routing": SEARCH_ROUTING.get(model_key, "difficulty"),
-                "dim": self.cfg.get("architecture", {}).get("token_dim", 32),
-                "cheap_pooling": self.cfg.get("architecture", {}).get("cheap_pooling", "none"),
-                "alpha": self.cfg.get("architecture", {}).get("alpha", 1.0),
-                "threshold": self.cfg.get("routing", {}).get("threshold", 0.5),
-                "t_high": self.cfg.get("routing", {}).get("t_high", None),
-                "t_low": self.cfg.get("routing", {}).get("t_low", None),
-                "pruned_pairs": self.cfg.get("architecture", {}).get("pruned_pairs", []),
-                "refine_precision": self.cfg.get("precision", {}).get("refine", "fp32"),
-                "cheap_hidden": self.cfg.get("architecture", {}).get("cheap_hidden", 32),
-                "ref_h1": self.cfg.get("architecture", {}).get("ref_h1", 128),
-                "ref_h2": self.cfg.get("architecture", {}).get("ref_h2", 32),
-                "lambda_diff": self.cfg.get("loss", {}).get("lambda_diff", 0.1),
-                "diff_margin": self.cfg.get("loss", {}).get("diff_margin", 0.1),
             },
         }
         trainer = Trainer(tcfg)

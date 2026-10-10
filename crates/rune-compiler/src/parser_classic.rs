@@ -40,7 +40,7 @@ pub fn build_classic(m: &RuneModel, isa: &str, cpu: &str) -> Result<rune_ir::Run
         return Err(format!("unsupported dim {}", dim));
     }
     check_isa_quant(isa, &quant)?;
-    if gate != "clip" && gate != "hard_sigmoid" && gate != "screlu" {
+    if gate != "clip" && gate != "hard_sigmoid" && gate != "screlu" && gate != "softmax" {
         return Err(format!("unsupported gate {}", gate));
     }
     if h1 == 0 || h1 > 4096 || h2 == 0 || h2 > 4096 {
@@ -67,7 +67,11 @@ pub fn build_classic(m: &RuneModel, isa: &str, cpu: &str) -> Result<rune_ir::Run
     ops.push(op_entry("op05", "V", vec!["tokens", "wvv", "bvv"], vec!["V"], json!({"tokens": tokens, "dim": dim})));
     ops.push(op_entry("op06", "Score", vec!["Q", "K"], vec!["scores"], json!({"tokens": tokens, "dim": dim})));
     ops.push(op_entry("op07", "Bias", vec!["scores", "gabS"], vec!["biased"], json!({"tokens": tokens})));
-    ops.push(op_entry("op08", "Gate", vec!["biased"], vec!["gate"], json!({"tokens": tokens, "gate": model.gate})));
+    if model.architecture.as_str() == "RUNE-ATTN-SOFT" {
+        ops.push(op_entry("op08", "Softmax", vec!["biased"], vec!["gate"], json!({"tokens": tokens})));
+    } else {
+        ops.push(op_entry("op08", "Gate", vec!["biased"], vec!["gate"], json!({"tokens": tokens, "gate": model.gate})));
+    }
     ops.push(op_entry("op09", "Mix", vec!["gate", "V"], vec!["mixed_raw"], json!({"tokens": tokens, "dim": dim})));
     ops.push(op_entry("op10", "Residual", vec!["tokens", "mixed_raw"], vec!["mixed"], json!({"tokens": tokens, "dim": dim, "alpha": alpha})));
     ops.push(op_entry("op11", "HeadH1", vec!["mixed"], vec!["h1"], json!({"input": tokens * dim, "output": h1})));

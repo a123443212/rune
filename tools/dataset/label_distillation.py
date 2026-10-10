@@ -30,28 +30,10 @@ from training.datasets.rune_dataset import make_loader
 
 
 def build_teacher_model(arch, params):
-    if arch.startswith("RUNE-05"):
-        from training.models.uncertainty import build_search_model
-
-        return build_search_model(dim=params.get("dim", 32),
-                                  cheap_pooling=params.get("cheap_pooling", "none"),
-                                  threshold=params.get("threshold", 0.5),
-                                  uncertainty_on=True), True
-    if arch.startswith("RUNE-04"):
-        from training.models.adaptive import build_adaptive_model
-
-        return build_adaptive_model(dim=params.get("dim", 32),
-                                    cheap_pooling=params.get("cheap_pooling", "none"),
-                                    threshold=params.get("threshold", 0.5)), False
-    if arch.startswith("RUNE-03-"):
-        from training.models.dense import build_dense_model
-
-        return build_dense_model(variant=arch.split("-")[-1],
-                                 token_dims=params.get("token_dims", [32] * 8),
-                                 pooling=params.get("pooling", "none"),
-                                 gate_on=params.get("gate_on", False),
-                                 head_h1=params.get("head_h1", 128),
-                                 head_h2=params.get("head_h2", 32)), False
+    if arch.startswith("RUNE-05") or arch.startswith("RUNE-04") or arch.startswith("RUNE-03-"):
+        raise RuntimeError(
+            f"{arch} is frozen and removed from training; "
+            "use RUNE-ATTN-GAB, RUNE-ATTN-SOFT, RUNE-MLP, RUNE-SFNN or RUNE-REL-02")
     from training.models.rune_models import build_model
 
     return build_model(arch), False

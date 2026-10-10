@@ -64,11 +64,27 @@ def py_forward(model_path, fen):
         Y = G @ V
         mixed = tok + Y
         stages.update({"q": Q.reshape(-1).tolist(), "k": K.reshape(-1).tolist(), "v": V.reshape(-1).tolist(), "scores": S.reshape(-1).tolist(), "gates": G.reshape(-1).tolist()})
+    elif arch == "RUNE-ATTN-SOFT":
+        import math
+        Q = tok @ arrays["wq"].T + arrays["bq"]
+        K = tok @ arrays["wk"].T + arrays["bk"]
+        V = tok @ arrays["wvv"].T + arrays["bvv"]
+        S = Q @ K.T / math.sqrt(tok.shape[1]) + arrays["gab"]
+        S = S - S.max(axis=1, keepdims=True)
+        E = np.exp(S)
+        W = E / E.sum(axis=1, keepdims=True)
+        mixed = tok + W @ V
+        stages.update({"q": Q.reshape(-1).tolist(), "k": K.reshape(-1).tolist(), "v": V.reshape(-1).tolist(), "scores": S.reshape(-1).tolist(), "gates": W.reshape(-1).tolist()})
     else:
         mixed = tok
         stages.update({"q": [], "k": [], "v": [], "scores": [], "gates": []})
     flat = mixed.reshape(-1)
-    h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
+    if header.get("head") == "value_swiglu":
+        g = flat @ arrays["wgate"].T + arrays["bgate"]
+        u = flat @ arrays["wup"].T + arrays["bup"]
+        h1 = (g / (1.0 + np.exp(-g))) * u
+    else:
+        h1 = np.clip(flat @ arrays["w1"].T + arrays["b1"], 0, 1)
     h2 = np.clip(h1 @ arrays["w2"].T + arrays["b2"], 0, 1)
     wvo = arrays.get("wvo", arrays.get("wv"))
     bvo = arrays.get("bvo", arrays.get("bv"))

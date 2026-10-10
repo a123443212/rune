@@ -37,6 +37,9 @@ pub fn verify(ir: &RuneIr) -> Vec<String> {
         return errs;
     }
     for need in required_ops_for_arch(&ir.model.architecture) {
+        if need == "Gate" && (kinds.contains(&"Gate") || kinds.contains(&"Softmax")) {
+            continue;
+        }
         if !kinds.contains(&need) {
             errs.push(format!("missing op {} for {}", need, ir.model.architecture));
         }

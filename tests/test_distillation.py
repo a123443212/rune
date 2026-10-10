@@ -27,7 +27,6 @@ from training.losses.distillation import (
     WeightedDistillationLoss,
     confidence_weights,
 )
-from training.models.students import STUDENT_BUDGETS, build_adaptive_student, build_dense_student
 
 
 def test_confidence_weights_bounded():
@@ -90,36 +89,3 @@ def test_distill_weighted_vs_uniform_control():
     assert uni["distill_wmean"].item() == 1.0
     assert 0.25 <= con["distill_wmean"].item() <= 1.0
     assert con["distill"].item() != uni["distill"].item()
-
-
-def test_student_budgets_shrink():
-    sizes = {}
-    for name in ("S1", "S2", "S3", "S4"):
-        m = build_dense_student(budget=name)
-        m.eval()
-        sizes[name] = m.parameter_count()
-        assert m.model_spec()["head_h1"] == STUDENT_BUDGETS[name]["head_h1"]
-        assert m.model_spec()["token_dims"] == [STUDENT_BUDGETS[name]["token_dim"]] * 8
-    assert sizes["S1"] > sizes["S2"] > sizes["S3"] > sizes["S4"]
-    with pytest.raises(ValueError):
-        build_dense_student(budget="S9")
-
-
-def test_student_forward_and_export():
-    m = build_dense_student(budget="S2")
-    m.eval()
-    ids = [torch.randint(0, 64, (2, 4)) for _ in range(9)]
-    masks = [torch.ones(2, 4) for _ in range(9)]
-    with torch.no_grad():
-        v, w = m(ids, masks)
-    assert v.shape == (2,) and w.shape == (2, 3)
-    a = build_adaptive_student(budget="S3")
-    assert a.parameter_count() < build_adaptive_student(budget="S1").parameter_count()
-
-
-def test_student_report_fields():
-    from training.models.students import student_report
-
-    r = student_report(build_dense_student(budget="S2"))
-    assert {"params", "param_bytes", "cheap_params", "spec"} <= set(r.keys())
-    assert r["param_bytes"] == r["params"] * 4

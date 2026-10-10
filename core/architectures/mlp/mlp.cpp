@@ -20,6 +20,7 @@ OR CONDITIONS OF ANY KIND, either express or implied.
 
 #include <cmath>
 #include <string>
+#include "core/architectures/heads/swiglu_head.h"
 #include "core/kernels/fused.h"
 
 namespace rune {
@@ -63,6 +64,10 @@ const HeadBucket& GroupedMlp::headFor(int phase) const {
 
 void GroupedMlp::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
+  if (headIsSwiGlu(h)) {
+    swigluForward(h, tokens, kIn, value, wdl, scratch_);
+    return;
+  }
   int h1n = static_cast<int>(h.b1.size());
   int h2n = static_cast<int>(h.b2.size());
   bool isPair = (h.w2.size() == static_cast<size_t>(h2n) * static_cast<size_t>(h1n) * 2);
@@ -97,7 +102,8 @@ size_t GroupedMlp::parameterCount() const {
   size_t n = 0;
   for (const HeadBucket& h : heads_) {
     n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
-         h.bvo.size() + h.wwdl.size() + h.bwdl.size();
+         h.bvo.size() + h.wwdl.size() + h.bwdl.size() + h.wgate.size() + h.bgate.size() +
+         h.wup.size() + h.bup.size();
   }
   return n;
 }
@@ -112,6 +118,19 @@ void GroupedMlp::getTensors(std::vector<std::string>& names,
   for (size_t b = 0; b < heads_.size(); ++b) {
     std::string suffix = heads_.size() > 1 ? "_b" + std::to_string(b) : "";
     const HeadBucket& h = heads_[b];
+    if (headIsSwiGlu(h)) {
+      names.insert(names.end(), {"wgate" + suffix, "bgate" + suffix, "wup" + suffix, "bup" + suffix,
+                                 "w2" + suffix, "b2" + suffix, "wv" + suffix, "bv" + suffix,
+                                 "wwdl" + suffix, "bwdl" + suffix});
+      int h1n = static_cast<int>(h.bgate.size());
+      int h2n = static_cast<int>(h.b2.size());
+      shapes.insert(shapes.end(), {{h1n, 256}, {h1n}, {h1n, 256}, {h1n}, {h2n, h1n}, {h2n},
+                                   {1, h2n}, {1}, {3, h2n}, {3}});
+      data.insert(data.end(), {h.wgate.data(), h.bgate.data(), h.wup.data(), h.bup.data(),
+                               h.w2.data(), h.b2.data(), h.wvo.data(), h.bvo.data(),
+                               h.wwdl.data(), h.bwdl.data()});
+      continue;
+    }
     names.insert(names.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
                                "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
     int h1n = static_cast<int>(h.b1.size());
@@ -124,15 +143,23 @@ void GroupedMlp::getTensors(std::vector<std::string>& names,
 }
 
 bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
+  bool swiglu = !names.empty() && (names[0] == "wgate" || names[0] == "wgate_b0");
   std::vector<std::string> base = {"w1", "b1", "w2", "b2", "wv", "bv", "wwdl", "bwdl"};
+  if (swiglu) base = {"wgate", "bgate", "wup", "bup", "w2", "b2", "wv", "bv", "wwdl", "bwdl"};
   size_t nbuckets = 1;
   if (names.size() > base.size()) {
     nbuckets = 3;
     base.clear();
     for (int b = 0; b < 3; ++b) {
       std::string suffix = "_b" + std::to_string(b);
-      base.insert(base.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
-                               "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
+      if (swiglu) {
+        base.insert(base.end(), {"wgate" + suffix, "bgate" + suffix, "wup" + suffix, "bup" + suffix,
+                                 "w2" + suffix, "b2" + suffix, "wv" + suffix, "bv" + suffix,
+                                 "wwdl" + suffix, "bwdl" + suffix});
+      } else {
+        base.insert(base.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
+                                 "wv" + suffix, "bv" + suffix, "wwdl" + suffix, "bwdl" + suffix});
+      }
     }
   }
   if (names.size() != base.size()) return false;
@@ -141,24 +168,41 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
   }
   size_t singlePer = 128 * 256 + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
   size_t pairPer = 128 * 256 + 128 + 32 * 256 + 32 + 32 + 1 + 3 * 32 + 3;
-  bool isPair = (flat.size() == pairPer * nbuckets);
-  bool isSingle = (flat.size() == singlePer * nbuckets);
-  if (!isPair && !isSingle) return false;
-  size_t w2n = isPair ? 32 * 256 : 32 * 128;
+  size_t swigluPer = 128 * 256 + 128 + 128 * 256 + 128 + 32 * 128 + 32 + 32 + 1 + 3 * 32 + 3;
+  bool isSwi = swiglu && (flat.size() == swigluPer * nbuckets);
+  bool isPair = !swiglu && (flat.size() == pairPer * nbuckets);
+  bool isSingle = !swiglu && (flat.size() == singlePer * nbuckets);
+  if (!isSwi && !isPair && !isSingle) return false;
   heads_.clear();
   size_t off = 0;
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
-    h.w1.assign(128 * 256, 0.0f);
-    h.b1.assign(128, 0.0f);
-    h.w2.assign(w2n, 0.0f);
-    h.b2.assign(32, 0.0f);
-    h.wvo.assign(32, 0.0f);
-    h.bvo.assign(1, 0.0f);
-    h.wwdl.assign(3 * 32, 0.0f);
-    h.bwdl.assign(3, 0.0f);
-    std::vector<std::vector<float>*> slots = {&h.w1, &h.b1, &h.w2, &h.b2,
-                                              &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    std::vector<std::vector<float>*> slots;
+    if (isSwi) {
+      h.wgate.assign(128 * 256, 0.0f);
+      h.bgate.assign(128, 0.0f);
+      h.wup.assign(128 * 256, 0.0f);
+      h.bup.assign(128, 0.0f);
+      h.w2.assign(32 * 128, 0.0f);
+      h.b2.assign(32, 0.0f);
+      h.wvo.assign(32, 0.0f);
+      h.bvo.assign(1, 0.0f);
+      h.wwdl.assign(3 * 32, 0.0f);
+      h.bwdl.assign(3, 0.0f);
+      slots = {&h.wgate, &h.bgate, &h.wup, &h.bup, &h.w2, &h.b2,
+               &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    } else {
+      size_t w2n = isPair ? 32 * 256 : 32 * 128;
+      h.w1.assign(128 * 256, 0.0f);
+      h.b1.assign(128, 0.0f);
+      h.w2.assign(w2n, 0.0f);
+      h.b2.assign(32, 0.0f);
+      h.wvo.assign(32, 0.0f);
+      h.bvo.assign(1, 0.0f);
+      h.wwdl.assign(3 * 32, 0.0f);
+      h.bwdl.assign(3, 0.0f);
+      slots = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+    }
     for (auto* slot : slots) {
       if (off + slot->size() > flat.size()) return false;
       for (size_t k = 0; k < slot->size(); ++k) (*slot)[k] = flat[off + k];
@@ -172,10 +216,13 @@ bool GroupedMlp::setTensors(const std::vector<std::string>& names, const std::ve
 ModelSpec GroupedMlp::spec() const {
   ModelSpec s;
   s.arch = archId();
-  bool isPair = !heads_.empty() && heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
-  s.archVersion = isPair ? "0.2.0" : archVersion();
+  bool swi = !heads_.empty() && headIsSwiGlu(heads_[0]);
+  bool isPair = !swi && !heads_.empty() &&
+                heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
+  s.archVersion = swi ? "0.3.0" : (isPair ? "0.2.0" : archVersion());
   s.attention = "none";
   s.geometricBias = "none";
+  s.head = swi ? "value_swiglu" : (isPair ? "value_wdl_pair" : "value_wdl");
   s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }

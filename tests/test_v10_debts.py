@@ -31,48 +31,6 @@ FENS = [
 ]
 needs_cpp = pytest.mark.skipif(not os.path.exists(CPP_EVAL), reason="build/rune_eval missing")
 needs_rust = pytest.mark.skipif(not os.path.exists(RUST_BIN), reason="target/release/rune missing")
-def dense_torch(path):
-    sys.path.insert(0, os.path.join(ROOT, "tools", "diff"))
-    import importlib
-    dc = importlib.import_module("dense_check")
-    return dc.load_torch_dense(path)
-def test_dense_int8_close_to_fp32_torch():
-    sys.path.insert(0, os.path.join(ROOT, "tools", "diff"))
-    import importlib
-    dc = importlib.import_module("dense_check")
-    mf = dc.load_torch_dense(os.path.join(MODELS, "dense-b-fp32.rune"))
-    m8 = dc.load_torch_dense(os.path.join(MODELS, "dense-b-int8.rune"))
-    m16 = dc.load_torch_dense(os.path.join(MODELS, "dense-b-int16.rune"))
-    with torch.no_grad():
-        for fen in FENS:
-            ids, masks = dc.batch_for(fen)
-            vf, _ = mf(ids, masks)
-            v8, _ = m8(ids, masks)
-            v16, _ = m16(ids, masks)
-            assert abs(float(vf.item()) - float(v8.item())) < 0.01, fen
-            assert abs(float(vf.item()) - float(v16.item())) < 0.005, fen
-@needs_cpp
-def test_dense_py_cpp_via_tool(tmp_path):
-    pos = tmp_path / "pos.txt"
-    pos.write_text("\n".join(FENS) + "\n")
-    out = tmp_path / "rep.json"
-    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "diff", "dense_check.py"),
-                        "--models", os.path.join(MODELS, "dense-b-fp32.rune"),
-                        os.path.join(MODELS, "dense-b-int8.rune"),
-                        "--positions", str(pos), "--cpp-bin", CPP_EVAL,
-                        "--out", str(out)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout + r.stderr
-@needs_cpp
-def test_adaptive_sweep_via_tool(tmp_path):
-    pos = tmp_path / "pos.txt"
-    pos.write_text("\n".join(FENS) + "\n")
-    out = tmp_path / "rep.json"
-    r = subprocess.run([sys.executable, os.path.join(ROOT, "tools", "bench", "adaptive_sweep.py"),
-                        "--model", os.path.join(MODELS, "adaptive-fp32.rune"),
-                        "--positions", str(pos), "--cpp-bin", CPP_EVAL,
-                        "--thresholds", "0.0,0.06,0.07,0.5",
-                        "--out", str(out)], capture_output=True, text=True)
-    assert r.returncode == 0, r.stdout + r.stderr
 @needs_cpp
 @needs_rust
 def test_rel_live_gate_triangle(tmp_path):

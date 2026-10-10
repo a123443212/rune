@@ -16,12 +16,13 @@ software is distributed on an "AS IS" BASIS, WITHOUT WARRANTIES
 OR CONDITIONS OF ANY KIND, either express or implied.
 */
 
-#include "core/architectures/attention/attention.h"
+#include "core/architectures/attention/soft_attention.h"
 
 #include <cmath>
 #include <string>
 
 #include "core/architectures/heads/swiglu_head.h"
+#include "core/kernels/policy_kernels.h"
 
 namespace rune {
 
@@ -36,10 +37,12 @@ void initVec(std::vector<float>& v, size_t n, uint64_t& s, float scale) {
   }
 }
 
-}  // namespace
+constexpr float kSoftScale = 0.17677669529663687f;
 
-RuneAttentionBlock::RuneAttentionBlock(bool useGab, GateFn gate) : useGab_(useGab), gate_(gate) {
-  uint64_t s = useGab ? 999 : 555;
+}
+
+RuneSoftAttnBlock::RuneSoftAttnBlock() {
+  uint64_t s = 7777;
   initVec(wq, 32 * 32, s, 0.08f);
   initVec(bq, 32, s, 0.01f);
   initVec(wk, 32 * 32, s, 0.08f);
@@ -47,39 +50,37 @@ RuneAttentionBlock::RuneAttentionBlock(bool useGab, GateFn gate) : useGab_(useGa
   initVec(wv, 32 * 32, s, 0.08f);
   initVec(bv, 32, s, 0.01f);
   gab.assign(64, 0.0f);
-  scratch_.assign(8 * 32 * 3 + 64 + 8 * 32, 0.0f);
+  scratch_.assign(8 * 32 * 3 + 64 * 3 + 8 * 32, 0.0f);
 }
 
-void RuneAttentionBlock::forward(const float* x, float* out) const {
+void RuneSoftAttnBlock::forward(const float* x, float* out) const {
   float* q = scratch_.data();
   float* k = scratch_.data() + 256;
   float* v = scratch_.data() + 512;
   float* s = scratch_.data() + 768;
-  float* y = scratch_.data() + 832;
+  float* w = scratch_.data() + 832;
+  float* y = scratch_.data() + 896;
   for (int t = 0; t < 8; ++t) {
     simd::matVec(wq.data(), x + t * 32, bq.data(), q + t * 32, 32, 32);
     simd::matVec(wk.data(), x + t * 32, bk.data(), k + t * 32, 32, 32);
     simd::matVec(wv.data(), x + t * 32, bv.data(), v + t * 32, 32, 32);
   }
   simd::matMulTT(q, k, s, 8, 8, 32);
-  for (int i = 0; i < 64; ++i) {
-    float val = s[i] + (useGab_ ? gab[i] : 0.0f);
-    s[i] = applyGate(gate_, val);
+  for (int a = 0; a < 8; ++a) {
+    float logits[8];
+    for (int b = 0; b < 8; ++b) logits[b] = s[a * 8 + b] * kSoftScale + gab[a * 8 + b];
+    policy::softmax(logits, w + a * 8, 8);
   }
-  simd::matMul(s, v, y, 8, 32, 8);
+  simd::matMul(w, v, y, 8, 32, 8);
   for (int i = 0; i < 256; ++i) out[i] = x[i] + y[i];
 }
 
-size_t RuneAttentionBlock::parameterCount() const {
-  size_t n = wq.size() + bq.size() + wk.size() + bk.size() + wv.size() + bv.size();
-  if (useGab_) n += gab.size();
-  return n;
+size_t RuneSoftAttnBlock::parameterCount() const {
+  return wq.size() + bq.size() + wk.size() + bk.size() + wv.size() + bv.size() + gab.size();
 }
 
-RuneAttnModel::RuneAttnModel() : RuneAttnModel(false) {}
-
-RuneAttnModel::RuneAttnModel(bool useGab, GateFn gate) : attn(useGab, gate), useGab_(useGab), gate_(gate) {
-  uint64_t s = useGab ? 4242 : 3131;
+RuneSoftAttnModel::RuneSoftAttnModel() {
+  uint64_t s = 5150;
   heads_.resize(1);
   initVec(heads_[0].w1, 128 * 256, s, 0.05f);
   initVec(heads_[0].b1, 128, s, 0.01f);
@@ -92,7 +93,7 @@ RuneAttnModel::RuneAttnModel(bool useGab, GateFn gate) : attn(useGab, gate), use
   scratch_.assign(256 + 128 + 256 + 32, 0.0f);
 }
 
-const HeadBucket& RuneAttnModel::headFor(int phase) const {
+const HeadBucket& RuneSoftAttnModel::headFor(int phase) const {
   if (heads_.size() > 1) {
     int b = phase;
     if (b < 0) b = 0;
@@ -102,7 +103,7 @@ const HeadBucket& RuneAttnModel::headFor(int phase) const {
   return heads_[0];
 }
 
-void RuneAttnModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
+void RuneSoftAttnModel::forward(const float* tokens, float& value, float* wdl, int phase) const {
   const HeadBucket& h = headFor(phase);
   float* mixed = scratch_.data();
   attn.forward(tokens, mixed);
@@ -140,7 +141,7 @@ void RuneAttnModel::forward(const float* tokens, float& value, float* wdl, int p
   simd::matVec(h.wwdl.data(), h2, h.bwdl.data(), wdl, 3, h2n);
 }
 
-size_t RuneAttnModel::parameterCount() const {
+size_t RuneSoftAttnModel::parameterCount() const {
   size_t n = attn.parameterCount();
   for (const HeadBucket& h : heads_) {
     n += h.w1.size() + h.b1.size() + h.w2.size() + h.b2.size() + h.wvo.size() +
@@ -150,11 +151,11 @@ size_t RuneAttnModel::parameterCount() const {
   return n;
 }
 
-size_t RuneAttnModel::modelSizeBytes() const { return parameterCount() * 4; }
+size_t RuneSoftAttnModel::modelSizeBytes() const { return parameterCount() * 4; }
 
-void RuneAttnModel::getTensors(std::vector<std::string>& names,
-                               std::vector<std::vector<int>>& shapes,
-                               std::vector<const float*>& data) const {
+void RuneSoftAttnModel::getTensors(std::vector<std::string>& names,
+                                   std::vector<std::vector<int>>& shapes,
+                                   std::vector<const float*>& data) const {
   names = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab"};
   shapes = {{32, 32}, {32}, {32, 32}, {32}, {32, 32}, {32}, {8, 8}};
   data = {attn.wq.data(), attn.bq.data(), attn.wk.data(), attn.bk.data(), attn.wv.data(),
@@ -186,28 +187,21 @@ void RuneAttnModel::getTensors(std::vector<std::string>& names,
   }
 }
 
-bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
-  bool swiglu = names.size() > 7 && (names[7] == "wgate" || names[7] == "wgate_b0");
-  std::vector<std::string> base = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "w1", "b1",
-                                   "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
-  if (swiglu) {
-    base = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab", "wgate", "bgate", "wup", "bup",
-            "w2", "b2", "wvo", "bvo", "wwdl", "bwdl"};
-  }
-  std::vector<std::string> want = base;
-  if (names.size() > base.size()) {
-    want.clear();
-    want.insert(want.end(), base.begin(), base.begin() + 7);
-    for (int b = 0; b < 3; ++b) {
-      std::string suffix = "_b" + std::to_string(b);
-      if (swiglu) {
-        want.insert(want.end(), {"wgate" + suffix, "bgate" + suffix, "wup" + suffix, "bup" + suffix,
-                                 "w2" + suffix, "b2" + suffix, "wvo" + suffix, "bvo" + suffix,
-                                 "wwdl" + suffix, "bwdl" + suffix});
-      } else {
-        want.insert(want.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
-                                 "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
-      }
+bool RuneSoftAttnModel::setTensors(const std::vector<std::string>& names, const std::vector<float>& flat) {
+  bool swiglu = !names.empty() && names[7] == "wgate";
+  size_t perHead = swiglu ? 10 : 8;
+  size_t nbuckets = 1;
+  if (names.size() > 7 + perHead) nbuckets = 3;
+  std::vector<std::string> want = {"wq", "bq", "wk", "bk", "wvv", "bvv", "gab"};
+  for (size_t b = 0; b < nbuckets; ++b) {
+    std::string suffix = nbuckets > 1 ? "_b" + std::to_string(b) : "";
+    if (swiglu) {
+      want.insert(want.end(), {"wgate" + suffix, "bgate" + suffix, "wup" + suffix, "bup" + suffix,
+                               "w2" + suffix, "b2" + suffix, "wvo" + suffix, "bvo" + suffix,
+                               "wwdl" + suffix, "bwdl" + suffix});
+    } else {
+      want.insert(want.end(), {"w1" + suffix, "b1" + suffix, "w2" + suffix, "b2" + suffix,
+                               "wvo" + suffix, "bvo" + suffix, "wwdl" + suffix, "bwdl" + suffix});
     }
   }
   if (names.size() != want.size()) return false;
@@ -222,8 +216,6 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
     for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
     off += slot->size();
   }
-  size_t perHead = swiglu ? 10 : 8;
-  size_t nbuckets = (want.size() - 7) / perHead;
   size_t mixTotal = 0;
   for (auto* slot : slots) mixTotal += slot->size();
   size_t remain = flat.size() > mixTotal ? flat.size() - mixTotal : 0;
@@ -237,7 +229,6 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
   heads_.clear();
   for (size_t b = 0; b < nbuckets; ++b) {
     HeadBucket h;
-    std::vector<std::vector<float>*> hs;
     if (isSwi) {
       h.wgate.assign(128 * 256, 0.0f);
       h.bgate.assign(128, 0.0f);
@@ -249,7 +240,13 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
       h.bvo.assign(1, 0.0f);
       h.wwdl.assign(3 * 32, 0.0f);
       h.bwdl.assign(3, 0.0f);
-      hs = {&h.wgate, &h.bgate, &h.wup, &h.bup, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+      std::vector<std::vector<float>*> hs = {&h.wgate, &h.bgate, &h.wup, &h.bup, &h.w2, &h.b2,
+                                             &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
+      for (auto* slot : hs) {
+        if (off + slot->size() > flat.size()) return false;
+        for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+        off += slot->size();
+      }
     } else {
       size_t w2n = isPair ? 32 * 256 : 32 * 128;
       h.w1.assign(128 * 256, 0.0f);
@@ -260,29 +257,30 @@ bool RuneAttnModel::setTensors(const std::vector<std::string>& names, const std:
       h.bvo.assign(1, 0.0f);
       h.wwdl.assign(3 * 32, 0.0f);
       h.bwdl.assign(3, 0.0f);
-      hs = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo, &h.wwdl, &h.bwdl};
-    }
-    for (auto* slot : hs) {
-      if (off + slot->size() > flat.size()) return false;
-      for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
-      off += slot->size();
+      std::vector<std::vector<float>*> hs = {&h.w1, &h.b1, &h.w2, &h.b2, &h.wvo, &h.bvo,
+                                             &h.wwdl, &h.bwdl};
+      for (auto* slot : hs) {
+        if (off + slot->size() > flat.size()) return false;
+        for (size_t kk = 0; kk < slot->size(); ++kk) (*slot)[kk] = flat[off + kk];
+        off += slot->size();
+      }
     }
     heads_.push_back(std::move(h));
   }
   return off == flat.size();
 }
 
-ModelSpec RuneAttnModel::spec() const {
+ModelSpec RuneSoftAttnModel::spec() const {
   ModelSpec s;
   s.arch = archId();
   bool swi = !heads_.empty() && headIsSwiGlu(heads_[0]);
   bool isPair = !swi && !heads_.empty() &&
                 heads_[0].w2.size() == heads_[0].b2.size() * heads_[0].b1.size() * 2;
   s.archVersion = swi ? "0.3.0" : (isPair ? "0.2.0" : archVersion());
-  s.attention = "gated_linear";
-  s.geometricBias = useGab_ ? "learned" : "none";
-  s.gate = gateName(gate_);
+  s.attention = "softmax_scaled";
+  s.geometricBias = "learned";
   s.head = swi ? "value_swiglu" : (isPair ? "value_wdl_pair" : "value_wdl");
+  s.gate = "softmax";
   s.headBuckets = static_cast<int>(heads_.size());
   return s;
 }

@@ -27,10 +27,14 @@ Supported games and feature sets:
 | Xiangqi | `xiangqi_raw_v01`            | FEN input                                |
 | Go      | `go_planes_v01` / `go_planes_v02` | 9/13/19 boards; v02 groups 0–1 use disjoint `ci*361+sq` |
 
-Architectures: `RUNE-MLP`, `RUNE-SFNN` (+ compact/small variants),
-`RUNE-ATTN` / `RUNE-ATTN-GAB` / `RUNE-ATTN-DUAL` / `RUNE-ATTN-MH4`,
-`RUNE-REL-02` (6/8/10 tokens), `RUNE-REL-LITE`, dense `RUNE-03-*`
-and adaptive `RUNE-04`/`RUNE-05` (C++ training path).
+Architectures: `RUNE-MLP`, `RUNE-SFNN`, `RUNE-ATTN-GAB`,
+`RUNE-ATTN-SOFT` (softmax + `1/sqrt(d)` ablation of GAB, same tensors),
+`RUNE-REL-02` (6/8/10 tokens). Head options: `value_wdl`,
+`value_wdl_pair` (clip+sqr concat, `arch_version` 0.2.x) and
+`value_swiglu` (`arch_version` 0.3.0). `RUNE-ATTN`, `RUNE-ATTN-DUAL`,
+`RUNE-ATTN-MH4`, `RUNE-REL-LITE`, `RUNE-MLP-S`, `RUNE-SFNN-C`,
+`RUNE-03-*`, `RUNE-04`/`RUNE-05` are frozen: loaders still read old
+`.rune` files, but nothing new trains on them.
 
 ## Layout
 

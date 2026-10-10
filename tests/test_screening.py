@@ -68,7 +68,7 @@ def base_cfg(tmp, milestones=(64, 128)):
         "out_dir": str(tmp / "runs"),
         "research": {"allow_experimental": True},
         "data": {"dataset": "smoke", "teacher": "smoke_t", "positions": list(milestones)},
-        "models": ["rune_mlp", "rune_attn"],
+        "models": ["rune_mlp", "rune_attn_gab"],
         "training": {"lr": 1e-3, "batch_size": 8, "log_every": 1000},
         "loss": {"value": True, "wdl": True, "ranking": False},
     }
@@ -77,7 +77,7 @@ def base_cfg(tmp, milestones=(64, 128)):
 def test_screening_runner_checkpoints_per_milestone(tmp_path):
     runner = ScreeningRunner(base_cfg(tmp_path))
     out = runner.run(make_pool())
-    for model in ("rune_mlp", "rune_attn"):
+    for model in ("rune_mlp", "rune_attn_gab"):
         for tag in ("64", "128"):
             d = os.path.join(out, model, tag)
             assert os.path.exists(os.path.join(d, "model.pt"))
@@ -101,7 +101,7 @@ def test_report_plot_promote(tmp_path):
     assert os.path.exists(os.path.join(rep, "comparison_64.md"))
     with open(os.path.join(rep, "comparison_64.md")) as f:
         body = f.read()
-    assert "rune_mlp" in body and "rune_attn" in body
+    assert "rune_mlp" in body and "rune_attn_gab" in body
     assert "composite" in body.lower() or "No composite" in body
     r = subprocess.run([sys.executable, "tools/screening/plot.py", "--runs", runs,
                         "--out-dir", rep], capture_output=True, text=True)

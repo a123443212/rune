@@ -69,12 +69,12 @@ class ValueWdlHead(nn.Module):
 
 
 class SfnnHead(nn.Module):
-    def __init__(self, pair=False, input_dim=None):
+    def __init__(self, hidden1=256, hidden2=32, pair=False, input_dim=None):
         super().__init__()
         self.pair = pair
         in_dim = input_dim if input_dim is not None else TOKENS * TOKEN_DIM
-        self.fc1 = nn.Linear(in_dim, 256)
-        self.fc2 = nn.Linear(512 if pair else 256, 32)
+        self.fc1 = nn.Linear(in_dim, hidden1)
+        self.fc2 = nn.Linear(hidden1 * 2 if pair else hidden1, hidden2)
         self.fcv = nn.Linear(32, 1)
         self.fcwdl = nn.Linear(32, 3)
 
