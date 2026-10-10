@@ -28,7 +28,7 @@ def load_game(game_id):
     return legal_moves, apply_move, game_result, start
 
 
-def play_one(legal_fn, apply_fn, result_fn, start, eval_a, eval_b, sims, max_moves, seed):
+def play_one(legal_fn, apply_fn, result_fn, start, eval_a, eval_b, sims, max_moves, seed, scorer=None, margin=0.0):
     from training.search.mcts import PuctSearch
     from training.search.token_adapter import uniform_priors
     rng = random.Random(seed)
@@ -53,6 +53,14 @@ def play_one(legal_fn, apply_fn, result_fn, start, eval_a, eval_b, sims, max_mov
         return 1.0
     if res == "0-1":
         return 0.0
+    if scorer is not None and margin > 0.0:
+        edge = scorer(state)
+        if moves % 2 == 1:
+            edge = -edge
+        if edge > margin:
+            return 1.0
+        if edge < -margin:
+            return 0.0
     return 0.5
 
 
@@ -65,6 +73,7 @@ def main():
     ap.add_argument("--seed", type=int, default=1)
     ap.add_argument("--elo0", type=float, default=0.0)
     ap.add_argument("--elo1", type=float, default=70.0)
+    ap.add_argument("--adjudicate-margin", type=float, default=0.0)
     args = ap.parse_args()
     if args.game not in ("xiangqi", "shogi"):
         raise ValueError("bad game")
@@ -85,9 +94,9 @@ def main():
     t0 = time.perf_counter()
     for i in range(args.games):
         if i % 2 == 0:
-            r = play_one(legal_fn, apply_fn, result_fn, start, eval_a, eval_b, args.sims, args.max_moves, args.seed + i)
+            r = play_one(legal_fn, apply_fn, result_fn, start, eval_a, eval_b, args.sims, args.max_moves, args.seed + i, scorer, args.adjudicate_margin)
         else:
-            r = play_one(legal_fn, apply_fn, result_fn, start, eval_b, eval_a, args.sims, args.max_moves, args.seed + i)
+            r = play_one(legal_fn, apply_fn, result_fn, start, eval_b, eval_a, args.sims, args.max_moves, args.seed + i, scorer, args.adjudicate_margin)
             r = 1.0 - r
         wins += r
         if r == 1.0:

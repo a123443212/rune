@@ -1,0 +1,90 @@
+import json
+import os
+
+MOVE_INDEX = {"go": 4, "xiangqi": 5, "shogi": 3}
+
+
+def shard_key(record):
+    game = record.get("game", "")
+    state = record.get("state", "")
+    return game + "\x00" + state.split()[0]
+
+
+def move_no_of(game_id, state):
+    parts = state.split()
+    idx = MOVE_INDEX.get(game_id, 4)
+    if len(parts) > idx:
+        try:
+            return max(1, int(parts[idx]))
+        except ValueError:
+            return 1
+    return 1
+
+
+def validate_record(legal_fn, record):
+    try:
+        state = record.get("state", "")
+        moves = legal_fn(state)
+    except Exception:
+        return False
+    mv = record.get("move", None)
+    if mv is not None and mv not in moves:
+        return False
+    return True
+
+
+def filter_record(game_id, record, min_move=1, max_move=10000):
+    n = move_no_of(game_id, record.get("state", ""))
+    return min_move <= n <= max_move
+
+
+def dedup_records(records):
+    seen = set()
+    out = []
+    for r in records:
+        k = shard_key(r)
+        if k in seen:
+            continue
+        seen.add(k)
+        out.append(r)
+    return out
+
+
+def write_shards(game_id, records, out_dir, num_shards=2):
+    from training.export.export import fnv1a
+    os.makedirs(out_dir, exist_ok=True)
+    shards = [[] for _ in range(max(1, num_shards))]
+    for i, r in enumerate(records):
+        shards[i % len(shards)].append(r)
+    manifest_shards = []
+    for i, part in enumerate(shards):
+        path = os.path.join(out_dir, f"shard_{i:04d}.jsonl")
+        with open(path, "w") as f:
+            for r in part:
+                f.write(json.dumps(r, separators=(",", ":")) + "\n")
+        with open(path, "rb") as f:
+            h = format(fnv1a(f.read()), "016x")
+        manifest_shards.append({"path": os.path.basename(path), "count": len(part), "hash": h})
+    total = sum(s["count"] for s in manifest_shards)
+    manifest = {
+        "game": game_id,
+        "shards": manifest_shards,
+        "positions": total,
+        "teacher": records[0].get("teacher", "") if records else "",
+        "feature_version": records[0].get("feature_version", "") if records else "",
+    }
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=1)
+    return manifest
+
+
+def shard_pipeline(game_id, legal_fn, records, out_dir, num_shards=2, min_move=1, max_move=10000):
+    valid = [r for r in records if validate_record(legal_fn, r)]
+    kept = [r for r in valid if filter_record(game_id, r, min_move, max_move)]
+    uniq = dedup_records(kept)
+    manifest = write_shards(game_id, uniq, out_dir, num_shards)
+    manifest["validated"] = len(valid)
+    manifest["kept"] = len(kept)
+    with open(os.path.join(out_dir, "manifest.json"), "w") as f:
+        json.dump(manifest, f, indent=1)
+    return manifest
