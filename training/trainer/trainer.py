@@ -7,8 +7,7 @@ import torch
 from training.datasets.rune_dataset import make_loader
 from training.losses.composite import CompositeLoss
 from training.losses.losses import ranking_accuracy, wdl_accuracy
-from training.models.relational import build_rel_model
-from training.models.rune_models import build_model
+from training.models.factory import build_training_model
 from training.trainer.system_stats import file_size_bytes, git_commit, hardware_info
 
 
@@ -45,78 +44,11 @@ class Trainer:
     def __init__(self, config):
         self.cfg = config
         torch.manual_seed(derive_seed(config))
-        if config["arch"] == "RUNE-REL-02":
-            p = config.get("rel_params", {})
-            self.model = build_rel_model(tokens=p.get("tokens", 8), dim=p.get("dim", 32),
-                                         gate=p.get("gate", "clip"), alpha=p.get("alpha", 1.0),
-                                         dynamic_bias=p.get("dynamic_bias", False),
-                                         pair=p.get("pair", config.get("pair", False)),
-                                         game=config.get("game", "chess"))
-            self.needs_context = True
-            self.is_adaptive = False
-            self.is_search = False
-        elif config["arch"].startswith("RUNE-03-"):
-            from training.models.dense import build_dense_model
-
-            p = config.get("dense_params", {})
-            self.model = build_dense_model(variant=config["arch"].split("-")[-1],
-                                           token_dims=p.get("token_dims", [32] * 8),
-                                           pooling=p.get("pooling", "none"),
-                                           pool_clip=p.get("pool_clip", True),
-                                           gate_on=p.get("gate_on", False),
-                                           shared_width=p.get("shared_width", 32),
-                                           head_h1=p.get("head_h1", 128),
-                                           head_h2=p.get("head_h2", 32))
-            self.needs_context = False
-            self.is_adaptive = False
-            self.is_search = False
-        elif config["arch"].startswith("RUNE-04"):
-            from training.models.adaptive import build_adaptive_model
-
-            p = config.get("adaptive_params", {})
-            self.model = build_adaptive_model(dim=p.get("dim", 32),
-                                              cheap_pooling=p.get("cheap_pooling", "none"),
-                                              alpha=p.get("alpha", 1.0),
-                                              threshold=p.get("threshold", 0.5),
-                                              t_high=p.get("t_high", None),
-                                              t_low=p.get("t_low", None),
-                                              pruned_pairs=p.get("pruned_pairs", ()),
-                                              refine_precision=p.get("refine_precision", "fp32"),
-                                              cheap_hidden=p.get("cheap_hidden", 32),
-                                              ref_h1=p.get("ref_h1", 128),
-                                              ref_h2=p.get("ref_h2", 32))
-            self.needs_context = False
-            self.is_adaptive = True
-            self.is_search = False
-        elif config["arch"].startswith("RUNE-05"):
-            from training.models.uncertainty import build_search_model
-
-            p = config.get("adaptive_params", {})
-            self.model = build_search_model(dim=p.get("dim", 32),
-                                            cheap_pooling=p.get("cheap_pooling", "none"),
-                                            alpha=p.get("alpha", 1.0),
-                                            threshold=p.get("threshold", 0.5),
-                                            t_high=p.get("t_high", None),
-                                            t_low=p.get("t_low", None),
-                                            pruned_pairs=p.get("pruned_pairs", ()),
-                                            refine_precision=p.get("refine_precision", "fp32"),
-                                            uncertainty_on=True,
-                                            stability_on=config.get("lambda_stab", 0.0) > 0,
-                                            cheap_hidden=p.get("cheap_hidden", 32),
-                                            ref_h1=p.get("ref_h1", 128),
-                                            ref_h2=p.get("ref_h2", 32))
-            self.needs_context = False
-            self.is_adaptive = True
-            self.is_search = True
-        else:
-            p0 = config.get("rel_params", {})
-            self.model = build_model(config["arch"], gate=p0.get("gate", "clip"),
-                                     pair=p0.get("pair", config.get("pair", False)),
-                                     game=config.get("game", "chess"),
-                                     buckets=config.get("head_buckets", 1))
-            self.needs_context = False
-            self.is_adaptive = False
-            self.is_search = False
+        model_runtime = build_training_model(config)
+        self.model = model_runtime.model
+        self.needs_context = model_runtime.needs_context
+        self.is_adaptive = model_runtime.is_adaptive
+        self.is_search = model_runtime.is_search
         if config["arch"].startswith("RUNE-05"):
             from training.losses.uncertainty import SearchLoss
 

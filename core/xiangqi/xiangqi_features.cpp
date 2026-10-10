@@ -188,6 +188,7 @@ void XiangqiFeatureSet::context(const XiangqiBoard& board, float* out) {
       if (cell.kind == kPawn) themPawns++;
     }
   }
+  bool fly = flyingGenerals(board);
   bool check = false;
   if (kus >= 0) {
     for (int asq = 0; asq < 90; ++asq) {
@@ -198,9 +199,8 @@ void XiangqiFeatureSet::context(const XiangqiBoard& board, float* out) {
         break;
       }
     }
-    if (!check && flyingGenerals(board)) check = true;
+    if (!check && fly) check = true;
   }
-  bool fly = flyingGenerals(board);
   float lead = static_cast<float>(usTotal) - static_cast<float>(themTotal);
   out[0] = clamp01(static_cast<float>(us));
   out[1] = clamp01(phaseOf(board) / 2.0f);

@@ -13,9 +13,8 @@ XiangqiEvaluator::XiangqiEvaluator(const EmbeddingTables* tables, const IArchite
 bool XiangqiEvaluator::refresh(const std::string& fen) {
   XiangqiBoard board;
   if (!board.setFen(fen)) return false;
-  std::vector<ActiveFeature> feats;
-  XiangqiFeatureSet::extract(board, feats);
-  acc_.refresh(feats);
+  XiangqiFeatureSet::extract(board, featureScratch_);
+  acc_.refresh(featureScratch_);
   XiangqiFeatureSet::context(board, ctx_);
   phase_ = XiangqiFeatureSet::phase(board);
   return true;

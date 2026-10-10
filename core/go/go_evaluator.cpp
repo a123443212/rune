@@ -13,9 +13,8 @@ GoEvaluator::GoEvaluator(const EmbeddingTables* tables, const IArchitecture* arc
 bool GoEvaluator::refresh(const std::string& state) {
   GoBoard board;
   if (!board.setState(state)) return false;
-  std::vector<ActiveFeature> feats;
-  GoFeatureSet::extract(board, feats);
-  acc_.refresh(feats);
+  GoFeatureSet::extract(board, featureScratch_);
+  acc_.refresh(featureScratch_);
   GoFeatureSet::context(board, ctx_);
   phase_ = GoFeatureSet::phase(board);
   return true;

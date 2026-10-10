@@ -13,9 +13,8 @@ ShogiEvaluator::ShogiEvaluator(const EmbeddingTables* tables, const IArchitectur
 bool ShogiEvaluator::refresh(const std::string& sfen) {
   ShogiBoard board;
   if (!board.setSfen(sfen)) return false;
-  std::vector<ActiveFeature> feats;
-  ShogiFeatureSet::extract(board, feats);
-  acc_.refresh(feats);
+  ShogiFeatureSet::extract(board, featureScratch_);
+  acc_.refresh(featureScratch_);
   ShogiFeatureSet::context(board, ctx_);
   phase_ = ShogiFeatureSet::phase(board);
   return true;

@@ -31,6 +31,7 @@ class XiangqiEvaluator {
  private:
   const IArchitecture* arch_;
   GroupedAccumulator acc_;
+  std::vector<ActiveFeature> featureScratch_;
   float tokenBuf_[8 * 32];
   float ctx_[12];
   int phase_ = 0;

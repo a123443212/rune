@@ -1,84 +1,22 @@
 import hashlib
 import json
 import os
-import warnings
 
 from training.datasets import pipeline as P
 from training.export.export import export_model
+from training.experiments.model_registry import (
+    ADAPTIVE_MODES,
+    CORE_ARCH,
+    CORE_MODELS,
+    EXPERIMENTAL_MODELS,
+    MODEL_IDS,
+    PAIR_MODELS,
+    SEARCH_ROUTING,
+    experimental_reasons,
+    pair_enabled_for_model,
+)
 from training.trainer.system_stats import git_commit, hardware_info
 from training.trainer.trainer import Trainer
-
-MODEL_IDS = {
-    "rune_mlp": "RUNE-MLP",
-    "rune_attn": "RUNE-ATTN",
-    "rune_attn_gab": "RUNE-ATTN-GAB",
-    "rune_rel_s": "RUNE-REL-02",
-    "rune_rel_d": "RUNE-REL-02",
-    "rune_03A": "RUNE-03-A",
-    "rune_03B": "RUNE-03-B",
-    "rune_03C": "RUNE-03-C",
-    "rune_03D": "RUNE-03-D",
-    "rune_04_cheap": "RUNE-04",
-    "rune_04_always": "RUNE-04",
-    "rune_04_adaptive": "RUNE-04",
-    "rune_05_unc": "RUNE-05",
-    "rune_05_routing": "RUNE-05",
-    "rune_05_stab": "RUNE-05",
-    "rune_s1": "RUNE-03-A",
-    "rune_s2": "RUNE-03-A",
-    "rune_s3": "RUNE-03-A",
-    "rune_s4": "RUNE-03-A",
-}
-
-CORE_MODELS = ("rune_mlp",)
-EXPERIMENTAL_MODELS = ("rune_attn", "rune_attn_gab", "rune_rel_s", "rune_rel_d",
-                       "rune_03A", "rune_03B", "rune_03C", "rune_03D",
-                       "rune_04_cheap", "rune_04_always", "rune_04_adaptive",
-                       "rune_05_unc", "rune_05_routing", "rune_05_stab",
-                       "rune_s1", "rune_s2", "rune_s3", "rune_s4")
-
-ADAPTIVE_MODES = {
-    "rune_04_cheap": "cheap",
-    "rune_04_always": "always",
-    "rune_04_adaptive": "adaptive",
-    "rune_05_unc": "adaptive",
-    "rune_05_routing": "adaptive",
-    "rune_05_stab": "adaptive",
-}
-
-SEARCH_ROUTING = {
-    "rune_05_unc": "difficulty",
-    "rune_05_routing": "both",
-    "rune_05_stab": "full",
-}
-
-CORE_ARCH = {"tokens": 8, "token_dim": 32, "gate": "clip", "alpha": 1.0}
-
-
-def experimental_reasons(config):
-    reasons = []
-    for m in config.get("models", []):
-        if m in EXPERIMENTAL_MODELS:
-            reasons.append(f"model {m} is experimental")
-    loss = config.get("loss", {})
-    if loss.get("ranking", False):
-        reasons.append("ranking loss is experimental (use the L1 driver on candidates)")
-    if loss.get("uncertainty", False):
-        reasons.append("uncertainty loss is experimental (L1 leg only, calibration-gated)")
-    if loss.get("stability", False):
-        reasons.append("stability loss is experimental (L2 leg only, needs child data)")
-    dist = config.get("distillation", {})
-    if dist.get("enabled", False):
-        reasons.append(f"distillation is experimental (task={dist.get('task', 'value_wdl')}, "
-                       f"weighting={dist.get('weight_mode', 'uniform')})")
-    sampling = config.get("sampling", {})
-    if sampling.get("mode", "none") == "disagreement_mix":
-        reasons.append("disagreement sampling is experimental (stage-gated after S0)")
-    arch = config.get("architecture", {})
-    for key in ("tokens", "token_dim", "gate", "alpha"):
-        if arch.get(key, CORE_ARCH[key]) != CORE_ARCH[key]:
-            warnings.warn(f"architecture.{key}={arch.get(key)} deviates from core")
-    return reasons
 
 MILESTONE_TAGS = {10_000_000: "10m", 25_000_000: "25m", 50_000_000: "50m", 100_000_000: "100m",
                   250_000_000: "250m", 500_000_000: "500m", 1_000_000_000: "1b"}
@@ -169,6 +107,7 @@ class ScreeningRunner:
         loss_cfg = self.cfg.get("loss", {})
         tcfg = {
             "arch": arch,
+            "pair": pair_enabled_for_model(self.cfg, model_key),
             "seed": self.seed,
             "lr": self.cfg.get("training", {}).get("lr", 3e-4),
             "weight_decay": self.cfg.get("training", {}).get("weight_decay", 0.01),
@@ -254,7 +193,7 @@ class ScreeningRunner:
                 "experiment_id": self.exp_name,
                 "model": model_key,
                 "architecture": arch,
-                "architecture_version": "0.5.0" if arch.startswith("RUNE-05") else ("0.4.0" if arch.startswith("RUNE-04") else ("0.3.0" if arch.startswith("RUNE-03-") else ("0.2.0" if arch == "RUNE-REL-02" else "0.1.0"))),
+                "architecture_version": "0.2.0" if model_key in PAIR_MODELS else ("0.5.0" if arch.startswith("RUNE-05") else ("0.4.0" if arch.startswith("RUNE-04") else ("0.3.0" if arch.startswith("RUNE-03-") else ("0.2.0" if arch == "RUNE-REL-02" else "0.1.0")))),
                 "routing": {"mode": tcfg["adaptive_params"]["mode"],
                             "search_routing": tcfg["adaptive_params"].get("search_routing", "difficulty"),
                             **self.cfg.get("routing", {})} if arch.startswith(("RUNE-04", "RUNE-05")) else {"mode": "none"},

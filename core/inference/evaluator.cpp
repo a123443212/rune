@@ -8,9 +8,8 @@ Evaluator::Evaluator(const EmbeddingTables* tables, const IArchitecture* arch) :
 }
 
 void Evaluator::refresh(const Board& board) {
-  std::vector<ActiveFeature> feats;
-  GroupedFeatureSet::extract(board, feats);
-  acc_.refresh(feats);
+  GroupedFeatureSet::extract(board, featureScratch_);
+  acc_.refresh(featureScratch_);
   phase_ = board.gamePhase();
 }
 

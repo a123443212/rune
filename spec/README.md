@@ -1,4 +1,4 @@
-# RUNE v0.10 Specification — single source of truth
+# RUNE v0.11 Specification — single source of truth
 
 This directory is canonical. When C++, Rust, and Python disagree,
 this directory wins. Code mirrors it; prose elsewhere does not

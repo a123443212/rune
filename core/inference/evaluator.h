@@ -29,6 +29,7 @@ class Evaluator {
  private:
   const IArchitecture* arch_;
   GroupedAccumulator acc_;
+  std::vector<ActiveFeature> featureScratch_;
   float tokenBuf_[8 * 32];
   int phase_ = 1;
 };

@@ -7,6 +7,9 @@ import torch
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from training.models.rune_models import ARCH_IDS, EXPORT_ORDER, build_model
+from training.experiments import screening
+from training.experiments.model_registry import MODEL_IDS, pair_enabled_for_model
+from training.trainer.trainer import Trainer
 
 
 def test_all_archs_forward_shapes():
@@ -85,3 +88,27 @@ def test_spec_and_export_order_cover_all_params():
         assert sorted(arch_t.keys()) == sorted(model.export_order())
         emb = model.embedding_tensors()
         assert len(emb) == 9
+
+
+def test_pair_candidate_is_registered_and_trained_as_pair(monkeypatch):
+    config = {
+        "models": ["rune_attn_gab", "rune_attn_gab_pair"],
+        "research": {"allow_experimental": True},
+        "architecture": {"pair": True},
+        "pair_legs": {
+            "control": {"model": "rune_attn_gab", "pair": False},
+            "candidate": {"model": "rune_attn_gab_pair", "pair": True},
+        },
+    }
+    assert MODEL_IDS["rune_attn_gab_pair"] == "RUNE-ATTN-GAB"
+    assert pair_enabled_for_model(config, "rune_attn_gab") is False
+    assert pair_enabled_for_model(config, "rune_attn_gab_pair") is True
+    trainer_configs = []
+    monkeypatch.setattr(screening, "Trainer", lambda trainer_config: trainer_configs.append(trainer_config))
+    runner = screening.ScreeningRunner(config)
+    runner.run_model("rune_attn_gab", {"val": []}, {}, [])
+    runner.run_model("rune_attn_gab_pair", {"val": []}, {}, [])
+    assert [item["pair"] for item in trainer_configs] == [False, True]
+    trainer = Trainer({"arch": MODEL_IDS["rune_attn_gab_pair"], "pair": True})
+    assert trainer.model.model_spec()["arch_version"] == "0.2.0"
+    assert trainer.model.head.fc2.in_features == 256
