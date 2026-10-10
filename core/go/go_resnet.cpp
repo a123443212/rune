@@ -15,7 +15,7 @@ GoResnetOutput forwardGoResnet(const GoResnetWeights& wt, const GoResnetSizes& s
   int c = sz.channels;
   int hw = b * b;
   std::vector<float> cur(static_cast<size_t>(c * hw), 0.0f);
-  conv::conv2dNchw(planes, wt.stemW.data(), wt.stemB.data(), cur.data(), 1, 1, c, b, b, 3, 3,
+  conv::conv2dNchw(planes, wt.stemW.data(), wt.stemB.data(), cur.data(), 1, sz.inPlanes, c, b, b, 3, 3,
                    1, 1);
   conv::reluInplace(cur.data(), cur.size());
   std::vector<float> tmp(static_cast<size_t>(c * hw), 0.0f);
@@ -59,7 +59,7 @@ GoResnetOutput forwardGoResnetFast(const GoResnetWeights& wt, const GoResnetSize
   int c = sz.channels;
   int hw = b * b;
   sc.ensure(b, c, sz.valueH2, sz.policySize);
-  conv::conv3x3Pad1Relu(planes, wt.stemW.data(), wt.stemB.data(), sc.a.data(), 1, c, b, b);
+  conv::conv3x3Pad1Relu(planes, wt.stemW.data(), wt.stemB.data(), sc.a.data(), sz.inPlanes, c, b, b);
   float* cur = sc.a.data();
   float* nxt = sc.b.data();
   float* tmp = sc.c.data();

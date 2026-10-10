@@ -47,7 +47,8 @@ impl SpatialExecutor {
 
 fn is_fast(weights: &ResnetWeights) -> bool {
     let channels = weights.cfg.channels;
-    if weights.stem_w.len() != channels * 9 || weights.stem_b.len() != channels {
+    let in_planes = weights.cfg.in_planes;
+    if weights.stem_w.len() != channels * in_planes * 9 || weights.stem_b.len() != channels {
         return false;
     }
     for block in 0..weights.cfg.blocks {

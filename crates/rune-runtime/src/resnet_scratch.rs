@@ -42,7 +42,7 @@ pub fn forward_fast(wt: &ResnetWeights, s: &mut Scratch, planes: &[f32]) -> (f32
     let ps = wt.policy.output;
     s.ensure(b, c, h2, ps);
     let a = &mut s.a[..c * hw];
-    kernel::conv3x3_pad1_relu(planes, &wt.stem_w, Some(&wt.stem_b), a, 1, c, b, b);
+    kernel::conv3x3_pad1_relu(planes, &wt.stem_w, Some(&wt.stem_b), a, wt.cfg.in_planes, c, b, b);
     {
         let n = c * hw;
         let (mut cur, mut nxt) = (&mut s.a[..n], &mut s.b[..n]);

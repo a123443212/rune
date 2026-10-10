@@ -33,6 +33,7 @@ int main() {
   testShogi();
   testXiangqi();
   testGo();
+  testGoV02();
   testQuantization();
   testEvaluator();
   testModelIO();

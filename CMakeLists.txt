@@ -25,8 +25,12 @@ add_library(rune_core STATIC
   core/xiangqi/xiangqi_features.cpp
   core/xiangqi/xiangqi_evaluator.cpp
   core/go/go_board.cpp
+  core/go/go_rules.cpp
+  core/go/go_state.cpp
   core/go/go_features.cpp
   core/go/go_planes.cpp
+  core/go/go_planes_v02.cpp
+  core/go/go_token_v02.cpp
   core/go/go_evaluator.cpp
   core/go/go_resnet.cpp
   core/go/go_scratch.cpp
@@ -87,6 +91,7 @@ if(RUNE_BUILD_TESTS)
     tests/cpp/test_shogi.cpp
     tests/cpp/test_xiangqi.cpp
     tests/cpp/test_go.cpp
+    tests/cpp/test_go_v02.cpp
     tests/cpp/test_arch.cpp
     tests/cpp/test_model.cpp
     tests/cpp/test_relational.cpp

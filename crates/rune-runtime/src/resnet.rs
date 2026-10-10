@@ -10,6 +10,7 @@ pub struct ResnetConfig {
     pub blocks: usize,
     pub policy_size: usize,
     pub value_h2: usize,
+    pub in_planes: usize,
 }
 
 #[derive(Debug, Clone)]
@@ -49,11 +50,15 @@ impl ResnetWeights {
         let blocks = raw.get("num_blocks").and_then(|v| v.as_u64()).unwrap_or(6) as usize;
         let policy_size = raw.get("policy_size").and_then(|v| v.as_u64()).unwrap_or((board * board + 1) as u64) as usize;
         let h2 = raw.get("head_h2").and_then(|v| v.as_u64()).unwrap_or(256) as usize;
+        let in_planes = raw.get("in_planes").and_then(|v| v.as_u64()).unwrap_or(1) as usize;
         if board == 0 || board > 19 {
             return Err(RuntimeError::Shape("board_size".to_string()));
         }
         if channels == 0 || channels > 256 {
             return Err(RuntimeError::Shape("channels".to_string()));
+        }
+        if in_planes == 0 || in_planes > 16 {
+            return Err(RuntimeError::Shape("in_planes".to_string()));
         }
         let stem_w = need_vec(arrays, "stem_w")?;
         let stem_b = need_vec(arrays, "stem_b")?;
@@ -79,15 +84,19 @@ impl ResnetWeights {
         if policy.w.len() != policy.input * policy.output {
             return Err(RuntimeError::Shape("wpol".to_string()));
         }
-        Ok(ResnetWeights { cfg: ResnetConfig { board, channels, blocks, policy_size, value_h2: h2 }, stem_w, stem_b, block_w1, block_b1, block_w2, block_b2, vh1, bh1, wv, bv, wwdl, bwdl, policy })
+        if stem_w.len() != channels * in_planes * 9 {
+            return Err(RuntimeError::Shape("stem_w".to_string()));
+        }
+        Ok(ResnetWeights { cfg: ResnetConfig { board, channels, blocks, policy_size, value_h2: h2, in_planes }, stem_w, stem_b, block_w1, block_b1, block_w2, block_b2, vh1, bh1, wv, bv, wwdl, bwdl, policy })
     }
 
     pub fn forward(&self, planes: &[f32]) -> (f32, [f32; 3], Vec<f32>) {
         let b = self.cfg.board;
         let c = self.cfg.channels;
+        let p = self.cfg.in_planes;
         let hw = b * b;
         let mut cur = vec![0.0f32; c * hw];
-        kernel::conv2d_nchw(planes, &self.stem_w, Some(&self.stem_b), &mut cur, 1, 1, c, b, b, 3, 3, 1, 1);
+        kernel::conv2d_nchw(planes, &self.stem_w, Some(&self.stem_b), &mut cur, 1, p, c, b, b, 3, 3, 1, 1);
         kernel::relu_inplace(&mut cur);
         let mut tmp = vec![0.0f32; c * hw];
         let mut tmp2 = vec![0.0f32; c * hw];

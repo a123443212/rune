@@ -45,7 +45,7 @@ fn synthetic(board: usize, channels: usize, blocks: usize) -> rune_runtime::eval
         v
     };
     let wt = ResnetWeights {
-        cfg: ResnetConfig { board, channels, blocks, policy_size: policy, value_h2: h2 },
+        cfg: ResnetConfig { board, channels, blocks, policy_size: policy, value_h2: h2, in_planes: 1 },
         stem_w: gen(channels * 9),
         stem_b: vec![0.0; channels],
         block_w1: (0..blocks).map(|_| gen(channels * channels * 9)).collect(),

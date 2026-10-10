@@ -33,6 +33,7 @@ void testPairHead();
 void testShogi();
 void testXiangqi();
 void testGo();
+void testGoV02();
 void testQuantization();
 void testEvaluator();
 void testModelIO();

@@ -13,6 +13,7 @@ struct GoResnetSizes {
   int blocks = 1;
   int policySize = 82;
   int valueH2 = 32;
+  int inPlanes = 1;
 };
 
 struct GoResnetWeights {
